@@ -1,5 +1,6 @@
 ---
 layout: default
+colorSchema: light
 aspectRatio: 16/9
 ---
 

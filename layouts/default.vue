@@ -80,8 +80,8 @@ watch(() => editor.editing.value, (editing) => {
     </div>
 
     <Teleport to="body">
-      <div v-if="!editor.editing.value" class="edit-btn" @click="editor.toggle()">
-        ✎ Edit
+      <div v-if="!editor.editing.value" class="layout-tab" @click="editor.toggle()">
+        <span class="layout-tab-label">Layout</span>
       </div>
     </Teleport>
 
@@ -257,23 +257,32 @@ watch(() => editor.editing.value, (editing) => {
   cursor: ns-resize;
 }
 
-.edit-btn {
+.layout-tab {
   position: fixed;
-  bottom: 20px;
-  right: 20px;
+  top: 50%;
+  right: 0;
   z-index: 200;
-  background: #333;
-  color: white;
+  transform: translateY(-50%);
+  background: #1a1a2e;
+  color: #aaa;
   border: none;
-  border-radius: 6px;
-  padding: 6px 14px;
-  font-size: 13px;
+  border-radius: 6px 0 0 6px;
+  padding: 28px 6px;
   cursor: pointer;
-  opacity: 0.5;
-  transition: opacity 0.2s;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  writing-mode: vertical-lr;
+  text-orientation: mixed;
+  transition: background 0.15s, color 0.15s, padding 0.15s;
+  user-select: none;
 }
 
-.edit-btn:hover { opacity: 1; }
+.layout-tab:hover {
+  background: #2563eb;
+  color: white;
+  padding-right: 8px;
+}
 
 .editor-panel {
   position: fixed;

@@ -64,11 +64,17 @@ const ELEMENTS: Record<string, {
   },
 }
 
-export function useEditor() {
-  const editing = ref(false)
-  const selected = ref<string | null>(null)
+const _sharedEditing = ref(false)
+const _sharedSelected = ref<string | null>(null)
+const _sharedPositions = reactive<Record<string, Rect>>({})
+for (const key of Object.keys(ELEMENTS)) {
+  _sharedPositions[key] = { ...ELEMENTS[key].initial }
+}
 
-  const positions = reactive<Record<string, Rect>>({})
+export function useEditor() {
+  const editing = _sharedEditing
+  const selected = _sharedSelected
+  const positions = _sharedPositions
 
   const dragState = ref<{
     el: string
@@ -85,10 +91,6 @@ export function useEditor() {
     origW: number
     origH: number
   } | null>(null)
-
-  for (const key of Object.keys(ELEMENTS)) {
-    positions[key] = { ...ELEMENTS[key].initial }
-  }
 
   function toggle() {
     editing.value = !editing.value
