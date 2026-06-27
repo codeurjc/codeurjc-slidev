@@ -118,7 +118,15 @@ watch(() => editor.editing.value, (editing) => {
         </div>
       </div>
 
-      <button class="ep-export" @click="editor.saveLayout()">
+      <button
+        class="ep-reset"
+        :class="{ disabled: !editor.dirty.value }"
+        :disabled="!editor.dirty.value"
+        @click="editor.resetLayout()"
+      >
+        Reset
+      </button>
+      <button class="ep-save" @click="editor.saveLayout()">
         {{ editor.saving.value ? 'Saving...' : editor.saved.value ? 'Saved!' : 'Save Layout' }}
       </button>
     </aside>
@@ -387,11 +395,34 @@ watch(() => editor.editing.value, (editing) => {
   border-color: #2563eb;
 }
 
-.ep-export {
+.ep-reset {
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  background: #3a3a5e;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ep-reset:not(.disabled):hover {
+  background: #4a4a7e;
+  color: #e0e0e0;
+}
+
+.ep-reset.disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ep-save {
   width: 100%;
   padding: 10px;
   border: none;
-  border-top: 1px solid rgba(255,255,255,0.08);
   background: #2563eb;
   color: white;
   cursor: pointer;
@@ -400,7 +431,7 @@ watch(() => editor.editing.value, (editing) => {
   flex-shrink: 0;
 }
 
-.ep-export:hover {
+.ep-save:hover {
   background: #1d4ed8;
 }
 </style>

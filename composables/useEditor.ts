@@ -176,6 +176,33 @@ export function useEditor() {
   const saving = ref(false)
   const saved = ref(false)
 
+  function clonePositions(): Record<string, Rect> {
+    const copy: Record<string, Rect> = {}
+    for (const key of Object.keys(positions)) {
+      copy[key] = { ...positions[key] }
+    }
+    return copy
+  }
+
+  const snapshot = ref<Record<string, Rect>>(clonePositions())
+
+  const dirty = computed(() => {
+    for (const key of Object.keys(positions)) {
+      const p = positions[key]
+      const s = snapshot.value[key]
+      if (!p || !s) return false
+      if (p.x !== s.x || p.y !== s.y || p.w !== s.w || p.h !== s.h) return true
+    }
+    return false
+  })
+
+  function resetLayout() {
+    for (const key of Object.keys(snapshot.value)) {
+      const s = snapshot.value[key]
+      if (s) Object.assign(positions[key], s)
+    }
+  }
+
   async function saveLayout() {
     saving.value = true
     saved.value = false
@@ -185,8 +212,11 @@ export function useEditor() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ positions: { ...positions } }),
       })
-      saved.value = resp.ok
-      if (resp.ok) setTimeout(() => { saved.value = false }, 2000)
+      if (resp.ok) {
+        snapshot.value = clonePositions()
+        saved.value = true
+        setTimeout(() => { saved.value = false }, 2000)
+      }
     } catch {
       saved.value = false
     } finally {
@@ -203,11 +233,13 @@ export function useEditor() {
     elementNames,
     saving,
     saved,
+    dirty,
     toggle,
     startDrag,
     startResize,
     rootStyle,
     exportCss,
     saveLayout,
+    resetLayout,
   }
 }
