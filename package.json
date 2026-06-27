@@ -1,0 +1,13 @@
+{
+  "name": "tema-3-api-rest",
+  "private": true,
+  "scripts": {
+    "dev": "slidev --open",
+    "build": "slidev build",
+    "export": "slidev export"
+  },
+  "dependencies": {
+    "@slidev/cli": "^52.15.0",
+    "@slidev/theme-default": "^0.25.0"
+  }
+}
