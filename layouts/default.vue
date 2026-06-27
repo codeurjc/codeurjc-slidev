@@ -12,7 +12,6 @@ async function copyCss() {
     copied.value = true
     setTimeout(() => { copied.value = false }, 2000)
   } catch {
-    // fallback: select and copy from a textarea
     const ta = document.createElement('textarea')
     ta.value = css
     ta.style.position = 'fixed'
@@ -29,97 +28,107 @@ async function copyCss() {
 
 <template>
   <div
-    class="slidev-layout default relative h-full bg-white text-black"
+    class="slidev-layout default bg-white text-black"
     :class="{ editing: editor.editing.value }"
-    :style="editor.editing.value ? editor.rootStyle.value : {}"
   >
     <div
-      class="red-bar"
-      :class="{ 'el-active': editor.editing.value && editor.selected.value === 'red-bar' }"
-      @mousedown.stop="editor.startDrag($event, 'red-bar')"
+      class="slide-area"
+      :style="editor.editing.value ? editor.rootStyle.value : {}"
     >
       <div
-        v-if="editor.editing.value && editor.selected.value === 'red-bar'"
-        class="resize-handle b"
-        @mousedown.stop="editor.startResize($event, 'red-bar')"
-      />
-    </div>
+        class="red-bar"
+        :class="{ 'el-active': editor.editing.value && editor.selected.value === 'red-bar' }"
+        @mousedown.stop="editor.startDrag($event, 'red-bar')"
+      >
+        <div
+          v-if="editor.editing.value && editor.selected.value === 'red-bar'"
+          class="resize-handle b"
+          @mousedown.stop="editor.startResize($event, 'red-bar')"
+        />
+      </div>
 
-    <div
-      class="logo"
-      :class="{ 'el-active': editor.editing.value && editor.selected.value === 'logo' }"
-      @mousedown.stop="editor.startDrag($event, 'logo')"
-    >
-      <img src="/images/logo.png" alt="Logo">
       <div
-        v-if="editor.editing.value && editor.selected.value === 'logo'"
-        class="resize-handle se"
-        @mousedown.stop="editor.startResize($event, 'logo')"
-      />
-    </div>
+        class="logo"
+        :class="{ 'el-active': editor.editing.value && editor.selected.value === 'logo' }"
+        @mousedown.stop="editor.startDrag($event, 'logo')"
+      >
+        <img src="/images/logo.png" alt="Logo">
+        <div
+          v-if="editor.editing.value && editor.selected.value === 'logo'"
+          class="resize-handle se"
+          @mousedown.stop="editor.startResize($event, 'logo')"
+        />
+      </div>
 
-    <div
-      class="content"
-      :class="{ 'el-active': editor.editing.value && editor.selected.value === 'content' }"
-      @mousedown.stop="editor.startDrag($event, 'content')"
-    >
-      <slot />
       <div
-        v-if="editor.editing.value && editor.selected.value === 'content'"
-        class="resize-handle se"
-        @mousedown.stop="editor.startResize($event, 'content')"
-      />
-    </div>
+        class="content"
+        :class="{ 'el-active': editor.editing.value && editor.selected.value === 'content' }"
+        @mousedown.stop="editor.startDrag($event, 'content')"
+      >
+        <slot />
+        <div
+          v-if="editor.editing.value && editor.selected.value === 'content'"
+          class="resize-handle se"
+          @mousedown.stop="editor.startResize($event, 'content')"
+        />
+      </div>
 
-    <div
-      v-if="editor.editing.value"
-      class="title-overlay"
-      :style="{ top: editor.positions.title.y + 'px', left: editor.positions.title.x + 'px' }"
-      :class="{ 'el-active': editor.selected.value === 'title' }"
-      @mousedown.stop="editor.startDrag($event, 'title')"
-    >
-      <span class="el-tag">Title</span>
       <div
-        v-if="editor.selected.value === 'title'"
-        class="resize-handle se"
-        @mousedown.stop="editor.startResize($event, 'title')"
-      />
+        v-if="editor.editing.value"
+        class="title-overlay"
+        :style="{ top: editor.positions.title.y + 'px', left: editor.positions.title.x + 'px' }"
+        :class="{ 'el-active': editor.selected.value === 'title' }"
+        @mousedown.stop="editor.startDrag($event, 'title')"
+      >
+        <span class="el-tag">Title</span>
+        <div
+          v-if="editor.selected.value === 'title'"
+          class="resize-handle se"
+          @mousedown.stop="editor.startResize($event, 'title')"
+        />
+      </div>
     </div>
 
     <div v-if="!editor.editing.value" class="edit-btn" @click="editor.toggle()">
       ✎ Edit
     </div>
 
-    <div v-if="editor.editing.value" class="editor-panel">
+    <aside v-if="editor.editing.value" class="editor-panel">
       <div class="ep-header">
         <strong>Layout Editor</strong>
         <button class="ep-close" @click="editor.toggle()">✕</button>
       </div>
 
-      <div class="ep-elements">
-        <button
-          v-for="name in editor.elementNames.value"
-          :key="name"
-          class="ep-el"
-          :class="{ active: editor.selected.value === name }"
-          @click="editor.selected.value = name"
-        >
-          <span class="ep-dot" :style="{ background: { 'red-bar': '#cb0017', logo: '#e8792b', title: '#2563eb', content: '#16a34a' }[name] }" />
-          {{ { 'red-bar': 'Red Bar', logo: 'Logo', title: 'Title', content: 'Content' }[name] }}
-        </button>
-      </div>
+      <div class="ep-body">
+        <div class="ep-section-label">Elements</div>
+        <div class="ep-elements">
+          <button
+            v-for="name in editor.elementNames.value"
+            :key="name"
+            class="ep-el"
+            :class="{ active: editor.selected.value === name }"
+            @click="editor.selected.value = name"
+          >
+            <span class="ep-dot" :style="{ background: { 'red-bar': '#cb0017', logo: '#e8792b', title: '#2563eb', content: '#16a34a' }[name] }" />
+            {{ { 'red-bar': 'Red Bar', logo: 'Logo', title: 'Title', content: 'Content' }[name] }}
+          </button>
+        </div>
 
-      <div v-if="editor.selected.value" class="ep-props">
-        <label>X: <input v-model.number="editor.positions[editor.selected.value].x" type="number" class="ep-input"></label>
-        <label>Y: <input v-model.number="editor.positions[editor.selected.value].y" type="number" class="ep-input"></label>
-        <label>W: <input v-model.number="editor.positions[editor.selected.value].w" type="number" class="ep-input"></label>
-        <label>H: <input v-model.number="editor.positions[editor.selected.value].h" type="number" class="ep-input"></label>
+        <div v-if="editor.selected.value" class="ep-props-section">
+          <div class="ep-section-label">Properties</div>
+          <div class="ep-props">
+            <label>X: <input v-model.number="editor.positions[editor.selected.value].x" type="number" class="ep-input"></label>
+            <label>Y: <input v-model.number="editor.positions[editor.selected.value].y" type="number" class="ep-input"></label>
+            <label>W: <input v-model.number="editor.positions[editor.selected.value].w" type="number" class="ep-input"></label>
+            <label>H: <input v-model.number="editor.positions[editor.selected.value].h" type="number" class="ep-input"></label>
+          </div>
+        </div>
       </div>
 
       <button class="ep-export" @click="copyCss">
         {{ copied ? 'Copied!' : 'Copy CSS' }}
       </button>
-    </div>
+    </aside>
   </div>
 </template>
 
@@ -142,6 +151,24 @@ async function copyCss() {
 </style>
 
 <style scoped>
+.slide-area {
+  position: relative;
+  height: 100%;
+  background: white;
+}
+
+.editing .slide-area {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.editing {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+}
+
 .red-bar {
   position: absolute;
   top: 0;
@@ -257,17 +284,15 @@ async function copyCss() {
 .edit-btn:hover { opacity: 1; }
 
 .editor-panel {
-  position: fixed;
-  top: 70px;
-  right: 12px;
-  z-index: 200;
-  width: 220px;
+  width: 270px;
+  flex-shrink: 0;
   background: #1a1a2e;
   color: #e0e0e0;
-  border-radius: 8px;
   font-size: 12px;
   font-family: system-ui, sans-serif;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -275,9 +300,10 @@ async function copyCss() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: #16213e;
   font-size: 13px;
+  flex-shrink: 0;
 }
 
 .ep-close {
@@ -285,14 +311,33 @@ async function copyCss() {
   border: none;
   color: #999;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 16px;
   padding: 2px 6px;
+  border-radius: 4px;
 }
 
-.ep-close:hover { color: white; }
+.ep-close:hover {
+  color: white;
+  background: rgba(255,255,255,0.1);
+}
+
+.ep-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.ep-section-label {
+  padding: 6px 14px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 
 .ep-elements {
-  padding: 6px;
+  padding: 2px 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -301,8 +346,8 @@ async function copyCss() {
 .ep-el {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
+  gap: 8px;
+  padding: 6px 8px;
   border: none;
   background: transparent;
   color: #ccc;
@@ -312,10 +357,12 @@ async function copyCss() {
   font-size: 12px;
 }
 
-.ep-el:hover { background: rgba(255,255,255,0.08); }
+.ep-el:hover {
+  background: rgba(255,255,255,0.06);
+}
 
 .ep-el.active {
-  background: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.1);
   color: white;
 }
 
@@ -326,11 +373,15 @@ async function copyCss() {
   flex-shrink: 0;
 }
 
+.ep-props-section {
+  margin-top: 4px;
+}
+
 .ep-props {
-  padding: 8px 12px;
+  padding: 4px 14px;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px 8px;
+  gap: 6px 10px;
 }
 
 .ep-props label {
@@ -338,30 +389,39 @@ async function copyCss() {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: #aaa;
+  color: #999;
 }
 
 .ep-input {
   width: 100%;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
   color: white;
-  padding: 2px 4px;
+  padding: 3px 5px;
   border-radius: 3px;
   font-size: 11px;
   font-family: monospace;
+  outline: none;
+}
+
+.ep-input:focus {
+  border-color: #2563eb;
 }
 
 .ep-export {
   width: 100%;
-  padding: 8px;
+  padding: 10px;
   border: none;
+  border-top: 1px solid rgba(255,255,255,0.08);
   background: #2563eb;
   color: white;
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
-.ep-export:hover { background: #1d4ed8; }
+.ep-export:hover {
+  background: #1d4ed8;
+}
 </style>
