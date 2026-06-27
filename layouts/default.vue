@@ -7,18 +7,19 @@ const copied = ref(false)
 
 watch(() => editor.editing.value, (editing) => {
   const styleId = 'slidev-editor-shift'
-  if (editing) {
-    if (!document.getElementById(styleId)) {
-      const style = document.createElement('style')
-      style.id = styleId
-      style.textContent = `
-        .slidev-slide-content { margin-right: 270px !important; transition: margin-right 0.2s; }
-        .slidev-page { overflow: hidden; }
-      `
-      document.head.appendChild(style)
-    }
-  } else {
-    document.getElementById(styleId)?.remove()
+  const existing = document.getElementById(styleId)
+  if (editing && !existing) {
+    const style = document.createElement('style')
+    style.id = styleId
+    style.textContent = `
+      .slidev-slide-content {
+        left: calc((100% - 270px) / 2) !important;
+        transition: left 0.2s;
+      }
+    `
+    document.head.appendChild(style)
+  } else if (!editing && existing) {
+    existing.remove()
   }
 })
 
