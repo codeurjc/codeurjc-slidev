@@ -1,29 +1,39 @@
 import { test, expect } from '@playwright/test';
-import { readFileSync, writeFileSync, existsSync, readdirSync, rmSync, mkdirSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'fs'
 import { resolve } from 'path'
 
 const e2eDir = resolve(import.meta.dirname, '../e2e')
-const layoutsDir = resolve(e2eDir, 'layouts')
+const e2eLayoutsDir = resolve(e2eDir, 'layouts')
+const rootLayoutsDir = resolve(import.meta.dirname, '..', 'layouts')
 const slidesPath = resolve(e2eDir, 'slides.md')
-const defaultLayoutPath = resolve(layoutsDir, 'default.vue')
+const rootSlidesPath = resolve(import.meta.dirname, '..', 'slides.md')
+const defaultLayoutPath = resolve(e2eLayoutsDir, 'default.vue')
 
 let originalSlides: string
+let originalRootSlides: string
 let originalLayout: string
+
+function removeGeneratedLayouts(dir: string) {
+  for (const file of readdirSync(dir)) {
+    if (file.startsWith('test-layout-') && file.endsWith('.vue')) {
+      rmSync(resolve(dir, file))
+    }
+  }
+}
 
 test.describe('Layout Editor E2E', () => {
   test.beforeAll(() => {
     originalSlides = readFileSync(slidesPath, 'utf-8')
+    originalRootSlides = readFileSync(rootSlidesPath, 'utf-8')
     originalLayout = readFileSync(defaultLayoutPath, 'utf-8')
   })
 
   test.afterAll(() => {
+    writeFileSync(rootSlidesPath, originalRootSlides, 'utf-8')
     writeFileSync(slidesPath, originalSlides, 'utf-8')
     writeFileSync(defaultLayoutPath, originalLayout, 'utf-8')
-    for (const file of readdirSync(layoutsDir)) {
-      if (file !== 'default.vue' && file.endsWith('.vue')) {
-        rmSync(resolve(layoutsDir, file))
-      }
-    }
+    removeGeneratedLayouts(e2eLayoutsDir)
+    removeGeneratedLayouts(rootLayoutsDir)
   })
 
   test.beforeEach(async ({ page }) => {
@@ -128,6 +138,8 @@ test.describe('Layout Editor E2E', () => {
     await titleBtn.click();
     await expect(titleBtn).toHaveClass(/active/);
 
+    const titleOverlay = page.locator('.title-overlay');
+
     // Read initial X and Y positions
     const xInput = page.locator('.lep-props label').filter({ hasText: 'X:' }).locator('input');
     const yInput = page.locator('.lep-props label').filter({ hasText: 'Y:' }).locator('input');
@@ -179,18 +191,271 @@ test.describe('Layout Editor E2E', () => {
     await expect(undoBtn).toBeDisabled();
   });
 
+  test('resizing title changes its rendered box width', async ({ page }) => {
+    const scale = await getSlideScale(page);
+
+    // Select the title element
+    await page.locator('.lep-el').filter({ hasText: 'Title' }).click();
+
+    // Read initial W from properties
+    const wInput = page.locator('.lep-props label').filter({ hasText: 'W:' }).locator('input');
+    const initialW = parseInt(await wInput.inputValue(), 10);
+
+    // Drag the resize handle on the title overlay (bottom-right corner)
+    // The resize handle is at bottom:-6px; right:-6px, so its center is at the parent's bottom-right edge
+    const vpDw = 60;
+    const vpDh = 40;
+    const titleOverlay = page.locator('.title-overlay');
+    let box = await titleOverlay.boundingBox();
+    if (!box) throw new Error('title-overlay not found');
+    const handleCX = box.x + box.width;
+    const handleCY = box.y + box.height;
+    await page.mouse.move(handleCX, handleCY);
+    await page.mouse.down();
+    await page.mouse.move(handleCX + vpDw, handleCY + vpDh, { steps: 10 });
+    await page.mouse.up();
+
+    // The W in properties should have increased (use parseFloat, the input shows float values)
+    const newW = parseFloat(await wInput.inputValue());
+    expect(newW).toBeGreaterThan(initialW);
+
+    // The rendered width of the title-overlay should reflect the new CSS width
+    const box2 = await titleOverlay.boundingBox();
+    if (box2) {
+      const renderedW = Math.round(box2.width);
+      const expectedApprox = Math.round(400 * scale);
+      // After resizing 60px right, the rendered width should be larger than the initial
+      expect(renderedW).toBeGreaterThan(expectedApprox);
+    }
+  });
+
   test('can save a new layout', async ({ page }) => {
     // Check "Save as new layout"
     const saveAsCheckbox = page.locator('input[type="checkbox"]');
     await expect(saveAsCheckbox).toBeChecked();
 
     // Enter a name
-    await page.locator('.lep-name-row input').fill('test-layout-e2e');
+    const layoutName = `test-layout-e2e`;
+    await page.locator('.lep-name-row input').fill(layoutName);
 
     // Click Save
     await page.locator('.lep-btn.lep-btn-primary').click();
 
-    // Wait for "Done" text
-    await expect(page.locator('.lep-btn.lep-btn-primary')).toHaveText('Done');
+    // Wait for the save to complete and page to navigate to the new layout
+    await page.waitForTimeout(3000);
+
+    // Verify the layout file was created with CSS variable overrides in style attribute
+    let savedPath = resolve(rootLayoutsDir, `${layoutName}.vue`);
+    if (!existsSync(savedPath)) {
+      savedPath = resolve(e2eLayoutsDir, `${layoutName}.vue`);
+    }
+    expect(existsSync(savedPath)).toBe(true);
+    const savedContent = readFileSync(savedPath, 'utf-8');
+    expect(savedContent).toContain('style="');
+    expect(savedContent).toContain('--ed-title-y:');
+    expect(savedContent).toContain('--ed-title-x:');
+    expect(savedContent).toContain('--ed-content-y:');
+    expect(savedContent).toContain('--ed-content-x:');
   });
+
+  test('save persists dragged content position in file', async ({ page }) => {
+    // Select the content element
+    const contentBtn = page.locator('.lep-el').filter({ hasText: 'Content' });
+    await contentBtn.click();
+
+    // Read initial Y from properties
+    const yInput = page.locator('.lep-props label').filter({ hasText: 'Y:' }).locator('input');
+    const initialY = parseInt(await yInput.inputValue(), 10);
+
+    // Drag the content overlay down
+    const vpDy = 100;
+    const overlay = page.locator('.content-overlay');
+    const box = await overlay.boundingBox();
+    if (!box) throw new Error('content-overlay not found');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + vpDy, { steps: 10 });
+    await page.mouse.up();
+
+    const newY = parseInt(await yInput.inputValue(), 10);
+    expect(newY).toBeGreaterThan(initialY);
+
+    // Uncheck "Save as new layout" to overwrite default.vue
+    const saveAsCheckbox = page.locator('input[type="checkbox"]');
+    await saveAsCheckbox.click();
+
+    // Click Save
+    await page.locator('.lep-btn.lep-btn-primary').click();
+    await expect(page.locator('.lep-btn.lep-btn-primary')).toHaveText('Done');
+
+    // Verify the saved default.vue contains the new content Y
+    const savedContent = readFileSync(defaultLayoutPath, 'utf-8');
+    expect(savedContent).toContain(`--ed-content-y: ${newY}px;`);
+  });
+
+  test('can delete element and restore it', async ({ page }) => {
+    // Select the logo element
+    const logoBtn = page.locator('.lep-el').filter({ hasText: 'Logo' });
+    await logoBtn.click();
+
+    // The logo should be visible
+    await expect(page.locator('.logo')).toBeVisible();
+
+    // Click the delete button (X) on the logo element
+    const deleteBtn = page.locator('.logo .delete-btn');
+    await deleteBtn.click();
+
+    // The logo should no longer be visible
+    await expect(page.locator('.logo')).not.toBeVisible();
+
+    // The restore bar should appear in the slide
+    await expect(page.locator('.restore-bar')).toBeVisible();
+
+    // Click the restore button for logo
+    const restoreBtn = page.locator('.restore-btn').filter({ hasText: 'Logo' });
+    await expect(restoreBtn).toBeVisible();
+    await restoreBtn.click();
+
+    // The logo should be visible again
+    await expect(page.locator('.logo')).toBeVisible();
+
+    // The restore bar should disappear (no more deleted elements)
+    await expect(page.locator('.restore-bar')).not.toBeVisible();
+  });
+
+  test('persists deleted elements across save and reload', async ({ page }) => {
+    // Select the logo element
+    const logoBtn = page.locator('.lep-el').filter({ hasText: 'Logo' });
+    await logoBtn.click();
+
+    // Delete the logo
+    const deleteBtn = page.locator('.logo .delete-btn');
+    await deleteBtn.click();
+    await expect(page.locator('.logo')).not.toBeVisible();
+
+    // Save as overwrite to default
+    const saveAsCheckbox = page.locator('input[type="checkbox"]');
+    await saveAsCheckbox.click();
+    await page.locator('.lep-btn.lep-btn-primary').click();
+    await expect(page.locator('.lep-btn.lep-btn-primary')).toHaveText('Done');
+
+    // Verify the saved file contains data-hidden
+    let savedContent = readFileSync(defaultLayoutPath, 'utf-8');
+    if (!savedContent.includes('data-hidden="logo"')) {
+      // Maybe it was saved to e2e/layouts/ instead
+      savedContent = readFileSync(resolve(e2eLayoutsDir, 'default.vue'), 'utf-8');
+    }
+    expect(savedContent).toContain('data-hidden="logo"');
+    console.error('DEBUG test10 saved file has data-hidden:', savedContent.includes('data-hidden="logo"'));
+
+    // Reload the page
+    await page.reload();
+    await page.waitForSelector('.content', { timeout: 15000 });
+    await page.waitForTimeout(2000);
+
+    // Debug: check the DOM state after reload
+    const debugState = await page.evaluate(() => {
+      const el = document.querySelector('.slidev-layout');
+      return {
+        classList: [...(el?.classList || [])].join(','),
+        style: el?.getAttribute('style'),
+        dataHidden: el?.getAttribute('data-hidden'),
+        hasLogo: !!document.querySelector('.logo'),
+        logoVisible: document.querySelector('.logo') ? getComputedStyle(document.querySelector('.logo')!).display !== 'none' : 'no-element',
+      };
+    });
+    console.error('DEBUG test10 after reload:', debugState);
+
+    // Ensure editor is closed (Slidev persists state in localStorage across reload)
+    const hideBtn = page.locator('button').filter({ hasText: 'Hide editor' });
+    if (await hideBtn.isVisible()) {
+      await hideBtn.click();
+    }
+
+    // Open editor and go to layout tab
+    await page.locator('button:has-text("Show editor")').click();
+    await page.locator('button:has-text("Switch to layout tab")').click();
+    await page.waitForSelector('.layout-editor-panel', { timeout: 30000 });
+
+    // The logo should be hidden (not visible)
+    await expect(page.locator('.logo')).not.toBeVisible();
+
+    // The restore bar should show the logo
+    await expect(page.locator('.restore-bar')).toBeVisible();
+    const restoreBtn = page.locator('.restore-btn').filter({ hasText: 'Logo' });
+    await expect(restoreBtn).toBeVisible();
+
+    // Restore the logo
+    await restoreBtn.click();
+    await expect(page.locator('.logo')).toBeVisible();
+    await expect(page.locator('.restore-bar')).not.toBeVisible();
+  });
+
+  test('auto-reloads and renders new layout after saving', async ({ page }) => {
+    // Move the title to a known position
+    const titleBtn = page.locator('.lep-el').filter({ hasText: 'Title' });
+    await titleBtn.click();
+
+    const yInput = page.locator('.lep-props label').filter({ hasText: 'Y:' }).locator('input');
+    const initialY = parseInt(await yInput.inputValue(), 10);
+    const expectedY = initialY + 50;
+    await yInput.fill(String(expectedY));
+    await page.keyboard.press('Tab');
+
+    // Save as new layout (triggers auto-reload)
+    const layoutName = `test-layout-${Date.now()}`;
+    await page.locator('.lep-name-row input').fill(layoutName);
+
+    // Click Save and wait for the auto-reload navigation to complete
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'load', timeout: 30000 }),
+      page.locator('.lep-btn.lep-btn-primary').click(),
+    ]);
+
+    // Wait for content to initialize
+    await page.waitForTimeout(3000);
+
+    // The editor state persists across reload. Open to layout tab.
+    if (await page.locator('button:has-text("Hide editor")').isVisible().catch(() => false)) {
+      // Editor already open — ensure layout tab is active
+      const layoutTab = page.locator('button:has-text("Switch to layout tab")');
+      const layoutPanel = page.locator('.layout-editor-panel');
+      if (!(await layoutPanel.isVisible().catch(() => false))) {
+        await layoutTab.click();
+      }
+    } else {
+      // Editor closed — open and switch to layout tab
+      await page.locator('button:has-text("Show editor")').click();
+      await page.locator('button:has-text("Switch to layout tab")').click();
+    }
+    await page.waitForSelector('.layout-editor-panel', { timeout: 10000 });
+
+    // Check the saved layout file has the expected Y position
+    let savedPath = resolve(rootLayoutsDir, `${layoutName}.vue`);
+    if (!existsSync(savedPath)) {
+      savedPath = resolve(e2eLayoutsDir, `${layoutName}.vue`);
+    }
+    expect(existsSync(savedPath)).toBe(true);
+    const savedContent = readFileSync(savedPath, 'utf-8');
+    expect(savedContent).toContain(`--ed-title-y: ${expectedY}px`);
+
+    // Check the page's root style and data-styles (which layout is actually being used?)
+    const rootDebug = await page.evaluate(() => {
+      const el = document.querySelector('.slidev-layout');
+      return {
+        classList: [...(el?.classList || [])].join(','),
+        style: el?.getAttribute('style') || 'no-style',
+        dataStyles: el?.getAttribute('data-styles') || 'no-data-styles',
+      };
+    });
+    console.error('DEBUG root layout:', rootDebug);
+
+    // Select title and verify Y position was restored from the saved style attribute
+    await page.locator('.lep-el').filter({ hasText: 'Title' }).click();
+    const restoredY = parseInt(await yInput.inputValue(), 10);
+    console.error('DEBUG Y:', { expectedY, restoredY, initialY });
+    // The position should match what we saved (allowing a small rounding difference)
+    expect(Math.abs(restoredY - expectedY)).toBeLessThanOrEqual(2);
+  });
+
 });

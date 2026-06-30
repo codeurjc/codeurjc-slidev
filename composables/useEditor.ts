@@ -49,6 +49,8 @@ const ELEMENTS: Record<string, {
       `top: ${pos.y}px`,
       `left: ${pos.x}px`,
       'margin: 0',
+      `width: ${pos.w}px`,
+      'overflow-wrap: break-word',
       'font-weight: 700',
       'color: #cb0017',
       'font-size: 1.5rem',
@@ -59,18 +61,21 @@ const ELEMENTS: Record<string, {
     color: '#16a34a',
     initial: { x: 24, y: 80, w: 700, h: 400 },
     cssOutput: (pos) => [
-      `padding-top: ${pos.y}px`,
-      `padding-right: ${pos.x}px`,
-      'padding-left: 24px',
+      `margin-top: ${pos.y}px`,
+      `margin-left: ${pos.x}px`,
+      `width: ${pos.w}px`,
+      `min-height: ${pos.h}px`,
     ].map(l => `  ${l};`).join('\n'),
   },
 }
 
 const _sharedEditing = ref(false)
 const _sharedSelected = ref<string | null>(null)
+const _sharedHidden = reactive<Record<string, boolean>>({})
 const _sharedPositions = reactive<Record<string, Rect>>({})
 for (const key of Object.keys(ELEMENTS)) {
   _sharedPositions[key] = { ...ELEMENTS[key].initial }
+  _sharedHidden[key] = false
 }
 const _sharedUndoStack = ref<Record<string, Rect>[]>([])
 const _sharedUndoCheckpoint = ref<Record<string, Rect> | null>(null)
@@ -79,6 +84,7 @@ export function useEditor() {
   const editing = _sharedEditing
   const selected = _sharedSelected
   const positions = _sharedPositions
+  const hidden = _sharedHidden
 
   const dragState = ref<{
     el: string
@@ -229,8 +235,12 @@ export function useEditor() {
     return {
       '--ed-title-x': t ? `${t.x}px` : '24px',
       '--ed-title-y': t ? `${t.y}px` : '20px',
-      '--ed-content-py': c ? `${c.y}px` : '80px',
-      '--ed-content-pr': c ? `${c.x}px` : '0px',
+      '--ed-title-w': t ? `${t.w}px` : 'auto',
+      '--ed-title-h': t ? `${t.h}px` : 'auto',
+      '--ed-content-y': c ? `${c.y}px` : '80px',
+      '--ed-content-x': c ? `${c.x}px` : '24px',
+      '--ed-content-w': c ? `${c.w}px` : '700px',
+      '--ed-content-h': c ? `${c.h}px` : '200px',
       '--ed-logo-y': l ? `${l.y}px` : '20px',
       '--ed-logo-rx': l ? `${l.x}px` : '24px',
       '--ed-red-h': r ? `${r.h}px` : '10px',
@@ -243,6 +253,18 @@ export function useEditor() {
       if (!p) return ''
       return `.${name} {\n${el.cssOutput(p)}\n}`
     }).join('\n\n')
+  }
+
+  function removeElement(name: string) {
+    _sharedHidden[name] = !_sharedHidden[name]
+  }
+
+  function setHidden(h: Record<string, boolean>) {
+    for (const [key, val] of Object.entries(h)) {
+      if (key in _sharedHidden) {
+        _sharedHidden[key] = val
+      }
+    }
   }
 
   const saving = ref(false)
@@ -278,7 +300,7 @@ export function useEditor() {
   const saveAs = ref(true)
   const saveLayoutName = ref('')
 
-  async function saveLayout() {
+  async function saveLayout(hiddenOverride?: Record<string, boolean>) {
     saving.value = true
     saved.value = false
     try {
@@ -287,6 +309,7 @@ export function useEditor() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           positions: { ...positions },
+          hidden: hiddenOverride ?? { ...hidden },
           saveAs: saveAs.value,
           layoutName: saveLayoutName.value,
         }),
@@ -316,10 +339,15 @@ export function useEditor() {
     undoCheckpoint.value = null
   }
 
+  function updateSnapshot() {
+    snapshot.value = clonePositions()
+  }
+
   return {
     editing,
     selected,
     positions,
+    hidden,
     elementNames,
     saving,
     saved,
@@ -336,5 +364,8 @@ export function useEditor() {
     resetLayout,
     undo,
     clearUndo,
+    removeElement,
+    setHidden,
+    updateSnapshot,
   }
 }

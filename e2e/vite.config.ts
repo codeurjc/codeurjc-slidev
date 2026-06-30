@@ -7,8 +7,8 @@ const __dirname = resolve(import.meta.dirname, '..')
 const VAR_MAP: Record<string, Record<string, string>> = {
   'red-bar': { h: '--ed-red-h' },
   logo: { y: '--ed-logo-y', x: '--ed-logo-rx' },
-  title: { y: '--ed-title-y', x: '--ed-title-x' },
-  content: { y: '--ed-content-py', x: '--ed-content-pr' },
+  title: { y: '--ed-title-y', x: '--ed-title-x', w: '--ed-title-w', h: '--ed-title-h' },
+  content: { y: '--ed-content-y', x: '--ed-content-x', w: '--ed-content-w', h: '--ed-content-h' },
 }
 
 const customSideEditorPath = resolve(__dirname, '_override/SideEditor.vue')
@@ -38,28 +38,57 @@ export default {
           const chunks: Buffer[] = []
           for await (const chunk of req) chunks.push(chunk)
           const body = JSON.parse(Buffer.concat(chunks).toString())
-          const { readFileSync, writeFileSync } = await import('fs')
+          const { readFileSync, writeFileSync, realpathSync } = await import('fs')
           const { resolve: resolvePath } = await import('path')
           const layoutDir = resolvePath(import.meta.dirname, 'layouts')
           const layoutPath = resolvePath(layoutDir, 'default.vue')
           let content = readFileSync(layoutPath, 'utf-8')
 
-          for (const [name, pos] of Object.entries(body.positions)) {
-            const map = VAR_MAP[name]
-            if (!map) continue
+          // Build inline style attribute value with CSS variable overrides
+          // Exclude position variables for hidden elements
+          const hidden = body.hidden || {}
+          const styleParts: string[] = []
+          for (const [name, map] of Object.entries(VAR_MAP)) {
+            if (hidden[name]) continue
+            const pos = body.positions[name]
+            if (!pos) continue
             for (const [prop, cssVar] of Object.entries(map)) {
               const val = pos[prop]
               if (val !== undefined) {
-                content = content.replace(
-                  new RegExp(`(${cssVar},\\s*)[\\d.]+px`, 'g'),
-                  `$1${val}px`,
-                )
+                styleParts.push(`${cssVar}: ${val}px`)
               }
             }
+          }
+          if (hidden.title) {
+            styleParts.push('--ed-title-d: none')
+          }
+
+          if (styleParts.length > 0) {
+            const newStyle = styleParts.join('; ')
+            // Replace data-styles (used by onMounted to restore positions)
+            content = content.replace(/data-styles="[^"]*"/, `data-styles="${newStyle}"`)
+            // Replace the existing style="..." attribute on the root div with updated values
+            content = content.replace(
+              /style="[^"]*"\s*(:style=")/,
+              `style="${newStyle}" $1`
+            )
+          }
+
+          // Persist hidden state as data-hidden attribute on root div
+          const hiddenNames = Object.entries(hidden)
+            .filter(([_, v]) => v)
+            .map(([k]) => k)
+          content = content.replace(/\s*data-hidden="[^"]*"/, '')
+          if (hiddenNames.length > 0) {
+            content = content.replace(
+              /(class="slidev-layout default[^"]*"\s*)/,
+              `$1data-hidden="${hiddenNames.join(',')}" `
+            )
           }
 
           let layoutName = 'default'
           const saveAs = body.saveAs !== false
+          let writtenPath: string | null = null
 
           if (saveAs) {
             let name: string
@@ -72,10 +101,19 @@ export default {
             if (existsSync(resolvePath(layoutDir, `${name}.vue`))) {
               name = `${name}-${Date.now()}`
             }
-            writeFileSync(resolvePath(layoutDir, `${name}.vue`), content, 'utf-8')
+            writtenPath = resolvePath(layoutDir, `${name}.vue`)
+            writeFileSync(writtenPath, content, 'utf-8')
             layoutName = name
           } else {
+            writtenPath = layoutPath
             writeFileSync(layoutPath, content, 'utf-8')
+          }
+
+          // Notify Vite's file watcher so HMR picks up the change
+          if (writtenPath && server) {
+            const { realpathSync } = await import('fs')
+            const realPath = realpathSync(resolvePath(writtenPath))
+            server.watcher.emit('change', resolvePath(realPath))
           }
 
           res.statusCode = 200

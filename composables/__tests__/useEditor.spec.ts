@@ -99,6 +99,48 @@ describe('useEditor', () => {
     expect(canUndo.value).toBe(false)
   })
 
+  it('rootStyle includes title and content width/height when editing', () => {
+    const { editing, rootStyle } = useEditor()
+    editing.value = true
+    const style = rootStyle.value
+    expect(style['--ed-title-w']).toMatch(/\d+px/)
+    expect(style['--ed-title-h']).toMatch(/\d+px/)
+    expect(style['--ed-content-w']).toMatch(/\d+px/)
+    expect(style['--ed-content-h']).toMatch(/\d+px/)
+  })
+
+  it('resize updates title width and height', () => {
+    const { startResize, editing, clearUndo, positions } = useEditor()
+    clearUndo()
+    editing.value = true
+    const origW = positions.title.w
+    const origH = positions.title.h
+    const mouseDown = new MouseEvent('mousedown', { clientX: 100, clientY: 100 })
+    startResize(mouseDown, 'title')
+    const mouseMove = new MouseEvent('mousemove', { clientX: 150, clientY: 130 })
+    window.dispatchEvent(mouseMove)
+    const mouseUp = new MouseEvent('mouseup')
+    window.dispatchEvent(mouseUp)
+    expect(positions.title.w).toBeGreaterThan(origW)
+    expect(positions.title.h).toBeGreaterThan(origH)
+  })
+
+  it('resize updates content width and height', () => {
+    const { startResize, editing, clearUndo, positions } = useEditor()
+    clearUndo()
+    editing.value = true
+    const origW = positions.content.w
+    const origH = positions.content.h
+    const mouseDown = new MouseEvent('mousedown', { clientX: 100, clientY: 100 })
+    startResize(mouseDown, 'content')
+    const mouseMove = new MouseEvent('mousemove', { clientX: 200, clientY: 150 })
+    window.dispatchEvent(mouseMove)
+    const mouseUp = new MouseEvent('mouseup')
+    window.dispatchEvent(mouseUp)
+    expect(positions.content.w).toBeGreaterThan(origW)
+    expect(positions.content.h).toBeGreaterThan(origH)
+  })
+
   it('saveLayout updates saveLayoutName on success', async () => {
     const { saveLayout, saveLayoutName } = useEditor()
     

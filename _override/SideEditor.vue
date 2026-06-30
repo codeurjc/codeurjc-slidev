@@ -60,9 +60,41 @@ async function save() {
 }
 
 async function onSaveLayout() {
-  const result = await editor.saveLayout()
-  if (result?.layoutName && result.layoutName !== 'default') {
-    await update({ frontmatter: { layout: result.layoutName } })
+  // Read hidden state from data-hidden attribute on the slide element
+  const layoutEl = document.querySelector('.slidev-layout.default')
+  const hiddenStr = layoutEl?.getAttribute('data-hidden') || ''
+  const hiddenList = hiddenStr ? hiddenStr.split(',') : []
+  const hidden = Object.fromEntries(
+    Object.keys(editor.positions).map(k => [k, hiddenList.includes(k)])
+  )
+
+  editor.saving.value = true
+  editor.saved.value = false
+  try {
+    const resp = await fetch('/api/save-layout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        positions: { ...editor.positions },
+        hidden,
+        saveAs: editor.saveAs.value,
+        layoutName: editor.saveLayoutName.value,
+      }),
+    })
+    if (resp.ok) {
+      const result = await resp.json()
+      editor.saveLayoutName.value = result?.layoutName || ''
+      if (result?.layoutName && result.layoutName !== 'default') {
+        await update({ frontmatter: { layout: result.layoutName }, skipHmr: true })
+        // Wait for chokidar to process slides.md changes before reloading
+        await new Promise(r => setTimeout(r, 200))
+        window.location.reload()
+      }
+    }
+  } finally {
+    editor.saving.value = false
+    editor.saved.value = true
+    setTimeout(() => { editor.saved.value = false }, 2000)
   }
 }
 
@@ -411,4 +443,5 @@ throttledWatch(
 .lep-btn-primary:hover {
   background: #1d4ed8;
 }
+
 </style>
