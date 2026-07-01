@@ -68,6 +68,8 @@ async function onSaveLayout() {
     Object.keys(editor.positions).map(k => [k, hiddenList.includes(k)])
   )
 
+  const currentLayout = info.value?.frontmatter?.layout || 'default'
+
   editor.saving.value = true
   editor.saved.value = false
   try {
@@ -79,12 +81,13 @@ async function onSaveLayout() {
         hidden,
         saveAs: editor.saveAs.value,
         layoutName: editor.saveLayoutName.value,
+        currentLayout,
       }),
     })
     if (resp.ok) {
       const result = await resp.json()
       editor.saveLayoutName.value = result?.layoutName || ''
-      if (result?.layoutName && result.layoutName !== 'default') {
+      if (editor.saveAs.value && result?.layoutName && result.layoutName !== currentLayout) {
         await update({ frontmatter: { layout: result.layoutName }, skipHmr: true })
         // Wait for chokidar to process slides.md changes before reloading
         await new Promise(r => setTimeout(r, 200))

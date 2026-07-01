@@ -280,16 +280,27 @@ test.describe('Layout Editor E2E', () => {
     const newY = parseInt(await yInput.inputValue(), 10);
     expect(newY).toBeGreaterThan(initialY);
 
-    // Uncheck "Save as new layout" to overwrite default.vue
+    // Uncheck "Save as new layout" to overwrite the currently active layout
     const saveAsCheckbox = page.locator('input[type="checkbox"]');
     await saveAsCheckbox.click();
+
+    // Capture which layout the overwrite actually targets (may not be "default"
+    // if a prior test switched the slide to a different saved layout)
+    const requestPromise = page.waitForRequest(req => req.url().includes('/api/save-layout'));
 
     // Click Save
     await page.locator('.lep-btn.lep-btn-primary').click();
     await expect(page.locator('.lep-btn.lep-btn-primary')).toHaveText('Done');
 
-    // Verify the saved default.vue contains the new content Y
-    const savedContent = readFileSync(defaultLayoutPath, 'utf-8');
+    const request = await requestPromise;
+    const currentLayout = JSON.parse(request.postData() || '{}').currentLayout || 'default';
+
+    // Verify the currently active layout file contains the new content Y
+    let savedPath = resolve(rootLayoutsDir, `${currentLayout}.vue`);
+    if (!existsSync(savedPath)) {
+      savedPath = resolve(e2eLayoutsDir, `${currentLayout}.vue`);
+    }
+    const savedContent = readFileSync(savedPath, 'utf-8');
     expect(savedContent).toContain(`--ed-content-y: ${newY}px;`);
   });
 
@@ -333,18 +344,21 @@ test.describe('Layout Editor E2E', () => {
     await deleteBtn.click();
     await expect(page.locator('.logo')).not.toBeVisible();
 
-    // Save as overwrite to default
+    // Save as overwrite to the currently active layout
     const saveAsCheckbox = page.locator('input[type="checkbox"]');
     await saveAsCheckbox.click();
+    const requestPromise = page.waitForRequest(req => req.url().includes('/api/save-layout'));
     await page.locator('.lep-btn.lep-btn-primary').click();
     await expect(page.locator('.lep-btn.lep-btn-primary')).toHaveText('Done');
+    const request = await requestPromise;
+    const currentLayout = JSON.parse(request.postData() || '{}').currentLayout || 'default';
 
     // Verify the saved file contains data-hidden
-    let savedContent = readFileSync(defaultLayoutPath, 'utf-8');
-    if (!savedContent.includes('data-hidden="logo"')) {
-      // Maybe it was saved to e2e/layouts/ instead
-      savedContent = readFileSync(resolve(e2eLayoutsDir, 'default.vue'), 'utf-8');
+    let savedPath = resolve(rootLayoutsDir, `${currentLayout}.vue`);
+    if (!existsSync(savedPath)) {
+      savedPath = resolve(e2eLayoutsDir, `${currentLayout}.vue`);
     }
+    const savedContent = readFileSync(savedPath, 'utf-8');
     expect(savedContent).toContain('data-hidden="logo"');
     console.error('DEBUG test10 saved file has data-hidden:', savedContent.includes('data-hidden="logo"'));
 

@@ -38,7 +38,8 @@ export default {
           const { readFileSync, writeFileSync, realpathSync } = await import('fs')
           const { resolve: resolvePath } = await import('path')
           const layoutDir = resolvePath(import.meta.dirname, 'layouts')
-          const layoutPath = resolvePath(layoutDir, 'default.vue')
+          const currentLayoutName = (body.currentLayout && String(body.currentLayout).trim()) || 'default'
+          const layoutPath = resolvePath(layoutDir, `${currentLayoutName}.vue`)
           let content = readFileSync(layoutPath, 'utf-8')
 
           // Build inline style attribute value with CSS variable overrides
@@ -65,10 +66,7 @@ export default {
             // Replace data-styles (used by onMounted to restore positions)
             content = content.replace(/data-styles="[^"]*"/, `data-styles="${newStyle}"`)
             // Replace the existing style="..." attribute on the root div with updated values
-            content = content.replace(
-              /style="[^"]*"\s*(:style=")/,
-              `style="${newStyle}" $1`
-            )
+            content = content.replace(/style="[^"]*"/, `style="${newStyle}"`)
           }
 
           // Persist hidden state as data-hidden attribute on root div
@@ -83,7 +81,7 @@ export default {
             )
           }
 
-          let layoutName = 'default'
+          let layoutName = currentLayoutName
           const saveAs = body.saveAs !== false
           let writtenPath: string | null = null
 
@@ -108,11 +106,12 @@ export default {
 
           // Invalidate the layout module so Vite re-reads it from disk
           if (writtenPath && server) {
-            const { realpathSync } = await import('fs')
             const realPath = realpathSync(resolvePath(writtenPath))
-            const mod = server.moduleGraph.getModuleByPath(realPath)
-            if (mod) {
-              server.moduleGraph.invalidateModule(mod)
+            const mods = server.moduleGraph.getModulesByFile(realPath)
+            if (mods) {
+              for (const mod of mods) {
+                server.moduleGraph.invalidateModule(mod)
+              }
             }
             server.watcher.emit('change', resolvePath(realPath))
           }
