@@ -156,6 +156,57 @@ describe('useEditor', () => {
     expect(positions.content.h).toBeGreaterThan(origH)
   })
 
+  it('removeElement hides an element and enables undo', () => {
+    const { removeElement, hidden, canUndo, clearUndo } = useEditor()
+    clearUndo()
+    hidden.logo = false
+    removeElement('logo')
+    expect(hidden.logo).toBe(true)
+    expect(canUndo.value).toBe(true)
+  })
+
+  it('undo restores a deleted element', () => {
+    const { removeElement, undo, hidden, clearUndo } = useEditor()
+    clearUndo()
+    hidden.logo = false
+    removeElement('logo')
+    expect(hidden.logo).toBe(true)
+    undo()
+    expect(hidden.logo).toBe(false)
+  })
+
+  it('removeElement clears selection if the removed element was selected', () => {
+    const { removeElement, selected, hidden, clearUndo } = useEditor()
+    clearUndo()
+    hidden.logo = false
+    selected.value = 'logo'
+    removeElement('logo')
+    expect(selected.value).toBeNull()
+  })
+
+  it('undo restores both position and hidden state from the same checkpoint', () => {
+    const { startDrag, removeElement, undo, positions, hidden, editing, clearUndo } = useEditor()
+    clearUndo()
+    hidden.content = false
+    editing.value = true
+    const origY = positions.title.y
+
+    const mouseDown = new MouseEvent('mousedown', { clientX: 100, clientY: 100 })
+    startDrag(mouseDown, 'title')
+    const mouseMove = new MouseEvent('mousemove', { clientX: 100, clientY: 150 })
+    window.dispatchEvent(mouseMove)
+    window.dispatchEvent(new MouseEvent('mouseup'))
+    expect(positions.title.y).not.toBe(origY)
+
+    removeElement('content')
+    expect(hidden.content).toBe(true)
+
+    undo()
+    expect(hidden.content).toBe(false)
+    // The drag was a separate, already-committed checkpoint
+    expect(positions.title.y).not.toBe(origY)
+  })
+
   it('saveLayout updates saveLayoutName on success', async () => {
     const { saveLayout, saveLayoutName } = useEditor()
     

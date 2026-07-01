@@ -304,7 +304,7 @@ test.describe('Layout Editor E2E', () => {
     expect(savedContent).toContain(`--ed-content-y: ${newY}px;`);
   });
 
-  test('can delete element and restore it', async ({ page }) => {
+  test('can delete an element and restore it with Undo while editing', async ({ page }) => {
     // Select the logo element
     const logoBtn = page.locator('.lep-el').filter({ hasText: 'Logo' });
     await logoBtn.click();
@@ -316,25 +316,22 @@ test.describe('Layout Editor E2E', () => {
     const deleteBtn = page.locator('.logo .delete-btn');
     await deleteBtn.click();
 
-    // The logo should no longer be visible
+    // The logo should no longer be visible, and there is no restore-bar UI
     await expect(page.locator('.logo')).not.toBeVisible();
+    await expect(page.locator('.restore-bar')).toHaveCount(0);
 
-    // The restore bar should appear in the slide
-    await expect(page.locator('.restore-bar')).toBeVisible();
+    // It should also disappear from the Elements list in the panel
+    await expect(page.locator('.lep-el').filter({ hasText: 'Logo' })).toHaveCount(0);
 
-    // Click the restore button for logo
-    const restoreBtn = page.locator('.restore-btn').filter({ hasText: 'Logo' });
-    await expect(restoreBtn).toBeVisible();
-    await restoreBtn.click();
-
-    // The logo should be visible again
+    // Undo brings it back, in the slide and in the Elements list
+    const undoBtn = page.locator('.lep-btn').filter({ hasText: 'Undo' });
+    await expect(undoBtn).toBeEnabled();
+    await undoBtn.click();
     await expect(page.locator('.logo')).toBeVisible();
-
-    // The restore bar should disappear (no more deleted elements)
-    await expect(page.locator('.restore-bar')).not.toBeVisible();
+    await expect(page.locator('.lep-el').filter({ hasText: 'Logo' })).toBeVisible();
   });
 
-  test('persists deleted elements across save and reload', async ({ page }) => {
+  test('deleting and saving strips the element from the layout file permanently', async ({ page }) => {
     // Select the logo element
     const logoBtn = page.locator('.lep-el').filter({ hasText: 'Logo' });
     await logoBtn.click();
@@ -353,56 +350,32 @@ test.describe('Layout Editor E2E', () => {
     const request = await requestPromise;
     const currentLayout = JSON.parse(request.postData() || '{}').currentLayout || 'default';
 
-    // Verify the saved file contains data-hidden
+    // The saved file should no longer contain the logo's markup at all
     let savedPath = resolve(rootLayoutsDir, `${currentLayout}.vue`);
     if (!existsSync(savedPath)) {
       savedPath = resolve(e2eLayoutsDir, `${currentLayout}.vue`);
     }
     const savedContent = readFileSync(savedPath, 'utf-8');
     expect(savedContent).toContain('data-hidden="logo"');
-    console.error('DEBUG test10 saved file has data-hidden:', savedContent.includes('data-hidden="logo"'));
+    expect(savedContent).not.toContain('class="logo"');
+    expect(savedContent).not.toContain('ed:logo:start');
 
-    // Reload the page
+    // Reload the page: the logo is gone for good, with no way to restore it
     await page.reload();
     await page.waitForSelector('.content', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
-    // Debug: check the DOM state after reload
-    const debugState = await page.evaluate(() => {
-      const el = document.querySelector('.slidev-layout');
-      return {
-        classList: [...(el?.classList || [])].join(','),
-        style: el?.getAttribute('style'),
-        dataHidden: el?.getAttribute('data-hidden'),
-        hasLogo: !!document.querySelector('.logo'),
-        logoVisible: document.querySelector('.logo') ? getComputedStyle(document.querySelector('.logo')!).display !== 'none' : 'no-element',
-      };
-    });
-    console.error('DEBUG test10 after reload:', debugState);
-
-    // Ensure editor is closed (Slidev persists state in localStorage across reload)
     const hideBtn = page.locator('button').filter({ hasText: 'Hide editor' });
     if (await hideBtn.isVisible()) {
       await hideBtn.click();
     }
 
-    // Open editor and go to layout tab
     await page.locator('button:has-text("Show editor")').click();
     await page.locator('button:has-text("Switch to layout tab")').click();
     await page.waitForSelector('.layout-editor-panel', { timeout: 30000 });
 
-    // The logo should be hidden (not visible)
-    await expect(page.locator('.logo')).not.toBeVisible();
-
-    // The restore bar should show the logo
-    await expect(page.locator('.restore-bar')).toBeVisible();
-    const restoreBtn = page.locator('.restore-btn').filter({ hasText: 'Logo' });
-    await expect(restoreBtn).toBeVisible();
-
-    // Restore the logo
-    await restoreBtn.click();
-    await expect(page.locator('.logo')).toBeVisible();
-    await expect(page.locator('.restore-bar')).not.toBeVisible();
+    await expect(page.locator('.logo')).toHaveCount(0);
+    await expect(page.locator('.restore-bar')).toHaveCount(0);
   });
 
   test('auto-reloads and renders new layout after saving', async ({ page }) => {
@@ -580,6 +553,39 @@ test.describe('Layout Editor E2E', () => {
     const restoredH = await hInput.inputValue();
     expect(parseFloat(restoredW)).toBeCloseTo(parseFloat(savedW), 0);
     expect(parseFloat(restoredH)).toBeCloseTo(parseFloat(savedH), 0);
+  });
+
+  test('content tab reflects the new layout frontmatter after saving as a new layout', async ({ page }) => {
+    // Drag the title a bit so the save isn't a no-op
+    await page.locator('.lep-el').filter({ hasText: 'Title' }).click();
+    const titleOverlay = page.locator('.title-overlay');
+    const box = await titleOverlay.boundingBox();
+    if (!box) throw new Error('title-overlay not found');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2 + 40, { steps: 10 });
+    await page.mouse.up();
+
+    // Save as new layout (triggers auto-reload)
+    const layoutName = `test-layout-${Date.now()}`;
+    await page.locator('.lep-name-row input').fill(layoutName);
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'load', timeout: 30000 }),
+      page.locator('.lep-btn.lep-btn-primary').click(),
+    ]);
+    await page.waitForTimeout(2000);
+
+    // Open the editor and switch to the content tab
+    if (!(await page.locator('button:has-text("Hide editor")').isVisible().catch(() => false))) {
+      await page.locator('button:has-text("Show editor")').click();
+    }
+    await page.locator('button:has-text("Switch to content tab")').click();
+    await page.waitForTimeout(1000);
+
+    // Regression guard: the markdown shown in the content editor must reflect
+    // the new "layout:" frontmatter, not the stale value from before the save
+    const shownText = await page.locator('textarea').first().inputValue();
+    expect(shownText).toContain(`layout: ${layoutName}`);
   });
 
 });

@@ -63,6 +63,9 @@ export default {
           if (hidden.title) {
             styleParts.push('--ed-title-d: none')
           }
+          if (hidden.content) {
+            styleParts.push('--ed-content-d: none')
+          }
 
           if (styleParts.length > 0) {
             const newStyle = styleParts.join('; ')
@@ -82,6 +85,15 @@ export default {
               /(class="slidev-layout default[^"]*"\s*)/,
               `$1data-hidden="${hiddenNames.join(',')}" `
             )
+          }
+
+          // Deleted elements are stripped from the template entirely (not just
+          // hidden), so they can't be restored after a reload -- only Undo
+          // during the same editing session can bring them back.
+          for (const name of ['red-bar', 'logo']) {
+            if (!hidden[name]) continue
+            const markerRe = new RegExp(`\\n?\\s*<!-- ed:${name}:start -->[\\s\\S]*?<!-- ed:${name}:end -->\\n?`)
+            content = content.replace(markerRe, '\n')
           }
 
           let layoutName = currentLayoutName

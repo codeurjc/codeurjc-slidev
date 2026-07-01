@@ -69,6 +69,11 @@ const ELEMENTS: Record<string, {
   },
 }
 
+interface Snapshot {
+  positions: Record<string, Rect>
+  hidden: Record<string, boolean>
+}
+
 const _sharedEditing = ref(false)
 const _sharedSelected = ref<string | null>(null)
 const _sharedHidden = reactive<Record<string, boolean>>({})
@@ -77,8 +82,8 @@ for (const key of Object.keys(ELEMENTS)) {
   _sharedPositions[key] = { ...ELEMENTS[key].initial }
   _sharedHidden[key] = false
 }
-const _sharedUndoStack = ref<Record<string, Rect>[]>([])
-const _sharedUndoCheckpoint = ref<Record<string, Rect> | null>(null)
+const _sharedUndoStack = ref<Snapshot[]>([])
+const _sharedUndoCheckpoint = ref<Snapshot | null>(null)
 
 export function useEditor() {
   const editing = _sharedEditing
@@ -116,18 +121,19 @@ export function useEditor() {
   const canUndo = computed(() => undoStack.value.length > 0)
 
   function pushUndoCheckpoint() {
-    undoCheckpoint.value = clonePositions()
+    undoCheckpoint.value = { positions: clonePositions(), hidden: cloneHidden() }
   }
 
   function commitUndo() {
     if (undoCheckpoint.value) {
       // only push if something actually changed
       const c = undoCheckpoint.value
-      const changed = Object.keys(c).some(key =>
-        c[key].x !== positions[key].x || c[key].y !== positions[key].y ||
-        c[key].w !== positions[key].w || c[key].h !== positions[key].h
+      const positionsChanged = Object.keys(c.positions).some(key =>
+        c.positions[key].x !== positions[key].x || c.positions[key].y !== positions[key].y ||
+        c.positions[key].w !== positions[key].w || c.positions[key].h !== positions[key].h
       )
-      if (changed) undoStack.value.push(undoCheckpoint.value)
+      const hiddenChanged = Object.keys(c.hidden).some(key => c.hidden[key] !== hidden[key])
+      if (positionsChanged || hiddenChanged) undoStack.value.push(undoCheckpoint.value)
       undoCheckpoint.value = null
     }
   }
@@ -135,8 +141,11 @@ export function useEditor() {
   function undo() {
     const prev = undoStack.value.pop()
     if (!prev) return
-    for (const key of Object.keys(prev)) {
-      if (prev[key]) Object.assign(positions[key], prev[key])
+    for (const key of Object.keys(prev.positions)) {
+      if (prev.positions[key]) Object.assign(positions[key], prev.positions[key])
+    }
+    for (const key of Object.keys(prev.hidden)) {
+      hidden[key] = prev.hidden[key]
     }
   }
 
@@ -244,6 +253,8 @@ export function useEditor() {
       '--ed-logo-y': l ? `${l.y}px` : '20px',
       '--ed-logo-rx': l ? `${l.x}px` : '24px',
       '--ed-red-h': r ? `${r.h}px` : '10px',
+      '--ed-title-d': hidden.title ? 'none' : 'block',
+      '--ed-content-d': hidden.content ? 'none' : 'block',
     }
   })
 
@@ -256,7 +267,10 @@ export function useEditor() {
   }
 
   function removeElement(name: string) {
+    pushUndoCheckpoint()
     _sharedHidden[name] = !_sharedHidden[name]
+    if (_sharedHidden[name] && selected.value === name) selected.value = null
+    commitUndo()
   }
 
   function setHidden(h: Record<string, boolean>) {
@@ -278,22 +292,32 @@ export function useEditor() {
     return copy
   }
 
-  const snapshot = ref<Record<string, Rect>>(clonePositions())
+  function cloneHidden(): Record<string, boolean> {
+    return { ...hidden }
+  }
+
+  const snapshot = ref<Snapshot>({ positions: clonePositions(), hidden: cloneHidden() })
 
   const dirty = computed(() => {
     for (const key of Object.keys(positions)) {
       const p = positions[key]
-      const s = snapshot.value[key]
+      const s = snapshot.value.positions[key]
       if (!p || !s) return false
       if (p.x !== s.x || p.y !== s.y || p.w !== s.w || p.h !== s.h) return true
+    }
+    for (const key of Object.keys(hidden)) {
+      if (hidden[key] !== snapshot.value.hidden[key]) return true
     }
     return false
   })
 
   function resetLayout() {
-    for (const key of Object.keys(snapshot.value)) {
-      const s = snapshot.value[key]
+    for (const key of Object.keys(snapshot.value.positions)) {
+      const s = snapshot.value.positions[key]
       if (s) Object.assign(positions[key], s)
+    }
+    for (const key of Object.keys(snapshot.value.hidden)) {
+      hidden[key] = snapshot.value.hidden[key]
     }
   }
 
@@ -319,7 +343,7 @@ export function useEditor() {
         if (result?.layoutName) {
           saveLayoutName.value = result.layoutName
         }
-        snapshot.value = clonePositions()
+        snapshot.value = { positions: clonePositions(), hidden: cloneHidden() }
         saved.value = true
         setTimeout(() => { saved.value = false }, 2000)
         return result
@@ -340,7 +364,7 @@ export function useEditor() {
   }
 
   function updateSnapshot() {
-    snapshot.value = clonePositions()
+    snapshot.value = { positions: clonePositions(), hidden: cloneHidden() }
   }
 
   return {

@@ -24,12 +24,30 @@ const { info, update } = useDynamicSlideInfo(currentSlideNo)
 
 const editor = useEditor()
 
+const visibleElementNames = computed(() => editor.elementNames.value.filter(name => !editor.hidden[name]))
+
+// The layout editor patches frontmatter.layout via a skipHmr update (to avoid
+// a premature auto-reload racing with our own reload after saving a layout).
+// That leaves the server's cached frontmatterRaw stale until something else
+// forces a full reparse, so reconcile the displayed "layout:" line against
+// the authoritative resolved frontmatter.layout value.
+function reconcileLayoutLine(frontmatterRaw: string, layout: unknown): string {
+  if (typeof layout !== 'string') return frontmatterRaw
+  if (/^layout:.*$/m.test(frontmatterRaw)) {
+    return frontmatterRaw.replace(/^layout:.*$/m, `layout: ${layout}`)
+  }
+  return `layout: ${layout}\n${frontmatterRaw}`
+}
+
 watch(
   info,
   (v) => {
     if (!isInputting.value) {
       note.value = (v?.note || '').trim()
-      const frontmatterPart = v?.frontmatterRaw?.trim() ? `---\n${v.frontmatterRaw.trim()}\n---\n\n` : ''
+      const rawFrontmatter = v?.frontmatterRaw?.trim()
+        ? reconcileLayoutLine(v.frontmatterRaw.trim(), v.frontmatter?.layout)
+        : ''
+      const frontmatterPart = rawFrontmatter ? `---\n${rawFrontmatter}\n---\n\n` : ''
       content.value = frontmatterPart + (v?.source.contentRaw || '').trim()
       dirty.value = false
     }
@@ -88,6 +106,9 @@ async function onSaveLayout() {
       const result = await resp.json()
       editor.saveLayoutName.value = result?.layoutName || ''
       if (editor.saveAs.value && result?.layoutName && result.layoutName !== currentLayout) {
+        // skipHmr avoids an auto-triggered full reload racing with our own
+        // reload below; reconcileLayoutLine() works around the resulting
+        // stale frontmatterRaw when displaying the content tab.
         await update({ frontmatter: { layout: result.layoutName }, skipHmr: true })
         // Wait for chokidar to process slides.md changes before reloading
         await new Promise(r => setTimeout(r, 200))
@@ -235,7 +256,7 @@ throttledWatch(
         <div class="lep-section-label">Elements</div>
         <div class="lep-elements">
           <button
-            v-for="name in editor.elementNames.value"
+            v-for="name in visibleElementNames"
             :key="name"
             class="lep-el"
             :class="{ active: editor.selected.value === name }"

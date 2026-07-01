@@ -61,10 +61,11 @@ watch(editor.hidden, (v) => {
       ref="rootEl"
       class="slidev-layout default relative h-full w-full bg-white text-black"
       :class="{ editing: editor.editing.value }"
-      style="--ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 400px; --ed-title-h: 36px; --ed-title-d: block; --ed-content-y: 80px; --ed-content-x: 24px; --ed-content-w: 700px; --ed-content-h: 400px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-red-h: 10px;"
-      data-styles="--ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 400px; --ed-title-h: 36px; --ed-title-d: block; --ed-content-y: 80px; --ed-content-x: 24px; --ed-content-w: 700px; --ed-content-h: 400px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-red-h: 10px;"
+      style="--ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 400px; --ed-title-h: 36px; --ed-title-d: block; --ed-content-y: 80px; --ed-content-x: 24px; --ed-content-w: 700px; --ed-content-h: 400px; --ed-content-d: block; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-red-h: 10px;"
+      data-styles="--ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 400px; --ed-title-h: 36px; --ed-title-d: block; --ed-content-y: 80px; --ed-content-x: 24px; --ed-content-w: 700px; --ed-content-h: 400px; --ed-content-d: block; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-red-h: 10px;"
       :style="editor.editing.value ? editor.rootStyle.value : {}"
     >
+    <!-- ed:red-bar:start -->
     <div
       v-if="!editor.hidden['red-bar']"
       class="red-bar"
@@ -82,7 +83,9 @@ watch(editor.hidden, (v) => {
         @mousedown.stop="editor.removeElement('red-bar')"
       >✕</div>
     </div>
+    <!-- ed:red-bar:end -->
 
+    <!-- ed:logo:start -->
     <div
       v-if="!editor.hidden['logo']"
       class="logo"
@@ -101,6 +104,7 @@ watch(editor.hidden, (v) => {
         @mousedown.stop="editor.removeElement('logo')"
       >✕</div>
     </div>
+    <!-- ed:logo:end -->
 
     <div
       class="content"
@@ -148,12 +152,6 @@ watch(editor.hidden, (v) => {
       >✕</div>
     </div>
 
-    <div v-if="editor.editing.value && Object.values(editor.hidden).some(v => v)" class="restore-bar">
-      <span class="restore-label">Deleted:</span>
-      <template v-for="[name, isHidden] of Object.entries(editor.hidden)" :key="name">
-        <button v-if="isHidden" class="restore-btn" @mousedown.stop="editor.removeElement(name)">{{ { 'red-bar': 'Red Bar', logo: 'Logo', title: 'Title', content: 'Content' }[name] || name }}</button>
-      </template>
-    </div>
   </div>
 </template>
 
@@ -196,6 +194,7 @@ watch(editor.hidden, (v) => {
 }
 
 .content {
+  display: var(--ed-content-d, block);
   margin-top: var(--ed-content-y, 80px);
   margin-left: var(--ed-content-x, 24px);
   width: var(--ed-content-w, 700px);
@@ -289,42 +288,6 @@ watch(editor.hidden, (v) => {
   left: 50%;
   margin-left: -6px;
   cursor: ns-resize;
-}
-
-.restore-bar {
-  position: absolute;
-  bottom: 8px;
-  left: 8px;
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  background: rgba(0, 0, 0, 0.7);
-  padding: 4px 8px;
-  border-radius: 4px;
-  z-index: 200;
-  pointer-events: auto;
-}
-
-.restore-label {
-  font-size: 10px;
-  color: #ccc;
-  font-weight: 600;
-  margin-right: 4px;
-}
-
-.restore-btn {
-  font-size: 10px;
-  padding: 2px 6px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #f59e0b;
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.restore-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
 }
 
 .delete-btn {
