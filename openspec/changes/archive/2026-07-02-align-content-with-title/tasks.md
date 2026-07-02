@@ -66,4 +66,4 @@
 
 ## 10. Commit
 
-- [ ] 10.1 `git add -A && git commit` with a message describing the content/title alignment work and final content positioning defaults
+- [x] 10.1 `git add -A && git commit` with a message describing the content/title alignment work and final content positioning defaults — committed as `3de3caa` and pushed to `origin/main`
