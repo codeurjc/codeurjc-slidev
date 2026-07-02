@@ -84,8 +84,8 @@ watch(editor.aspectLocked, (v) => {
       ref="rootEl"
       class="slidev-layout default relative h-full w-full bg-white text-black"
       :class="{ editing: editor.editing.value }"
-      style="--ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 400px; --ed-title-h: 36px; --ed-title-d: block; --ed-content-y: 80px; --ed-content-x: 24px; --ed-content-w: 700px; --ed-content-h: 400px; --ed-content-d: block; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px;"
-      data-styles="--ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 400px; --ed-title-h: 36px; --ed-title-d: block; --ed-content-y: 80px; --ed-content-x: 24px; --ed-content-w: 700px; --ed-content-h: 400px; --ed-content-d: block; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px;"
+      style="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 400px; --ed-title-h: 48px; --ed-content-y: 82px; --ed-content-x: 23px; --ed-content-w: 876px; --ed-content-h: 400px"
+      data-styles="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 400px; --ed-title-h: 48px; --ed-content-y: 82px; --ed-content-x: 23px; --ed-content-w: 876px; --ed-content-h: 400px"
       :style="editor.editing.value ? editor.rootStyle.value : {}"
     >
     <!-- ed:red-bar:start -->
@@ -179,8 +179,24 @@ watch(editor.aspectLocked, (v) => {
 </template>
 
 <style>
+/* Slidev's base theme applies px-14 py-10 (56px/40px) padding to every
+   .slidev-layout. red-bar/logo/title/content-overlay are all absolute and
+   ignore it, but .content (normal flow) doesn't — override it to 0 so
+   .content's own margin is the only source of its offset (matching
+   content-overlay's math exactly, both horizontally and vertically).
+   display: flow-root establishes a new block-formatting context so
+   .content's margin-top can't collapse through root now that there's no
+   padding acting as a collapse barrier (a plain padding: 0 override caused
+   exactly that regression previously — content jumped to y=0 and overlapped
+   the title). */
+.slidev-layout.default {
+  padding: 0;
+  display: flow-root;
+}
+
 .slidev-layout.default h1:first-child {
-  display: var(--ed-title-d, block);
+  display: var(--ed-title-d, flex);
+  align-items: center;
   position: absolute;
   top: var(--ed-title-y, 20px);
   left: var(--ed-title-x, 24px);
@@ -202,7 +218,7 @@ watch(editor.aspectLocked, (v) => {
 .title-overlay {
   position: absolute;
   width: var(--ed-title-w, 400px);
-  height: var(--ed-title-h, 36px);
+  height: var(--ed-title-h, 48px);
   cursor: move;
   outline: 2px dashed #2563eb;
   border-radius: 2px;
@@ -216,21 +232,24 @@ watch(editor.aspectLocked, (v) => {
   outline-style: solid;
 }
 
+/* Must stay position: static — the title <h1> is nested inside .content via
+   <slot />, and relies on .content being unpositioned so it can escape to
+   root as its containing block (see title's absolute positioning below). */
 .content {
   display: var(--ed-content-d, block);
   margin-top: var(--ed-content-y, 80px);
-  margin-left: var(--ed-content-x, 24px);
-  width: var(--ed-content-w, 700px);
+  margin-left: var(--ed-content-x, 0px);
+  width: var(--ed-content-w, 876px);
   min-height: var(--ed-content-h, 200px);
-  padding: 0 24px 24px;
+  padding: 0;
   overflow-wrap: break-word;
 }
 
 .content-overlay {
   position: absolute;
   top: var(--ed-content-y, 80px);
-  left: var(--ed-content-x, 24px);
-  width: var(--ed-content-w, 700px);
+  left: var(--ed-content-x, 0px);
+  width: var(--ed-content-w, 876px);
   min-height: var(--ed-content-h, 200px);
   cursor: move;
   outline: 2px dashed #16a34a;

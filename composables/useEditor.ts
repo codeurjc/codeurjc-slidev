@@ -45,13 +45,16 @@ const ELEMENTS: Record<string, {
   title: {
     label: 'Title',
     color: '#2563eb',
-    initial: { x: 24, y: 20, w: 400, h: 36 },
+    initial: { x: 24, y: 20, w: 400, h: 48 },
     cssOutput: (pos) => [
       'position: absolute',
       `top: ${pos.y}px`,
       `left: ${pos.x}px`,
       'margin: 0',
       `width: ${pos.w}px`,
+      `min-height: ${pos.h}px`,
+      'display: flex',
+      'align-items: center',
       'overflow-wrap: break-word',
       'font-weight: 700',
       'color: #cb0017',
@@ -61,7 +64,7 @@ const ELEMENTS: Record<string, {
   content: {
     label: 'Content',
     color: '#16a34a',
-    initial: { x: 24, y: 80, w: 700, h: 400 },
+    initial: { x: 0, y: 80, w: 876, h: 400 },
     cssOutput: (pos) => [
       `margin-top: ${pos.y}px`,
       `margin-left: ${pos.x}px`,
@@ -276,8 +279,8 @@ export function useEditor() {
       '--ed-title-w': t ? `${t.w}px` : 'auto',
       '--ed-title-h': t ? `${t.h}px` : 'auto',
       '--ed-content-y': c ? `${c.y}px` : '80px',
-      '--ed-content-x': c ? `${c.x}px` : '24px',
-      '--ed-content-w': c ? `${c.w}px` : '700px',
+      '--ed-content-x': c ? `${c.x}px` : '0px',
+      '--ed-content-w': c ? `${c.w}px` : '876px',
       '--ed-content-h': c ? `${c.h}px` : '200px',
       '--ed-logo-y': l ? `${l.y}px` : '20px',
       '--ed-logo-rx': l ? `${l.x}px` : '24px',
@@ -287,7 +290,7 @@ export function useEditor() {
       '--ed-red-x': r ? `${r.x}px` : '0px',
       '--ed-red-w': r ? `${r.w}px` : '100%',
       '--ed-red-h': r ? `${r.h}px` : '10px',
-      '--ed-title-d': hidden.title ? 'none' : 'block',
+      '--ed-title-d': hidden.title ? 'none' : 'flex',
       '--ed-content-d': hidden.content ? 'none' : 'block',
     }
   })
