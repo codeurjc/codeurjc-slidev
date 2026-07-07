@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useEditor } from '../composables/useEditor'
+import { useAutoFitText } from '../composables/useAutoFitText'
 import { ref, onMounted, watch } from 'vue'
 
 const VAR_MAP: Record<string, Record<string, string>> = {
@@ -11,6 +12,10 @@ const VAR_MAP: Record<string, Record<string, string>> = {
 
 const editor = useEditor()
 const rootEl = ref<HTMLElement | null>(null)
+const contentEl = ref<HTMLElement | null>(null)
+const contentInnerEl = ref<HTMLElement | null>(null)
+
+useAutoFitText(contentEl, contentInnerEl, () => editor.positions.content?.h ?? 400)
 
 onMounted(() => {
   const el = rootEl.value
@@ -130,10 +135,13 @@ watch(editor.aspectLocked, (v) => {
     <!-- ed:logo:end -->
 
     <div
+      ref="contentEl"
       class="content"
       :class="{ 'el-active': editor.editing.value && editor.selected.value === 'content' }"
     >
-      <slot />
+      <div ref="contentInnerEl" class="content-inner">
+        <slot />
+      </div>
     </div>
 
     <div
@@ -243,6 +251,16 @@ watch(editor.aspectLocked, (v) => {
   min-height: var(--ed-content-h, 200px);
   padding: 0;
   overflow-wrap: break-word;
+  font-size: var(--content-font-size, 24px);
+}
+
+/* Slidev's v-click hides not-yet-revealed content via opacity only, still
+   reserving its layout space -- which would make the auto-fit measurement
+   always account for the fully-revealed state, never reacting to individual
+   click steps. Collapsing it here (scoped to .content-inner only) means
+   .content-inner's rendered height reflects just what's currently visible. */
+.content-inner :where(.slidev-vclick-hidden) {
+  display: none;
 }
 
 .content-overlay {

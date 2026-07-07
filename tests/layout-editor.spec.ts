@@ -39,7 +39,7 @@ test.describe('Layout Editor E2E', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     // Wait for the slide content to be visible
-    await page.waitForSelector('.content');
+    await page.waitForSelector('.slidev-page-1 .content');
     // Wait a bit for the JS to initialize
     await page.waitForTimeout(2000);
     // Open the editor by clicking the "Show editor" button in the nav controls
@@ -61,10 +61,10 @@ test.describe('Layout Editor E2E', () => {
   test('selecting an element shows its active box', async ({ page }) => {
     type El = { name: string; selector: string; btnLabel: string };
     const els: El[] = [
-      { name: 'red-bar', selector: '.red-bar', btnLabel: 'Red Bar' },
-      { name: 'logo',     selector: '.logo',     btnLabel: 'Logo' },
-      { name: 'title',    selector: '.title-overlay', btnLabel: 'Title' },
-      { name: 'content',  selector: '.content',  btnLabel: 'Content' },
+      { name: 'red-bar', selector: '.slidev-page-1 .red-bar', btnLabel: 'Red Bar' },
+      { name: 'logo',     selector: '.slidev-page-1 .logo',     btnLabel: 'Logo' },
+      { name: 'title',    selector: '.slidev-page-1 .title-overlay', btnLabel: 'Title' },
+      { name: 'content',  selector: '.slidev-page-1 .content',  btnLabel: 'Content' },
     ];
 
     for (const el of els) {
@@ -81,7 +81,7 @@ test.describe('Layout Editor E2E', () => {
   });
 
   async function getSlideScale(page: any): Promise<number> {
-    const container = page.locator('.slidev-layout.default');
+    const container = page.locator('.slidev-page-1 .slidev-layout.default');
     const rect = await container.boundingBox();
     const scrollWidth = await container.evaluate((el: Element) => el.scrollWidth);
     return rect.width / scrollWidth;
@@ -116,7 +116,7 @@ test.describe('Layout Editor E2E', () => {
     // Drag the logo right and down (use smaller dx so X doesn't clamp to 0)
     const vpDx = 10;
     const vpDy = 50;
-    await dragElement(page, '.logo', vpDx, vpDy);
+    await dragElement(page, '.slidev-page-1 .logo', vpDx, vpDy);
 
     // Expected CSS-pixel deltas = viewport delta / scale
     const cssDx = Math.round(vpDx / scale);
@@ -138,7 +138,7 @@ test.describe('Layout Editor E2E', () => {
     await titleBtn.click();
     await expect(titleBtn).toHaveClass(/active/);
 
-    const titleOverlay = page.locator('.title-overlay');
+    const titleOverlay = page.locator('.slidev-page-1 .title-overlay');
 
     // Read initial X and Y positions
     const xInput = page.locator('.lep-props label').filter({ hasText: 'X:' }).locator('input');
@@ -149,7 +149,7 @@ test.describe('Layout Editor E2E', () => {
     // Drag the title overlay right and down
     const vpDx = 100;
     const vpDy = 80;
-    await dragElement(page, '.title-overlay', vpDx, vpDy);
+    await dragElement(page, '.slidev-page-1 .title-overlay', vpDx, vpDy);
 
     // Expected CSS-pixel deltas = viewport delta / scale
     const cssDx = Math.round(vpDx / scale);
@@ -173,7 +173,7 @@ test.describe('Layout Editor E2E', () => {
     const titleBtn = page.locator('.lep-el').filter({ hasText: 'Title' });
     await titleBtn.click();
 
-    const titleOverlay = page.locator('.title-overlay');
+    const titleOverlay = page.locator('.slidev-page-1 .title-overlay');
     const box = await titleOverlay.boundingBox();
     if (!box) throw new Error('title-overlay not found');
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -205,7 +205,7 @@ test.describe('Layout Editor E2E', () => {
     // The resize handle is at bottom:-6px; right:-6px, so its center is at the parent's bottom-right edge
     const vpDw = 60;
     const vpDh = 40;
-    const titleOverlay = page.locator('.title-overlay');
+    const titleOverlay = page.locator('.slidev-page-1 .title-overlay');
     let box = await titleOverlay.boundingBox();
     if (!box) throw new Error('title-overlay not found');
     const handleCX = box.x + box.width;
@@ -269,7 +269,7 @@ test.describe('Layout Editor E2E', () => {
 
     // Drag the content overlay down
     const vpDy = 100;
-    const overlay = page.locator('.content-overlay');
+    const overlay = page.locator('.slidev-page-1 .content-overlay');
     const box = await overlay.boundingBox();
     if (!box) throw new Error('content-overlay not found');
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -320,7 +320,7 @@ test.describe('Layout Editor E2E', () => {
     const initialH = parseFloat(await hInput.inputValue());
     const initialRatio = initialW / initialH;
 
-    const logoEl = page.locator('.logo');
+    const logoEl = page.locator('.slidev-page-1 .logo');
     const box = await logoEl.boundingBox();
     if (!box) throw new Error('.logo not found');
     // The resize handle sits at the bottom-left (sw) corner, since the logo is right-anchored
@@ -339,7 +339,7 @@ test.describe('Layout Editor E2E', () => {
     expect(newW / newH).toBeCloseTo(initialRatio, 1);
 
     // The rendered <img> should reflect the new size (no longer hardcoded to 48px)
-    const img = page.locator('.logo img');
+    const img = page.locator('.slidev-page-1 .logo img');
     const imgBox = await img.boundingBox();
     expect(imgBox!.width).toBeGreaterThan(0);
   });
@@ -384,7 +384,7 @@ test.describe('Layout Editor E2E', () => {
     const initialH = parseFloat(await hInput.inputValue());
     const initialRatio = initialW / initialH;
 
-    const logoEl = page.locator('.logo');
+    const logoEl = page.locator('.slidev-page-1 .logo');
     const box = await logoEl.boundingBox();
     if (!box) throw new Error('.logo not found');
     const handleCX = box.x;
@@ -446,7 +446,7 @@ test.describe('Layout Editor E2E', () => {
     const initialW = parseFloat(await wInput.inputValue());
     const initialH = parseFloat(await hInput.inputValue());
 
-    const redBarEl = page.locator('.red-bar');
+    const redBarEl = page.locator('.slidev-page-1 .red-bar');
     const box = await redBarEl.boundingBox();
     if (!box) throw new Error('.red-bar not found');
     const handleCX = box.x + box.width;
@@ -487,14 +487,14 @@ test.describe('Layout Editor E2E', () => {
     await logoBtn.click();
 
     // The logo should be visible
-    await expect(page.locator('.logo')).toBeVisible();
+    await expect(page.locator('.slidev-page-1 .logo')).toBeVisible();
 
     // Click the delete button (X) on the logo element
-    const deleteBtn = page.locator('.logo .delete-btn');
+    const deleteBtn = page.locator('.slidev-page-1 .logo .delete-btn');
     await deleteBtn.click();
 
     // The logo should no longer be visible, and there is no restore-bar UI
-    await expect(page.locator('.logo')).not.toBeVisible();
+    await expect(page.locator('.slidev-page-1 .logo')).not.toBeVisible();
     await expect(page.locator('.restore-bar')).toHaveCount(0);
 
     // It should also disappear from the Elements list in the panel
@@ -504,7 +504,7 @@ test.describe('Layout Editor E2E', () => {
     const undoBtn = page.locator('.lep-btn').filter({ hasText: 'Undo' });
     await expect(undoBtn).toBeEnabled();
     await undoBtn.click();
-    await expect(page.locator('.logo')).toBeVisible();
+    await expect(page.locator('.slidev-page-1 .logo')).toBeVisible();
     await expect(page.locator('.lep-el').filter({ hasText: 'Logo' })).toBeVisible();
   });
 
@@ -514,9 +514,9 @@ test.describe('Layout Editor E2E', () => {
     await logoBtn.click();
 
     // Delete the logo
-    const deleteBtn = page.locator('.logo .delete-btn');
+    const deleteBtn = page.locator('.slidev-page-1 .logo .delete-btn');
     await deleteBtn.click();
-    await expect(page.locator('.logo')).not.toBeVisible();
+    await expect(page.locator('.slidev-page-1 .logo')).not.toBeVisible();
 
     // Save as overwrite to the currently active layout
     const saveAsCheckbox = page.locator('input[type="checkbox"]');
@@ -539,7 +539,7 @@ test.describe('Layout Editor E2E', () => {
 
     // Reload the page: the logo is gone for good, with no way to restore it
     await page.reload();
-    await page.waitForSelector('.content', { timeout: 15000 });
+    await page.waitForSelector('.slidev-page-1 .content', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
     const hideBtn = page.locator('button').filter({ hasText: 'Hide editor' });
@@ -551,7 +551,7 @@ test.describe('Layout Editor E2E', () => {
     await page.locator('button:has-text("Switch to layout tab")').click();
     await page.waitForSelector('.layout-editor-panel', { timeout: 30000 });
 
-    await expect(page.locator('.logo')).toHaveCount(0);
+    await expect(page.locator('.slidev-page-1 .logo')).toHaveCount(0);
     await expect(page.locator('.restore-bar')).toHaveCount(0);
   });
 
@@ -679,7 +679,7 @@ test.describe('Layout Editor E2E', () => {
     const wInput = page.locator('.lep-props label').filter({ hasText: 'W:' }).locator('input');
     const hInput = page.locator('.lep-props label').filter({ hasText: 'H:' }).locator('input');
 
-    const titleOverlay = page.locator('.title-overlay');
+    const titleOverlay = page.locator('.slidev-page-1 .title-overlay');
     const box = await titleOverlay.boundingBox();
     if (!box) throw new Error('title-overlay not found');
     const handleCX = box.x + box.width;
@@ -735,7 +735,7 @@ test.describe('Layout Editor E2E', () => {
   test('content tab reflects the new layout frontmatter after saving as a new layout', async ({ page }) => {
     // Drag the title a bit so the save isn't a no-op
     await page.locator('.lep-el').filter({ hasText: 'Title' }).click();
-    const titleOverlay = page.locator('.title-overlay');
+    const titleOverlay = page.locator('.slidev-page-1 .title-overlay');
     const box = await titleOverlay.boundingBox();
     if (!box) throw new Error('title-overlay not found');
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
