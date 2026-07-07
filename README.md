@@ -13,6 +13,17 @@ Includes a custom **drag-and-drop layout editor** that lets you visually arrange
 - Urjc-themed UnoCSS preset (`urjc-red`, `urjc-green` colors)
 - Unit tests (Vitest) and e2e tests (Playwright)
 
+## Roadmap
+
+- **Markdown-first authoring** — express both content and, as much as possible, styling choices (image placement, hidden titles, etc.) directly in slide frontmatter/markdown instead of hand-editing Vue.
+- **Configurable layout, global + per-slide overrides** — e.g. image position (below vs. beside the text), collapsing the title so the image/code area expands to fill the freed space, and other layout knobs as they come up.
+- **Auto-fit text size** — shrink text to fit the slide when it doesn't, but keep a comfortable default size when it does.
+- **Easy code annotation** — mark up code (e.g. trailing-line comments that can target part of a line) and let tooling render the arrows/boxes/highlights automatically.
+- **Code sync with real examples** — keep code shown in slides in sync with the actual example source (approach still to be explored).
+- **Copy/paste image embedding** — paste or drag an image straight into a slide, with interactive cropping and resizing, without a manual asset pipeline.
+- **Diagram support** — author diagrams with Mermaid or SVG, backed by an interactive editor.
+- **Synthetic/boilerplate slides** — auto-generated slides that aren't hand-edited (cover, section index, license slide, etc.).
+
 ## Stack
 
 - **Framework:** Vue 3 + TypeScript
