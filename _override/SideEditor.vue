@@ -280,7 +280,7 @@ throttledWatch(
       </IconButton>
     </div>
     <div class="relative overflow-hidden rounded" style="background-color: var(--slidev-code-background)">
-      <ShikiEditor v-show="tab === 'content'" v-model="contentRef" placeholder="Create slide content..." />
+      <ShikiEditor v-show="tab === 'content'" data-editor="content" v-model="contentRef" placeholder="Create slide content..." />
       <ShikiEditor v-show="tab === 'note'" v-model="noteRef" placeholder="Write some notes..." />
       <div v-show="tab === 'layout'" class="layout-editor-panel">
         <div class="lep-section-label">Elements</div>

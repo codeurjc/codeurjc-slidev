@@ -11,7 +11,25 @@ const VAR_MAP: Record<string, Record<string, string>> = {
 const customSideEditorPath = resolve(import.meta.dirname, '_override/SideEditor.vue')
 const useEditorAbsPath = `/@fs${resolve(import.meta.dirname, 'composables/useEditor.ts')}`
 
+const IMAGE_MIME_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+}
+
 export default {
+  resolve: {
+    // Slidev's markdown-image-to-import transform rejects absolute "/images/..."
+    // specifiers via its slidev:slide-import-guard (it resolves them as literal
+    // filesystem-root paths rather than through publicDir, even for
+    // long-existing public files). Aliasing this one prefix to the real
+    // public/images directory lets pasted-image markdown references resolve
+    // correctly without loosening Vite's dev-server fs access more broadly.
+    alias: [
+      { find: /^\/images\//, replacement: `${resolve(import.meta.dirname, 'public/images')}/` },
+    ],
+  },
   plugins: [
     {
       name: 'slidev-side-editor-override',
@@ -143,6 +161,48 @@ export default {
           res.statusCode = 200
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify({ layoutName }))
+        })
+      },
+    },
+    {
+      name: 'slidev-image-saver',
+      configureServer(server) {
+        server.middlewares.use('/api/save-image', async (req, res) => {
+          if (req.method !== 'POST') {
+            res.statusCode = 405
+            res.end()
+            return
+          }
+          const mime = (req.headers['content-type'] || '').split(';')[0].trim()
+          const ext = IMAGE_MIME_EXT[mime]
+          if (!ext) {
+            res.statusCode = 400
+            res.end()
+            return
+          }
+          const chunks: Buffer[] = []
+          for await (const chunk of req) chunks.push(chunk)
+          const buffer = Buffer.concat(chunks)
+          const { writeFileSync, mkdirSync, existsSync } = await import('fs')
+          const { resolve: resolvePath } = await import('path')
+          const imagesDir = resolvePath(import.meta.dirname, 'public/images')
+          if (!existsSync(imagesDir)) mkdirSync(imagesDir, { recursive: true })
+          const filename = `paste-${Date.now()}.${ext}`
+          const writtenPath = resolvePath(imagesDir, filename)
+          writeFileSync(writtenPath, buffer)
+
+          // Vite caches its known "public files" set at startup and only
+          // updates it reactively from its own fs watcher's add/unlink
+          // events. Without this, the slide's next re-render can race ahead
+          // of that watcher and reject the fresh image via
+          // slidev:slide-import-guard. Emitting synchronously (mirroring how
+          // /api/save-layout notifies the watcher of layout changes) avoids
+          // depending on real filesystem-event timing.
+          server.watcher.emit('add', writtenPath)
+
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ filename, path: `/images/${filename}` }))
         })
       },
     },

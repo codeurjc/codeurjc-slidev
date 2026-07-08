@@ -52,7 +52,7 @@ codeurjc-slidev/
 ├── layouts/default.vue       # Slide layout with editor overlays
 ├── composables/useEditor.ts  # Layout editor state (drag, resize, undo)
 ├── _override/SideEditor.vue  # Custom layout tab in Slidev's SideEditor
-├── setup/global-top.vue      # Slidev setup component
+├── global-top.vue             # Slidev global layer (paste-to-add-image listener)
 ├── vite.config.ts            # Vite transform + save-layout middleware
 ├── e2e/                      # E2e test environment
 │   ├── slides.md             # Test presentation (standalone copy)
