@@ -6,6 +6,7 @@ const VAR_MAP: Record<string, Record<string, string>> = {
   logo: { y: '--ed-logo-y', x: '--ed-logo-rx', w: '--ed-logo-w', h: '--ed-logo-h' },
   title: { y: '--ed-title-y', x: '--ed-title-x', w: '--ed-title-w', h: '--ed-title-h' },
   content: { y: '--ed-content-y', x: '--ed-content-x', w: '--ed-content-w', h: '--ed-content-h' },
+  image: { y: '--ed-image-y', x: '--ed-image-x', w: '--ed-image-w', h: '--ed-image-h' },
 }
 
 const customSideEditorPath = resolve(import.meta.dirname, '_override/SideEditor.vue')
@@ -81,6 +82,9 @@ export default {
           if (hidden.content) {
             styleParts.push('--ed-content-d: none')
           }
+          if (hidden.image) {
+            styleParts.push('--ed-image-d: none')
+          }
 
           if (styleParts.length > 0) {
             const newStyle = styleParts.join('; ')
@@ -90,9 +94,16 @@ export default {
             content = content.replace(/style="[^"]*"/, `style="${newStyle}"`)
           }
 
-          // Persist hidden state as data-hidden attribute on root div
+          // Persist hidden state as data-hidden attribute on root div.
+          // `image` is excluded: unlike the other four elements (which
+          // default to shown, so only need recording when explicitly
+          // hidden), `image` defaults to hidden -- recording it here would
+          // pollute every ordinary save with a spurious "image" entry even
+          // when the slide has nothing to do with images. Its shown/hidden
+          // state is instead derived at runtime from whether content
+          // actually has a trackable image (see layouts/default.vue).
           const hiddenNames = Object.entries(hidden)
-            .filter(([_, v]) => v)
+            .filter(([name, v]) => v && name !== 'image')
             .map(([k]) => k)
           content = content.replace(/\s*data-hidden="[^"]*"/, '')
           if (hiddenNames.length > 0) {
@@ -155,7 +166,15 @@ export default {
                 server.moduleGraph.invalidateModule(mod)
               }
             }
-            server.watcher.emit('change', resolvePath(realPath))
+            // A brand-new layout file needs an 'add' event, not 'change' --
+            // Slidev's layouts virtual module (the list of known layout
+            // names) only refreshes in response to its own fs watcher
+            // noticing a real add, and a 'change' event on a path it has
+            // never seen doesn't trigger that. Without this, saveAs's newly
+            // written file can 404 as "Unknown layout" the moment frontmatter
+            // references it, since the layouts list is otherwise cached
+            // until invalidated.
+            server.watcher.emit(saveAs ? 'add' : 'change', resolvePath(realPath))
           }
 
           res.statusCode = 200

@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { useEditor } from '../composables/useEditor'
+import { useEditor, CONTENT_DEFAULT_WIDTH } from '../composables/useEditor'
 import { useAutoFitText } from '../composables/useAutoFitText'
-import { ref, onMounted, watch } from 'vue'
+import { computeBelowPreset } from '../composables/useImagePosition'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 
 const VAR_MAP: Record<string, Record<string, string>> = {
   'red-bar': { y: '--ed-red-y', x: '--ed-red-x', w: '--ed-red-w', h: '--ed-red-h' },
   logo: { y: '--ed-logo-y', x: '--ed-logo-rx', w: '--ed-logo-w', h: '--ed-logo-h' },
   title: { y: '--ed-title-y', x: '--ed-title-x', w: '--ed-title-w', h: '--ed-title-h' },
   content: { y: '--ed-content-y', x: '--ed-content-x', w: '--ed-content-w', h: '--ed-content-h' },
+  image: { y: '--ed-image-y', x: '--ed-image-x', w: '--ed-image-w', h: '--ed-image-h' },
 }
 
 const editor = useEditor()
@@ -17,6 +19,15 @@ const contentInnerEl = ref<HTMLElement | null>(null)
 
 useAutoFitText(contentEl, contentInnerEl, () => editor.positions.content?.h ?? 400)
 
+// Whether this layout has ever had an image explicitly positioned/saved
+// (distinct from the other four elements, which always exist): only trust
+// the saved hidden/position state for `image` when it does. Otherwise
+// `hidden.image` is derived live from whether content currently has a
+// trackable image at all (see updateTrackedImage below), since a shared
+// layout that predates this feature (or was never used with a pasted image)
+// has no meaningful saved state for it.
+let imageEverSaved = false
+
 onMounted(() => {
   const el = rootEl.value
   if (!el) return
@@ -24,6 +35,7 @@ onMounted(() => {
   const style = el.getAttribute('data-styles') || el.getAttribute('style') || ''
   const hiddenStr = el.getAttribute('data-hidden') || ''
   const lockedStr = el.getAttribute('data-aspect-locked') || ''
+  imageEverSaved = /--ed-image-[xywh]:/.test(style)
 
   // Restore positions from static style CSS custom properties
   for (const [key, vars] of Object.entries(VAR_MAP)) {
@@ -40,8 +52,12 @@ onMounted(() => {
 
   // Restore hidden state
   if (hiddenStr) {
+    // `image` is excluded here: its hidden/shown state is derived at
+    // runtime by updateTrackedImage() below, not from this list (see its
+    // exclusion from data-hidden in the save middleware).
     const h: Record<string, boolean> = {}
     for (const key of Object.keys(editor.positions)) {
+      if (key === 'image') continue
       h[key] = hiddenStr.split(',').includes(key)
     }
     editor.setHidden(h)
@@ -55,7 +71,52 @@ onMounted(() => {
     al[key] = lockedNames.includes(key)
   }
   editor.setAspectLocked(al)
+
+  updateTrackedImage()
+  const observer = new MutationObserver(updateTrackedImage)
+  if (contentInnerEl.value) {
+    observer.observe(contentInnerEl.value, { childList: true, subtree: true })
+  }
+  onUnmounted(() => observer.disconnect())
 })
+
+// Finds the last <img> in document order within the slide's content (a
+// plain CSS :last-of-type selector can't express this correctly once images
+// sit at different nesting depths -- see design.md), marks it as the single
+// tracked/draggable image, and derives hidden.image + a live default position
+// (when none was ever explicitly saved for this layout).
+function updateTrackedImage() {
+  const container = contentInnerEl.value
+  if (!container) return
+  const imgs = Array.from(container.querySelectorAll('img'))
+  for (const img of imgs) img.classList.remove('tracked-image')
+  const last = imgs[imgs.length - 1] as HTMLImageElement | undefined
+
+  if (!last) {
+    editor.hidden.image = true
+    return
+  }
+  last.classList.add('tracked-image')
+
+  if (imageEverSaved) {
+    // Saved state (including a user's manual hide via the delete button)
+    // is authoritative once this layout has ever positioned an image.
+    return
+  }
+
+  const applyLiveDefault = () => {
+    if (!last.naturalWidth || !last.naturalHeight) return
+    const ratio = last.naturalWidth / last.naturalHeight
+    const content = editor.positions.content
+    const slideWidth = rootEl.value?.getBoundingClientRect().width || 980
+    const { content: newContent, image } = computeBelowPreset(content, slideWidth, ratio, CONTENT_DEFAULT_WIDTH)
+    Object.assign(editor.positions.content, newContent)
+    Object.assign(editor.positions.image, image)
+    editor.hidden.image = false
+  }
+  if (last.complete) applyLiveDefault()
+  else last.addEventListener('load', applyLiveDefault, { once: true })
+}
 
 watch(editor.hidden, (v) => {
   const el = rootEl.value
@@ -183,6 +244,26 @@ watch(editor.aspectLocked, (v) => {
       >✕</div>
     </div>
 
+    <div
+      v-if="editor.editing.value && !editor.hidden['image']"
+      class="image-overlay"
+      :style="{ top: editor.positions.image.y + 'px', left: editor.positions.image.x + 'px', width: editor.positions.image.w + 'px', height: editor.positions.image.h + 'px' }"
+      :class="{ 'el-active': editor.selected.value === 'image' }"
+      @mousedown.stop="editor.startDrag($event, 'image')"
+    >
+      <span class="el-tag">Image</span>
+      <div
+        v-if="editor.selected.value === 'image'"
+        class="resize-handle se"
+        @mousedown.stop="editor.startResize($event, 'image')"
+      />
+      <div
+        v-if="editor.selected.value === 'image'"
+        class="delete-btn"
+        @mousedown.stop="editor.removeElement('image')"
+      >✕</div>
+    </div>
+
   </div>
 </template>
 
@@ -221,6 +302,35 @@ watch(editor.aspectLocked, (v) => {
 .slidev-layout.default h1:first-child + p {
   margin-top: 0;
   opacity: 1;
+}
+
+/* Pulls the tracked image out of normal content flow, same technique as
+   h1:first-child above. Uses a JS-assigned class rather than a structural
+   pseudo-class (e.g. :last-of-type) because the latter only compares
+   siblings under the same parent -- it can't express "last image in the
+   whole subtree" once images sit at different nesting depths. */
+.content-inner .tracked-image {
+  display: var(--ed-image-d, block);
+  position: absolute;
+  top: var(--ed-image-y, 80px);
+  left: var(--ed-image-x, 438px);
+  width: var(--ed-image-w, 400px);
+  height: var(--ed-image-h, 300px);
+  object-fit: contain;
+  z-index: 40;
+}
+
+.image-overlay {
+  position: absolute;
+  cursor: move;
+  outline: 2px dashed #9333ea;
+  border-radius: 2px;
+  z-index: 65;
+  pointer-events: auto;
+}
+
+.image-overlay.el-active {
+  outline-style: solid;
 }
 
 .title-overlay {

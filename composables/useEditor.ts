@@ -7,6 +7,10 @@ interface Rect {
   h: number
 }
 
+// The content box's full (non-narrowed) width, used both as its own default
+// and as the reset target for the image-position "Below" preset.
+export const CONTENT_DEFAULT_WIDTH = 876
+
 const ELEMENTS: Record<string, {
   label: string
   color: string
@@ -64,7 +68,7 @@ const ELEMENTS: Record<string, {
   content: {
     label: 'Content',
     color: '#16a34a',
-    initial: { x: 0, y: 80, w: 876, h: 400 },
+    initial: { x: 0, y: 80, w: CONTENT_DEFAULT_WIDTH, h: 400 },
     cssOutput: (pos) => [
       `margin-top: ${pos.y}px`,
       `margin-left: ${pos.x}px`,
@@ -72,7 +76,30 @@ const ELEMENTS: Record<string, {
       `min-height: ${pos.h}px`,
     ].map(l => `  ${l};`).join('\n'),
   },
+  image: {
+    label: 'Image',
+    color: '#9333ea',
+    initial: { x: 438, y: 80, w: 400, h: 300 },
+    cssOutput: (pos) => [
+      'position: absolute',
+      `top: ${pos.y}px`,
+      `left: ${pos.x}px`,
+      `width: ${pos.w}px`,
+      `height: ${pos.h}px`,
+      'object-fit: contain',
+      'z-index: 40',
+    ].map(l => `  ${l};`).join('\n'),
+  },
 }
+
+// Unlike the other elements (which always exist on every slide using a
+// layout), `image` only has meaning once a slide's content actually has a
+// trackable pasted image — its hidden/aspect-lock defaults are inverted
+// from the rest: hidden until one is detected, locked once it exists (an
+// arbitrarily-stretched photo looks broken in a way a stretched logo/red-bar
+// usually doesn't).
+const IMAGE_HIDDEN_DEFAULT = true
+const IMAGE_ASPECT_LOCKED_DEFAULT = true
 
 interface Snapshot {
   positions: Record<string, Rect>
@@ -87,8 +114,8 @@ const _sharedAspectLocked = reactive<Record<string, boolean>>({})
 const _sharedPositions = reactive<Record<string, Rect>>({})
 for (const key of Object.keys(ELEMENTS)) {
   _sharedPositions[key] = { ...ELEMENTS[key].initial }
-  _sharedHidden[key] = false
-  _sharedAspectLocked[key] = false
+  _sharedHidden[key] = key === 'image' ? IMAGE_HIDDEN_DEFAULT : false
+  _sharedAspectLocked[key] = key === 'image' ? IMAGE_ASPECT_LOCKED_DEFAULT : false
 }
 const _sharedUndoStack = ref<Snapshot[]>([])
 const _sharedUndoCheckpoint = ref<Snapshot | null>(null)
@@ -273,6 +300,7 @@ export function useEditor() {
     const c = positions.content
     const l = positions.logo
     const r = positions['red-bar']
+    const i = positions.image
     return {
       '--ed-title-x': t ? `${t.x}px` : '24px',
       '--ed-title-y': t ? `${t.y}px` : '20px',
@@ -290,8 +318,13 @@ export function useEditor() {
       '--ed-red-x': r ? `${r.x}px` : '0px',
       '--ed-red-w': r ? `${r.w}px` : '100%',
       '--ed-red-h': r ? `${r.h}px` : '10px',
+      '--ed-image-y': i ? `${i.y}px` : '80px',
+      '--ed-image-x': i ? `${i.x}px` : '438px',
+      '--ed-image-w': i ? `${i.w}px` : '400px',
+      '--ed-image-h': i ? `${i.h}px` : '300px',
       '--ed-title-d': hidden.title ? 'none' : 'flex',
       '--ed-content-d': hidden.content ? 'none' : 'block',
+      '--ed-image-d': hidden.image ? 'none' : 'block',
     }
   })
 

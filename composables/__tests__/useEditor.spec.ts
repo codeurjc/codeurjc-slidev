@@ -17,7 +17,7 @@ describe('useEditor', () => {
     const { editing, selected, elementNames } = useEditor()
     expect(editing.value).toBe(false)
     expect(selected.value).toBeNull()
-    expect(elementNames.value).toEqual(['red-bar', 'logo', 'title', 'content'])
+    expect(elementNames.value).toEqual(['red-bar', 'logo', 'title', 'content', 'image'])
   })
 
   it('toggle switches editing on and off', () => {
@@ -233,11 +233,18 @@ describe('useEditor', () => {
     expect(result).toBeNull()
   })
 
-  it('all elements start with aspectLocked false', () => {
+  it('all elements except image start with aspectLocked false', () => {
     const { aspectLocked, elementNames } = useEditor()
     for (const name of elementNames.value) {
+      if (name === 'image') continue
       expect(aspectLocked[name]).toBe(false)
     }
+  })
+
+  it('image starts hidden and aspect-locked, unlike the other elements', () => {
+    const { hidden, aspectLocked } = useEditor()
+    expect(hidden.image).toBe(true)
+    expect(aspectLocked.image).toBe(true)
   })
 
   it('toggleAspectLock flips the flag for a single element and enables undo', () => {

@@ -295,8 +295,8 @@ throttledWatch(
             @click="editor.selected.value = name"
             @keydown.enter="editor.selected.value = name"
           >
-            <span class="lep-dot" :style="{ background: { 'red-bar': '#cb0017', logo: '#e8792b', title: '#2563eb', content: '#16a34a' }[name] }" />
-            <span class="lep-el-label">{{ { 'red-bar': 'Red Bar', logo: 'Logo', title: 'Title', content: 'Content' }[name] }}</span>
+            <span class="lep-dot" :style="{ background: { 'red-bar': '#cb0017', logo: '#e8792b', title: '#2563eb', content: '#16a34a', image: '#9333ea' }[name] }" />
+            <span class="lep-el-label">{{ { 'red-bar': 'Red Bar', logo: 'Logo', title: 'Title', content: 'Content', image: 'Image' }[name] }}</span>
             <button
               type="button"
               class="lep-lock-btn"
