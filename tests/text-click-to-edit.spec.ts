@@ -22,16 +22,20 @@ test.describe('Double-Click Text Edit E2E', () => {
     await page.locator('.slidev-page-1 .content-inner p').first().dblclick()
 
     await expect(page.locator('[data-editor="content"] textarea')).toBeVisible()
-    const selection = await getTextareaSelection(page)
-    expect(selection?.selected).toContain('React permite que las peticiones')
+    // The dblclick handler mounts the textarea before its async fetch +
+    // resolveBlockRange resolves and calls setSelectionRange, so the
+    // selection can still be empty for a moment after the textarea appears
+    // -- poll rather than reading it once.
+    await expect.poll(async () => (await getTextareaSelection(page))?.selected)
+      .toContain('React permite que las peticiones')
   })
 
   test('double-clicking the title selects the raw markdown title line', async ({ page }) => {
     await page.locator('.slidev-page-1 h1').first().dblclick()
 
     await expect(page.locator('[data-editor="content"] textarea')).toBeVisible()
-    const selection = await getTextareaSelection(page)
-    expect(selection?.selected).toBe('# Uso de API REST')
+    await expect.poll(async () => (await getTextareaSelection(page))?.selected)
+      .toBe('# Uso de API REST')
   })
 
   test('double-clicking during layout editing does not open or change the Content tab', async ({ page }) => {
