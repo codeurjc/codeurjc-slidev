@@ -6,6 +6,7 @@ import { useDynamicSlideInfo } from '@slidev/client/composables/useSlideInfo.ts'
 import { useEditor, CONTENT_DEFAULT_WIDTH } from './composables/useEditor'
 import { computeBelowPreset, computeRightPreset } from './composables/useImagePosition'
 import { findPastedImage, buildImageMarkdown, uploadImage, insertAtCursor, appendImageMarkdown } from './composables/useImagePaste'
+import { resolveBlockRange } from './composables/useTextClickToEdit'
 
 const { currentSlideNo } = useNav()
 const { update } = useDynamicSlideInfo(currentSlideNo)
@@ -142,8 +143,67 @@ function dismissPopover() {
   popoverVisible.value = false
 }
 
-onMounted(() => window.addEventListener('paste', onPaste))
-onUnmounted(() => window.removeEventListener('paste', onPaste))
+// Waits (bounded) for the Content tab's textarea to mount after opening the
+// SideEditor / switching tabs -- mirrors waitForTrackedImage's bounded-poll
+// pattern above, since both wait on a render cycle triggered just before.
+function waitForContentTextarea(): Promise<HTMLTextAreaElement | null> {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + 2000
+    function check() {
+      const el = document.querySelector<HTMLTextAreaElement>('[data-editor="content"] textarea')
+      if (el) { resolve(el); return }
+      if (Date.now() < deadline) setTimeout(check, 30)
+      else resolve(null)
+    }
+    check()
+  })
+}
+
+// Double-click-to-edit only exists during rehearsal/prep on the dev server --
+// showEditor/SideEditor and the /__slidev/* APIs this relies on have no
+// equivalent in an exported/presented build, so gating on import.meta.env.DEV
+// mirrors that reachability rather than adding a separate mode check.
+async function onDblClick(e: MouseEvent) {
+  if (!import.meta.env.DEV) return
+  if (editor.editing.value) return // Layout tab already repurposes clicks/drags
+  const target = e.target as Element | null
+  if (!target) return
+  const container = document.querySelector('.content-inner')
+  if (!container || !container.contains(target)) return
+
+  showEditor.value = true
+  editor.activeTab.value = 'content'
+
+  const textarea = await waitForContentTextarea()
+  if (!textarea) return
+
+  // Read fresh from the server rather than trusting useDynamicSlideInfo's
+  // reactive `info` (same rationale as onPaste above): it may not have
+  // resolved yet, or may be stale relative to unsaved textarea edits.
+  const currentInfo: { source?: { contentRaw?: string } } = await fetch(`/__slidev/slides/${currentSlideNo.value}.json`).then(r => r.json())
+  const source = (currentInfo.source?.contentRaw ?? '').trim()
+  // The textarea's value is `frontmatterPart + source` (see SideEditor.vue).
+  // If it doesn't end with `source` -- e.g. there are unsaved in-flight
+  // edits -- there's no confident way to locate the body's offset within it,
+  // so leave the existing selection alone rather than guessing wrong.
+  if (!source || !textarea.value.endsWith(source)) return
+
+  const range = resolveBlockRange(container, target, source)
+  if (!range) return
+
+  const bodyStart = textarea.value.length - source.length
+  textarea.focus()
+  textarea.setSelectionRange(bodyStart + range.start, bodyStart + range.end)
+}
+
+onMounted(() => {
+  window.addEventListener('paste', onPaste)
+  window.addEventListener('dblclick', onDblClick)
+})
+onUnmounted(() => {
+  window.removeEventListener('paste', onPaste)
+  window.removeEventListener('dblclick', onDblClick)
+})
 </script>
 
 <template>

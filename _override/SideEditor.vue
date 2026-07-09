@@ -15,14 +15,13 @@ const props = defineProps<{
 
 const { currentSlideNo, openInEditor } = useNav()
 
-const tab = ref<'content' | 'note' | 'layout'>('content')
+const editor = useEditor()
+const tab = editor.activeTab
 const content = ref('')
 const note = ref('')
 const dirty = ref(false)
 
 const { info, update } = useDynamicSlideInfo(currentSlideNo)
-
-const editor = useEditor()
 
 const visibleElementNames = computed(() => editor.elementNames.value.filter(name => !editor.hidden[name]))
 

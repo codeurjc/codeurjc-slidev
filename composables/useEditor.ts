@@ -109,6 +109,10 @@ interface Snapshot {
 
 const _sharedEditing = ref(false)
 const _sharedSelected = ref<string | null>(null)
+// Which SideEditor tab is active. Lives here (rather than as local state in
+// _override/SideEditor.vue) so other entry points -- e.g. global-top.vue's
+// double-click-to-edit handler -- can switch to the Content tab themselves.
+const _sharedActiveTab = ref<'content' | 'note' | 'layout'>('content')
 const _sharedHidden = reactive<Record<string, boolean>>({})
 const _sharedAspectLocked = reactive<Record<string, boolean>>({})
 const _sharedPositions = reactive<Record<string, Rect>>({})
@@ -123,6 +127,7 @@ const _sharedUndoCheckpoint = ref<Snapshot | null>(null)
 export function useEditor() {
   const editing = _sharedEditing
   const selected = _sharedSelected
+  const activeTab = _sharedActiveTab
   const positions = _sharedPositions
   const hidden = _sharedHidden
   const aspectLocked = _sharedAspectLocked
@@ -465,6 +470,7 @@ export function useEditor() {
   return {
     editing,
     selected,
+    activeTab,
     positions,
     hidden,
     aspectLocked,
