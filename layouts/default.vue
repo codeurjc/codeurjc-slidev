@@ -295,7 +295,7 @@ watch(editor.aspectLocked, (v) => {
   overflow-wrap: break-word;
   font-weight: 700;
   color: #cb0017;
-  font-size: 1.5rem;
+  font-size: 36pt;
   line-height: 1.2;
 }
 
@@ -361,7 +361,7 @@ watch(editor.aspectLocked, (v) => {
   min-height: var(--ed-content-h, 200px);
   padding: 0;
   overflow-wrap: break-word;
-  font-size: var(--content-font-size, 24px);
+  font-size: var(--content-font-size, 36pt);
 }
 
 /* Slidev's v-click hides not-yet-revealed content via opacity only, still

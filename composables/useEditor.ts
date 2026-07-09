@@ -62,7 +62,7 @@ const ELEMENTS: Record<string, {
       'overflow-wrap: break-word',
       'font-weight: 700',
       'color: #cb0017',
-      'font-size: 1.5rem',
+      'font-size: 36pt',
     ].map(l => `  ${l};`).join('\n'),
   },
   content: {

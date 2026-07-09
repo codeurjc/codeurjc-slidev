@@ -1,7 +1,7 @@
 import { onMounted, onUnmounted, watchEffect, type Ref } from 'vue'
 
-export const AUTOFIT_MIN_PX = 12
-export const AUTOFIT_MAX_PX = 24
+export const AUTOFIT_MIN_PT = 9
+export const AUTOFIT_MAX_PT = 36
 
 /**
  * Binary-search the largest font size in [min, max] for which `overflows`
@@ -51,7 +51,7 @@ export function useAutoFitText(
     const o = outer.value
     const i = inner.value
     if (!o || !i) return false
-    o.style.setProperty('--content-font-size', `${size}px`)
+    o.style.setProperty('--content-font-size', `${size}pt`)
     // offsetHeight (not getBoundingClientRect) -- Slidev renders each slide
     // at a fixed logical resolution and scales the whole thing via a CSS
     // transform for responsive display. getBoundingClientRect returns the
@@ -65,8 +65,8 @@ export function useAutoFitText(
 
   function fit() {
     if (!outer.value || !inner.value) return
-    const size = findFitFontSize(AUTOFIT_MIN_PX, AUTOFIT_MAX_PX, overflowsAt)
-    outer.value.style.setProperty('--content-font-size', `${size}px`)
+    const size = findFitFontSize(AUTOFIT_MIN_PT, AUTOFIT_MAX_PT, overflowsAt)
+    outer.value.style.setProperty('--content-font-size', `${size}pt`)
   }
 
   function scheduleFit() {

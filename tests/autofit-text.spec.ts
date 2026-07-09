@@ -17,9 +17,9 @@ const slidesPath = resolve(import.meta.dirname, '../e2e/slides.md')
 let originalSlides: string
 
 // Fixture slides appended at fixed indices:
-//   2 = "Autofit fits"    — short content, should stay at the 24px default/ceiling
-//   3 = "Autofit shrinks" — overflows at 24px, should shrink to an intermediate size
-//   4 = "Autofit floor"   — overflows even at 12px, should stop at the floor and remain visible
+//   2 = "Autofit fits"    — short content, should stay at the 36pt (48px) default/ceiling
+//   3 = "Autofit shrinks" — overflows at 36pt, should shrink to an intermediate size
+//   4 = "Autofit floor"   — overflows even at 9pt (12px), should stop at the floor and remain visible
 //   5 = "Autofit vclick"  — v-click reveal drives live shrink/grow across steps
 //   6 = "Autofit wraps"   — a long unbroken token should wrap rather than shrink the font
 const FIXTURE_SLIDES = `
@@ -112,17 +112,17 @@ test.describe('Content text auto-fit', () => {
     writeFileSync(slidesPath, originalSlides, 'utf-8')
   })
 
-  test('content that fits at 24px renders at 24px', async ({ page }) => {
+  test('content that fits at 36pt renders at 36pt (48px)', async ({ page }) => {
     await page.goto('/2')
     await page.waitForSelector('.content:visible')
-    await expect.poll(() => contentFontSizePx(page)).toBe(24)
+    await expect.poll(() => contentFontSizePx(page)).toBe(48)
   })
 
-  test('content that overflows at 24px shrinks to a smaller size that fits', async ({ page }) => {
+  test('content that overflows at 36pt shrinks to a smaller size that fits', async ({ page }) => {
     await page.goto('/3')
     await page.waitForSelector('.content:visible')
 
-    await expect.poll(() => contentFontSizePx(page)).toBeLessThan(24)
+    await expect.poll(() => contentFontSizePx(page)).toBeLessThan(48)
     const size = await contentFontSizePx(page)
     expect(size).toBeGreaterThan(12)
 
@@ -130,7 +130,7 @@ test.describe('Content text auto-fit', () => {
     expect(innerHeight).toBeLessThanOrEqual(BOX_HEIGHT_PX + 1) // +1px rounding tolerance
   })
 
-  test('content too large even at 12px stops shrinking and overflows visibly', async ({ page }) => {
+  test('content too large even at 9pt (12px) stops shrinking and overflows visibly', async ({ page }) => {
     await page.goto('/4')
     await page.waitForSelector('.content:visible')
 
@@ -150,22 +150,22 @@ test.describe('Content text auto-fit', () => {
     await page.waitForSelector('.content:visible')
 
     // Before any click: only the title is visible, comfortably fits.
-    await expect.poll(() => contentFontSizePx(page)).toBe(24)
+    await expect.poll(() => contentFontSizePx(page)).toBe(48)
 
-    // Advance the click — reveals enough content to overflow at 24px.
+    // Advance the click — reveals enough content to overflow at 36pt.
     await page.keyboard.press('ArrowRight')
-    await expect.poll(() => contentFontSizePx(page)).toBeLessThan(24)
+    await expect.poll(() => contentFontSizePx(page)).toBeLessThan(48)
   })
 
-  test('reversing a v-click step grows the font size back up, not exceeding 24px', async ({ page }) => {
+  test('reversing a v-click step grows the font size back up, not exceeding 36pt', async ({ page }) => {
     await page.goto('/5')
     await page.waitForSelector('.content:visible')
 
     await page.keyboard.press('ArrowRight')
-    await expect.poll(() => contentFontSizePx(page)).toBeLessThan(24)
+    await expect.poll(() => contentFontSizePx(page)).toBeLessThan(48)
 
     await page.keyboard.press('ArrowLeft')
-    await expect.poll(() => contentFontSizePx(page)).toBe(24)
+    await expect.poll(() => contentFontSizePx(page)).toBe(48)
   })
 
   test('a long unwrapped token wraps instead of shrinking the font', async ({ page }) => {
@@ -173,7 +173,7 @@ test.describe('Content text auto-fit', () => {
     await page.waitForSelector('.content:visible')
 
     // Short vertical content overall (one wrapped paragraph) — should stay at the ceiling.
-    await expect.poll(() => contentFontSizePx(page)).toBe(24)
+    await expect.poll(() => contentFontSizePx(page)).toBe(48)
 
     // The long token should not overflow the box's width.
     const [contentBox, tokenBox] = await Promise.all([
