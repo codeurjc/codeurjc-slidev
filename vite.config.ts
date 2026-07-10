@@ -20,18 +20,27 @@ const IMAGE_MIME_EXT: Record<string, string> = {
 }
 
 export default {
-  resolve: {
-    // Slidev's markdown-image-to-import transform rejects absolute "/images/..."
-    // specifiers via its slidev:slide-import-guard (it resolves them as literal
-    // filesystem-root paths rather than through publicDir, even for
-    // long-existing public files). Aliasing this one prefix to the real
-    // public/images directory lets pasted-image markdown references resolve
-    // correctly without loosening Vite's dev-server fs access more broadly.
-    alias: [
-      { find: /^\/images\//, replacement: `${resolve(import.meta.dirname, 'public/images')}/` },
-    ],
-  },
   plugins: [
+    {
+      // Slidev's markdown-image-to-import transform rejects absolute
+      // "/images/..." specifiers via its slidev:slide-import-guard (it
+      // resolves them as literal filesystem-root paths rather than through
+      // publicDir, even for long-existing public files). Rewriting the
+      // specifier to the real public/images path lets pasted-image markdown
+      // references resolve correctly. Scoped to slide-markdown importers
+      // only (Slidev's virtual `__slidev_<n>.md` ids) -- a global
+      // resolve.alias would also catch plain `<img src="/images/...">` in
+      // layout .vue files, whose default resolution already works and
+      // shouldn't be rerouted through a filesystem import (doing so made
+      // Vite serve them at /public/images/... and warn about it).
+      name: 'slidev-slide-image-resolver',
+      enforce: 'pre',
+      resolveId(id, importer) {
+        if (!id.startsWith('/images/')) return null
+        if (!importer || !/__slidev_\d+\.(md|frontmatter)/.test(importer)) return null
+        return resolve(import.meta.dirname, `public${id}`)
+      },
+    },
     {
       name: 'slidev-side-editor-override',
       enforce: 'pre',
