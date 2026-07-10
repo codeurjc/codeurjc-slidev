@@ -150,8 +150,8 @@ watch(editor.aspectLocked, (v) => {
       ref="rootEl"
       class="slidev-layout default relative h-full w-full bg-white text-black"
       :class="{ editing: editor.editing.value }"
-      style="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 400px; --ed-title-h: 48px; --ed-content-y: 82px; --ed-content-x: 23px; --ed-content-w: 876px; --ed-content-h: 400px"
-      data-styles="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 400px; --ed-title-h: 48px; --ed-content-y: 82px; --ed-content-x: 23px; --ed-content-w: 876px; --ed-content-h: 400px"
+      style="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 82px; --ed-content-x: 23px; --ed-content-w: 876px; --ed-content-h: 400px; --ed-image-y: 80px; --ed-image-x: 438px; --ed-image-w: 400px; --ed-image-h: 300px"
+      data-styles="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 82px; --ed-content-x: 23px; --ed-content-w: 876px; --ed-content-h: 400px; --ed-image-y: 80px; --ed-image-x: 438px; --ed-image-w: 400px; --ed-image-h: 300px"
       :style="editor.editing.value ? editor.rootStyle.value : {}"
     >
     <!-- ed:red-bar:start -->
@@ -302,6 +302,18 @@ watch(editor.aspectLocked, (v) => {
 .slidev-layout.default h1:first-child + p {
   margin-top: 0;
   opacity: 1;
+}
+
+.slidev-layout .content :where(h2) {
+  font-weight: 700;
+  color: #cb0017;
+  font-size: 24pt;
+  line-height: 1.2;
+  margin: 0 0 0.4em;
+}
+
+.slidev-layout .content :where(strong) {
+  font-weight: 800;
 }
 
 /* Pulls the tracked image out of normal content flow, same technique as

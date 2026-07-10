@@ -15,8 +15,13 @@ colorSchema: light
 aspectRatio: 16/9
 ---
 
-# Uso de API REST
+# Introducción a Docker
 
-- React permite que las peticiones a una API REST se realicen con el cliente nativo del navegador `fetch(...)` usando async/await
+## ¿Qué es Docker?
 
-- Se verá cómo realizar las peticiones para que la interfaz se actualice cuando llegue la respuesta
+- Es una nueva forma de **ejecutar** y **distribuir** aplicaciones
+- Las aplicaciones se empaquetan con **todas sus dependencias**
+- Se pueden ejecutar en **cualquier entorno** (linux, windows, mac)
+- Sólo es necesario tener instalado **Docker**
+- Una aplicación Docker en ejecución se llama **contenedor**
+- Un contenedor se crea desde una **imagen** (plantilla)
