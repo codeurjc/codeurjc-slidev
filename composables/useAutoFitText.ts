@@ -46,6 +46,7 @@ export function useAutoFitText(
 ) {
   let rafId: number | null = null
   let observer: MutationObserver | null = null
+  let resizeObserver: ResizeObserver | null = null
 
   function overflowsAt(size: number): boolean {
     const o = outer.value
@@ -96,6 +97,19 @@ export function useAutoFitText(
     if (typeof document !== 'undefined' && document.fonts) {
       document.fonts.ready.then(() => scheduleFit())
     }
+
+    // Slidev keeps adjacent slides' layout instances mounted but hidden
+    // (zero-size) during a client-side navigation, only revealing them after
+    // the transition -- so the very first fit() can run while `outer` still
+    // measures 0, wrongly concluding nothing overflows and locking in the
+    // max font size with no later mutation to correct it. A ResizeObserver
+    // catches that hidden -> visible transition (any real size change) and
+    // re-fits, on top of the MutationObserver above which only covers
+    // content changes within an already-visible slide.
+    if (outer.value && typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => scheduleFit())
+      resizeObserver.observe(outer.value)
+    }
   })
 
   // Reruns whenever a reactive dependency read inside boxHeight() (e.g. the
@@ -108,6 +122,7 @@ export function useAutoFitText(
 
   onUnmounted(() => {
     observer?.disconnect()
+    resizeObserver?.disconnect()
     if (rafId !== null) cancelAnimationFrame(rafId)
   })
 

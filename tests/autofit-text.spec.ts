@@ -78,7 +78,7 @@ Averyveryveryveryverylongunbrokentokenwithoutanyspacesatallthatmustwraptothenext
 // the slide-overview thumbnails), so `.content` always matches more than one
 // element. Every selector below is scoped with Playwright's `:visible`
 // pseudo-class to target only the actually-displayed slide.
-const BOX_HEIGHT_PX = 400 // default.vue's static --ed-content-h default
+const BOX_HEIGHT_PX = 424 // default.vue's static --ed-content-h default
 
 async function contentFontSizePx(page: Page): Promise<number> {
   const value = await page.locator('.content:visible').evaluate((el) => getComputedStyle(el).fontSize)
