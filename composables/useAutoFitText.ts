@@ -1,7 +1,7 @@
 import { onMounted, onUnmounted, watchEffect, type Ref } from 'vue'
 
 export const AUTOFIT_MIN_PT = 9
-export const AUTOFIT_MAX_PT = 32
+export const AUTOFIT_MAX_PT = 26
 
 /**
  * Binary-search the largest font size in [min, max] for which `overflows`

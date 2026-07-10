@@ -23,5 +23,5 @@ aspectRatio: 16/9
 - Las aplicaciones se empaquetan con **todas sus dependencias**
 - Se pueden ejecutar en **cualquier entorno** (linux, windows, mac)
 - Sólo es necesario tener instalado **Docker**
-- Una aplicación Docker en ejecución se llama **contenedor**
-- Un contenedor se crea desde una **imagen** (plantilla)
+- Una aplicación Docker en ejecución se llama contenedor
+- Un contenedor se crea desde una imagen (plantilla)
