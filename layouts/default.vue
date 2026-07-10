@@ -361,7 +361,38 @@ watch(editor.aspectLocked, (v) => {
   min-height: var(--ed-content-h, 200px);
   padding: 0;
   overflow-wrap: break-word;
-  font-size: var(--content-font-size, 36pt);
+  font-size: var(--content-font-size, 32pt);
+  line-height: 1.2;
+}
+
+/* The theme's base styles set a fixed (non-relative) line-height on text
+   elements sized for its own default font-size. Since .content's font-size
+   is dynamically scaled (autofit, pt-based sizing), that fixed line-height
+   no longer matches and wrapped lines overlap. :where() keeps this at zero
+   added specificity beyond .content itself, but still wins over the theme's
+   bare-element selectors by source order/specificity. */
+.slidev-layout .content :where(p, li, ul, ol) {
+  line-height: 1.2;
+}
+
+/* Spacing between separate list items (as opposed to line-height, which only
+   affects wrapped lines within one item) — em-relative so it scales with the
+   content font size instead of the theme's fixed-px default. The inner <p>'s
+   own margin is zeroed so li's margin is the only source of the gap. */
+.slidev-layout .content :where(li) {
+  margin: 0.6em 0;
+}
+
+/* The theme's reset zeroes ul/ol's own padding-left to 0 (li's own 0.2em
+   padding only indents text within the li, it doesn't reserve room for the
+   marker). With list-style-position: outside, the bullet is drawn in that
+   padding area, so at zero it renders outside the content box entirely. */
+.slidev-layout .content :where(ul, ol) {
+  padding-left: 1em;
+}
+
+.slidev-layout .content li :where(p) {
+  margin: 0;
 }
 
 /* Slidev's v-click hides not-yet-revealed content via opacity only, still
