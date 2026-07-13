@@ -1,5 +1,6 @@
 import { resolve } from 'path'
 import { readFileSync, existsSync } from 'fs'
+import { serializeMarkerOverride } from './composables/useCodeHighlights'
 
 const VAR_MAP: Record<string, Record<string, string>> = {
   'red-bar': { y: '--ed-red-y', x: '--ed-red-x', w: '--ed-red-w', h: '--ed-red-h' },
@@ -189,6 +190,48 @@ export default {
           res.statusCode = 200
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify({ layoutName }))
+        })
+      },
+    },
+    {
+      // Persists a dragged code-highlight callout's position back into the
+      // `@x,y` suffix of its marker comment in slides.md. Identified by the
+      // marker's exact original source line (round-tripped via the
+      // highlight span's data-source-line attribute) rather than by slide
+      // index/line number, since callouts are per-highlight-id, not tied to
+      // a shared layout file the way the fixed elements are.
+      name: 'slidev-code-highlight-position-saver',
+      configureServer(server) {
+        server.middlewares.use('/api/save-code-highlight-position', async (req, res) => {
+          if (req.method !== 'POST') {
+            res.statusCode = 405
+            res.end()
+            return
+          }
+          const chunks: Buffer[] = []
+          for await (const chunk of req) chunks.push(chunk)
+          const body = JSON.parse(Buffer.concat(chunks).toString())
+          const { sourceLine, x, y } = body
+          if (typeof sourceLine !== 'string' || typeof x !== 'number' || typeof y !== 'number') {
+            res.statusCode = 400
+            res.end()
+            return
+          }
+          const slidesPath = resolve(import.meta.dirname, 'slides.md')
+          const content = readFileSync(slidesPath, 'utf-8')
+          const idx = content.indexOf(sourceLine)
+          if (idx === -1) {
+            res.statusCode = 404
+            res.end()
+            return
+          }
+          const newLine = serializeMarkerOverride(sourceLine, x, y)
+          const newContent = content.slice(0, idx) + newLine + content.slice(idx + sourceLine.length)
+          const { writeFileSync } = await import('fs')
+          writeFileSync(slidesPath, newContent, 'utf-8')
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ sourceLine: newLine }))
         })
       },
     },

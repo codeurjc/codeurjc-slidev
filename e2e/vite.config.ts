@@ -1,6 +1,7 @@
 import { resolve } from 'path'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { serializeMarkerOverride } from './composables/useCodeHighlights'
 
 const __dirname = resolve(import.meta.dirname, '..')
 
@@ -185,6 +186,42 @@ export default {
           res.statusCode = 200
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify({ layoutName }))
+        })
+      },
+    },
+    {
+      name: 'slidev-code-highlight-position-saver',
+      configureServer(server) {
+        server.middlewares.use('/api/save-code-highlight-position', async (req, res) => {
+          if (req.method !== 'POST') {
+            res.statusCode = 405
+            res.end()
+            return
+          }
+          const chunks: Buffer[] = []
+          for await (const chunk of req) chunks.push(chunk)
+          const body = JSON.parse(Buffer.concat(chunks).toString())
+          const { sourceLine, x, y } = body
+          if (typeof sourceLine !== 'string' || typeof x !== 'number' || typeof y !== 'number') {
+            res.statusCode = 400
+            res.end()
+            return
+          }
+          const slidesPath = resolve(import.meta.dirname, 'slides.md')
+          const content = readFileSync(slidesPath, 'utf-8')
+          const idx = content.indexOf(sourceLine)
+          if (idx === -1) {
+            res.statusCode = 404
+            res.end()
+            return
+          }
+          const newLine = serializeMarkerOverride(sourceLine, x, y)
+          const newContent = content.slice(0, idx) + newLine + content.slice(idx + sourceLine.length)
+          const { writeFileSync } = await import('fs')
+          writeFileSync(slidesPath, newContent, 'utf-8')
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ sourceLine: newLine }))
         })
       },
     },

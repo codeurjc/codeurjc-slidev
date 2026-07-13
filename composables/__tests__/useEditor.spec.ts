@@ -357,4 +357,52 @@ describe('useEditor', () => {
     expect(style['--ed-red-w']).toMatch(/\d+px/)
     expect(style['--ed-red-h']).toMatch(/\d+px/)
   })
+
+  describe('dynamic (callout) position entries', () => {
+    it('ensurePosition adds a new key without touching the fixed elements', () => {
+      const { ensurePosition, positions, elementNames } = useEditor()
+      ensurePosition('callout:abc', { x: 1, y: 2, w: 100, h: 40 })
+      expect(positions['callout:abc']).toEqual({ x: 1, y: 2, w: 100, h: 40 })
+      // Dynamic keys aren't listed as editable elements in the SideEditor
+      expect(elementNames.value).not.toContain('callout:abc')
+    })
+
+    it('ensurePosition does not overwrite an already-registered key', () => {
+      const { ensurePosition, positions } = useEditor()
+      ensurePosition('callout:keep', { x: 1, y: 1, w: 10, h: 10 })
+      ensurePosition('callout:keep', { x: 99, y: 99, w: 10, h: 10 })
+      expect(positions['callout:keep']).toEqual({ x: 1, y: 1, w: 10, h: 10 })
+    })
+
+    it('a dynamic key participates in drag like a fixed element', () => {
+      const { ensurePosition, positions, editing, startDrag } = useEditor()
+      ensurePosition('callout:drag', { x: 10, y: 10, w: 50, h: 50 })
+      editing.value = true
+      startDrag(new MouseEvent('mousedown', { clientX: 0, clientY: 0 }), 'callout:drag')
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 0 }))
+      window.dispatchEvent(new MouseEvent('mouseup'))
+      expect(positions['callout:drag'].x).toBeGreaterThan(10)
+    })
+
+    it('a dynamic key participates in undo', () => {
+      const { ensurePosition, positions, editing, startDrag, undo } = useEditor()
+      ensurePosition('callout:undo-me', { x: 5, y: 5, w: 50, h: 50 })
+      editing.value = true
+      startDrag(new MouseEvent('mousedown', { clientX: 0, clientY: 0 }), 'callout:undo-me')
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 30, clientY: 0 }))
+      window.dispatchEvent(new MouseEvent('mouseup'))
+      expect(positions['callout:undo-me'].x).toBeGreaterThan(5)
+      undo()
+      expect(positions['callout:undo-me'].x).toBe(5)
+    })
+
+    it('pruneDynamicKeys removes stale entries under a prefix but keeps valid ones', () => {
+      const { ensurePosition, positions, pruneDynamicKeys } = useEditor()
+      ensurePosition('callout:stale', { x: 0, y: 0, w: 1, h: 1 })
+      ensurePosition('callout:fresh', { x: 0, y: 0, w: 1, h: 1 })
+      pruneDynamicKeys('callout:', new Set(['fresh']))
+      expect(positions['callout:stale']).toBeUndefined()
+      expect(positions['callout:fresh']).toBeDefined()
+    })
+  })
 })

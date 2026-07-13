@@ -29,3 +29,36 @@ aspectRatio: 16/9
 - Ese atributo se usará siempre que se necesite el número complejo 0+0i:
     - `zero + Complex(1, 1) == Complex(1, 1)`
     - `Complex(1, 1) + zero == Complex(1, 1)`
+
+---
+
+# Dobles
+## Ejercicio 8: GestorNotas
+- Queremos testear la clase **GestorNotas** que permite obtener la nota media de los alumnos
+- Obtiene los alumnos de una **BaseDatosAlumnos** configurada en el constructor
+- Usa el método **baseDatos.getNotasAlumno(id)** para obtener las notas de un alumno (en forma de array) para calcular su nota media
+
+---
+
+# Dobles
+## Ejercicio 8: GestorNotas
+```java
+public class GestorNotas {
+
+	private DBAlumno alumnos;
+	
+	public GestorNotas(DBAlumno alumnos) { // [!mark:ctor-dep] Inyecta la dependencia de la base de datos
+		this.alumnos = alumnos;
+	}
+	
+	public float calculaNotaMedia(long idAlumno) {
+		List<Float> notas = alumnos.getNotasAlumno(idAlumno); // [!mark:fetch(getNotasAlumno(idAlumno))] Obtiene las notas del alumno
+		float suma = 0.0f; // [!mark:loop:start] Recorre las notas para sumarlas
+		for(float nota : notas) {
+			suma += nota;
+		}
+		return suma / notas.size(); // [!mark:loop:end]
+	}
+	
+}
+```

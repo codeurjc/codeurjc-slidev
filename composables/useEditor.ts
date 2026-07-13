@@ -463,6 +463,34 @@ export function useEditor() {
     undoCheckpoint.value = null
   }
 
+  // Dynamic (non-fixed) position entries, e.g. one per code-highlight
+  // callout keyed as `callout:<highlight-id>`. Unlike the five fixed
+  // ELEMENTS, these aren't seeded up front (their count varies per slide) --
+  // callers register them on demand. Undo/snapshot/save already iterate
+  // positions/hidden/aspectLocked generically by key, so once registered a
+  // dynamic entry participates in drag, undo, and save exactly like a fixed
+  // element, with no further changes needed to those code paths.
+  function ensurePosition(key: string, initial: Rect) {
+    if (!(key in _sharedPositions)) {
+      _sharedPositions[key] = { ...initial }
+      _sharedHidden[key] = false
+      _sharedAspectLocked[key] = false
+    }
+  }
+
+  // Drops dynamic entries under `prefix` whose suffix isn't in `validSuffixes`
+  // -- used to clean up callouts whose highlight marker was removed from the
+  // source so their position data doesn't accumulate indefinitely.
+  function pruneDynamicKeys(prefix: string, validSuffixes: Set<string>) {
+    for (const key of Object.keys(_sharedPositions)) {
+      if (!key.startsWith(prefix)) continue
+      if (validSuffixes.has(key.slice(prefix.length))) continue
+      delete _sharedPositions[key]
+      delete _sharedHidden[key]
+      delete _sharedAspectLocked[key]
+    }
+  }
+
   function updateSnapshot() {
     snapshot.value = { positions: clonePositions(), hidden: cloneHidden(), aspectLocked: cloneAspectLocked() }
   }
@@ -495,5 +523,7 @@ export function useEditor() {
     toggleAspectLock,
     setAspectLocked,
     updateSnapshot,
+    ensurePosition,
+    pruneDynamicKeys,
   }
 }
