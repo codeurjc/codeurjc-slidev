@@ -9,3 +9,5 @@ e2e/node_modules/
 e2e/layouts/*.vue
 !e2e/layouts/default.vue
 layouts/layout-*.vue
+.claude/
+.opencode/

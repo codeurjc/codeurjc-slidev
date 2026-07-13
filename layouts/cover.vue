@@ -2,6 +2,7 @@
 defineProps<{
   date?: string
   subject?: string
+  lesson?: string
   authors?: string
 }>()
 </script>
@@ -14,9 +15,12 @@ defineProps<{
 
     <div class="cover-main">
       <img class="cover-logo" src="/images/logo.png" alt="Logo">
-      <div v-if="subject" class="cover-subject">{{ subject }}</div>
-      <div class="cover-title">
-        <slot />
+      <div class="cover-text-group" :class="{ 'cover-text-group-tight': lesson }">
+        <div v-if="subject" class="cover-subject">{{ subject }}</div>
+        <div v-if="lesson" class="cover-lesson">{{ lesson }}</div>
+        <div class="cover-title">
+          <slot />
+        </div>
       </div>
     </div>
 
@@ -74,6 +78,23 @@ defineProps<{
   font-size: 28pt;
   font-weight: 700;
   color: #cb0017;
+}
+
+.cover-lesson {
+  font-size: 28pt;
+  font-weight: 400;
+  color: #cb0017;
+}
+
+.cover-text-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+}
+
+.cover-text-group-tight {
+  gap: 12px;
 }
 
 .cover-title h1:first-child {
