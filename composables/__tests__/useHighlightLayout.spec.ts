@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { rectsOverlap, placeCallout, elbowPath, pointsToSvgPath, type Rect } from '../useHighlightLayout'
+import { rectsOverlap, placeCallout, elbowPath, pointsToSvgPath, estimateCalloutSize, type Rect } from '../useHighlightLayout'
 
 const slideRect: Rect = { x: 0, y: 0, w: 980, h: 552 }
 
@@ -52,6 +52,31 @@ describe('placeCallout', () => {
     expect(rectsOverlap(second.rect, codeRect)).toBe(false)
   })
 
+  it('shelf-stacks past an occupied side instead of abandoning it for a worse side', () => {
+    // A tall code block with little room below/above (mirrors a slide whose
+    // content fills nearly the full height) but plenty of room to the right.
+    // A third highlight whose natural right-side slot collides with an
+    // already-placed callout should slide along the right side rather than
+    // jumping to 'above' and overlapping whatever sits above the code block.
+    const tallCode: Rect = { x: 40, y: 40, w: 400, h: 460 }
+    const tightSlide: Rect = { x: 0, y: 0, w: 980, h: 502 }
+    const firstHl: Rect = { x: 60, y: 60, w: 200, h: 16 }
+    const secondHl: Rect = { x: 60, y: 150, w: 200, h: 16 }
+    const thirdHl: Rect = { x: 60, y: 155, w: 200, h: 16 }
+
+    const first = placeCallout({ codeRect: tallCode, highlightRect: firstHl, calloutSize, slideRect: tightSlide, placed: [] })
+    expect(first.side).toBe('right')
+    const second = placeCallout({ codeRect: tallCode, highlightRect: secondHl, calloutSize, slideRect: tightSlide, placed: [first.rect] })
+    expect(second.side).toBe('right')
+    const third = placeCallout({ codeRect: tallCode, highlightRect: thirdHl, calloutSize, slideRect: tightSlide, placed: [first.rect, second.rect] })
+
+    expect(third.side).toBe('right')
+    expect(third.stacked).toBe(false)
+    expect(rectsOverlap(third.rect, first.rect)).toBe(false)
+    expect(rectsOverlap(third.rect, second.rect)).toBe(false)
+    expect(rectsOverlap(third.rect, tallCode)).toBe(false)
+  })
+
   it('stacks rather than omitting the callout when no side has room', () => {
     const tinySlide: Rect = { x: 0, y: 0, w: codeRect.w + 20, h: codeRect.h + 20 }
     const cramped: Rect = { x: 10, y: 10, w: codeRect.w, h: codeRect.h }
@@ -59,6 +84,36 @@ describe('placeCallout', () => {
     expect(result.stacked).toBe(true)
     expect(result.rect.w).toBe(calloutSize.w)
     expect(result.rect.h).toBe(calloutSize.h)
+  })
+
+  it('clamps the stacked fallback within the slide bounds, even with many prior callouts', () => {
+    // A cramped code block (no side has room) plus a tall stack of
+    // already-placed callouts used to push the offset fallback rect's y far
+    // past the bottom of the slide before clamping was added.
+    const tinySlide: Rect = { x: 0, y: 0, w: codeRect.w + 20, h: codeRect.h + 20 }
+    const cramped: Rect = { x: 10, y: 10, w: codeRect.w, h: codeRect.h }
+    const manyPlaced: Rect[] = Array.from({ length: 10 }, (_, i) => ({ x: 500, y: i * 80, w: calloutSize.w, h: calloutSize.h }))
+    const result = placeCallout({ codeRect: cramped, highlightRect, calloutSize, slideRect: tinySlide, placed: manyPlaced })
+    expect(result.stacked).toBe(true)
+    expect(result.rect.x).toBeGreaterThanOrEqual(tinySlide.x)
+    expect(result.rect.x + result.rect.w).toBeLessThanOrEqual(tinySlide.x + tinySlide.w)
+    expect(result.rect.y).toBeGreaterThanOrEqual(tinySlide.y)
+    expect(result.rect.y + result.rect.h).toBeLessThanOrEqual(tinySlide.y + tinySlide.h)
+  })
+})
+
+describe('estimateCalloutSize', () => {
+  it('sizes a short comment narrower than the max width', () => {
+    const size = estimateCalloutSize('Short note')
+    expect(size.w).toBeLessThan(220)
+    expect(size.h).toBeGreaterThan(0)
+  })
+
+  it('caps width and grows height for a long comment', () => {
+    const shortSize = estimateCalloutSize('Short')
+    const longSize = estimateCalloutSize('This is a much, much longer comment that should wrap across multiple lines inside the callout box')
+    expect(longSize.w).toBeLessThanOrEqual(220)
+    expect(longSize.h).toBeGreaterThan(shortSize.h)
   })
 })
 

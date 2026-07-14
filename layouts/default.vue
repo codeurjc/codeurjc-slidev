@@ -2,7 +2,7 @@
 import { useEditor, CONTENT_DEFAULT_WIDTH } from '../composables/useEditor'
 import { useAutoFitText } from '../composables/useAutoFitText'
 import { computeBelowPreset } from '../composables/useImagePosition'
-import { placeCallout, elbowPath, pointsToSvgPath, type Rect, type Side } from '../composables/useHighlightLayout'
+import { placeCallout, elbowPath, pointsToSvgPath, estimateCalloutSize, type Rect, type Side } from '../composables/useHighlightLayout'
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 
 const VAR_MAP: Record<string, Record<string, string>> = {
@@ -98,7 +98,6 @@ watch(() => editor.editing.value, () => nextTick(computeCallouts))
 // `[data-highlight-id]` spans). Auto-placement/elbow-routing is pure
 // geometry (composables/useHighlightLayout.ts); this just gathers DOM rects
 // and wires drag -> persistence.
-const CALLOUT_SIZE = { w: 220, h: 76 }
 
 interface CalloutItem {
   id: string
@@ -107,9 +106,20 @@ interface CalloutItem {
   path: string
   overrideKey: string
   sourceLine: string
+  // Retained so the post-render remeasure pass (see remeasureCallouts) can
+  // recompute the connector path against the box's real auto-sized rect
+  // without re-running placement/collision detection.
+  highlightRect: Rect
+  side: Side
 }
 
 const calloutItems = ref<CalloutItem[]>([])
+const calloutEls = new Map<string, HTMLElement>()
+function setCalloutRef(id: string, el: Element | null) {
+  if (el) calloutEls.set(id, el as HTMLElement)
+  else calloutEls.delete(id)
+}
+
 // Highlight ids whose callout position is presenter-controlled (either via a
 // markdown `@x,y` override or an in-session drag) rather than recomputed
 // fresh on every pass. Local to this mounted instance so it naturally resets
@@ -144,6 +154,19 @@ function unionRects(rects: Rect[]): Rect {
   return { x, y, w: right - x, h: bottom - y }
 }
 
+// `<pre>` is a block-level element that stretches to its container's full
+// width regardless of how long the actual code lines are (Shiki/the theme
+// don't shrink-wrap it), so using the pre's own bounding rect as the "avoid
+// this" obstacle treats a lot of genuinely blank space as occupied. Using
+// the union of the individual `.line` spans' rects instead gives a tight
+// box matching the widest actual line, freeing up real side margin for
+// right/left placement.
+function tightCodeRect(pre: Element, originRect: DOMRect, scale: number): Rect {
+  const lineEls = Array.from(pre.querySelectorAll(':scope > code > .line'))
+  if (lineEls.length === 0) return rectOf(pre, originRect, scale)
+  return unionRects(lineEls.map(el => rectOf(el, originRect, scale)))
+}
+
 function deriveSide(rect: Rect, codeRect: Rect): Side {
   if (rect.x >= codeRect.x + codeRect.w) return 'right'
   if (rect.x + rect.w <= codeRect.x) return 'left'
@@ -174,6 +197,16 @@ function computeCallouts() {
     groups.get(id)!.push(el)
   }
 
+  const codeRectCache = new Map<Element, Rect>()
+  function codeRectFor(pre: Element): Rect {
+    let r = codeRectCache.get(pre)
+    if (!r) {
+      r = tightCodeRect(pre, originRect, scale)
+      codeRectCache.set(pre, r)
+    }
+    return r
+  }
+
   const items: CalloutItem[] = []
   const placed: Rect[] = []
   for (const [id, els] of groups) {
@@ -184,26 +217,27 @@ function computeCallouts() {
     const sourceLineB64 = first.getAttribute('data-source-line')
     const sourceLine = sourceLineB64 ? decodeBase64(sourceLineB64) : ''
     const pre = first.closest('pre')
-    const codeRect = pre ? rectOf(pre, originRect, scale) : slideRect
+    const codeRect = pre ? codeRectFor(pre) : slideRect
     const highlightRect = unionRects(els.map(el => rectOf(el, originRect, scale)))
     const overrideKey = `callout:${id}`
+    const calloutSize = estimateCalloutSize(comment)
 
     const overrideX = first.getAttribute('data-override-x')
     const overrideY = first.getAttribute('data-override-y')
     if (overrideX !== null && overrideY !== null && !manualIds.value.has(overrideKey)) {
       manualIds.value.add(overrideKey)
-      editor.ensurePosition(overrideKey, { x: Number(overrideX), y: Number(overrideY), w: CALLOUT_SIZE.w, h: CALLOUT_SIZE.h })
+      editor.ensurePosition(overrideKey, { x: Number(overrideX), y: Number(overrideY), ...calloutSize })
     }
 
     let rect: Rect
     let side: Side
     if (manualIds.value.has(overrideKey)) {
-      editor.ensurePosition(overrideKey, { x: highlightRect.x, y: highlightRect.y, ...CALLOUT_SIZE })
+      editor.ensurePosition(overrideKey, { x: highlightRect.x, y: highlightRect.y, ...calloutSize })
       const p = editor.positions[overrideKey]
-      rect = { x: p.x, y: p.y, w: CALLOUT_SIZE.w, h: CALLOUT_SIZE.h }
+      rect = { x: p.x, y: p.y, w: calloutSize.w, h: calloutSize.h }
       side = deriveSide(rect, codeRect)
     } else {
-      const placement = placeCallout({ codeRect, highlightRect, calloutSize: CALLOUT_SIZE, slideRect, placed })
+      const placement = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed })
       rect = placement.rect
       side = placement.side
       editor.ensurePosition(overrideKey, rect)
@@ -211,10 +245,32 @@ function computeCallouts() {
     }
     placed.push(rect)
     const path = pointsToSvgPath(elbowPath(highlightRect, rect, side))
-    items.push({ id, comment, rect, path, overrideKey, sourceLine })
+    items.push({ id, comment, rect, path, overrideKey, sourceLine, highlightRect, side })
   }
   calloutItems.value = items
   editor.pruneDynamicKeys('callout:', new Set(groups.keys()))
+  nextTick(remeasureCallouts)
+}
+
+// The rendered box is CSS auto-sized to its text (width: max-content capped
+// by max-width, height: auto), so the estimate used for placement above can
+// be off by a few pixels. Once the real box exists, re-read its actual
+// rect and recompute just the connector path so the line always meets the
+// box's true edge -- cheap, and avoids re-running placement/collision.
+function remeasureCallouts() {
+  const root = rootEl.value
+  if (!root) return
+  const scale = getScale()
+  const originRect = root.getBoundingClientRect()
+  for (const item of calloutItems.value) {
+    const el = calloutEls.get(item.id)
+    if (!el) continue
+    const real = rectOf(el, originRect, scale)
+    if (Math.abs(real.w - item.rect.w) < 1 && Math.abs(real.h - item.rect.h) < 1) continue
+    item.rect.w = real.w
+    item.rect.h = real.h
+    item.path = pointsToSvgPath(elbowPath(item.highlightRect, item.rect, item.side))
+  }
 }
 
 function startCalloutDrag(e: MouseEvent, item: CalloutItem) {
@@ -437,9 +493,10 @@ watch(editor.aspectLocked, (v) => {
     <div
       v-for="item in calloutItems"
       :key="item.id"
+      :ref="(el) => setCalloutRef(item.id, el as Element | null)"
       class="code-callout"
       :class="{ 'el-active': editor.editing.value && editor.selected.value === item.overrideKey }"
-      :style="{ left: item.rect.x + 'px', top: item.rect.y + 'px', width: item.rect.w + 'px', height: item.rect.h + 'px' }"
+      :style="{ left: item.rect.x + 'px', top: item.rect.y + 'px' }"
       @mousedown.stop="startCalloutDrag($event, item)"
     >{{ item.comment }}</div>
 
@@ -720,8 +777,13 @@ watch(editor.aspectLocked, (v) => {
   font-size: 13px;
   line-height: 1.3;
   color: #1a1a1a;
-  overflow: hidden;
   cursor: default;
+  /* Fits the box to its comment text (composables/useHighlightLayout.ts's
+     estimateCalloutSize only approximates this for placement purposes) so
+     short comments don't render as mostly-empty boxes. */
+  width: max-content;
+  max-width: 220px;
+  height: auto;
 }
 
 .editing .code-callout {

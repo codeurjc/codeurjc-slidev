@@ -16,7 +16,28 @@ Collection of themes, layouts, addons, and hacks for creating Slidev presentatio
 
 ## Code-highlight callouts
 
-Mark a line, line range, or substring inside a fenced code block, optionally with a comment that renders as a draggable callout box connected by an elbow connector. Syntax (a trailing comment on the target line, stripped from rendered output):
+Mark a line, line range, or substring inside a fenced code block, optionally with a comment that renders as a draggable callout box connected to the highlight by an elbow connector. Marks are written as a trailing comment on the target source line and are stripped from the rendered code (never shown to the audience). Parsing/rendering lives in `composables/useCodeHighlights.ts`; placement/routing lives in `composables/useHighlightLayout.ts`.
+
+### Marker grammar
+
+```
+// [!mark:<id>[:start|:end][(<substring>)][@<x>,<y>]] <comment>
+```
+
+- `<id>` — a slug you choose (letters, digits, `_`, `-`), unique **within that code block**. It's not a sequence number, so inserting a new mark elsewhere doesn't require renumbering existing ones.
+- `<comment>` — everything after the closing `]`, trimmed. If empty, the fragment still gets the highlight style but no callout is rendered.
+- The comment marker itself (`// [!mark:...]`) is stripped entirely from what the audience sees; only `<comment>` (if any) shows up, inside the callout box.
+
+### Forms
+
+| Form | Syntax | Behavior |
+|---|---|---|
+| Whole line | `// [!mark:id] comment` | Highlights the entire line the marker is on. |
+| Multi-line range | `// [!mark:id:start] comment` ... `// [!mark:id:end]` | Highlights every line from `:start` through `:end` inclusive, as one highlight/callout. The comment can go on either marker; if both have one, `:start`'s wins. |
+| Substring | `// [!mark:id(exact text)] comment` | Highlights only the first occurrence of `exact text` on that line, not the whole line. The substring may itself contain parentheses. |
+| Position override | append `@<x>,<y>` right before the closing `]`, e.g. `[!mark:id@120,40]` | Pins the callout's position instead of auto-placing it. Written automatically when you drag a callout in the editor (see below) — you normally don't type this by hand. |
+
+### Example
 
 ```java
 public GestorNotas(DBAlumno alumnos) { // [!mark:ctor-dep] Injects the DB dependency
@@ -24,11 +45,13 @@ public GestorNotas(DBAlumno alumnos) { // [!mark:ctor-dep] Injects the DB depend
 }
 ```
 
-- **Line range:** share an id across `[!mark:<id>:start]` and `[!mark:<id>:end]` markers.
-- **Substring:** add `(<exact text>)` after the id to highlight only that part of the line.
-- **No comment:** omit the trailing text to apply just the highlight style, with no callout box.
-- Callouts auto-place around the code block (right/left/below/above, whichever has room) and can be dragged to a new position in the layout editor (Layout tab); the dragged position is written back into the marker as `@x,y` (e.g. `[!mark:ctor-dep@120,40]`), so it persists across reloads and survives further edits to the code above it.
-- Multiple highlights per code block are supported; callouts avoid overlapping the code block and each other.
+### Callout placement and dragging
+
+- Callouts auto-place around the code block (right → left → below → above, first side that fits), sized to their comment text (capped at a max width, wrapping/growing taller for longer comments) rather than a fixed box.
+- The obstacle used for placement is the *actual code lines'* bounding box, not the `<pre>` element's full container width — a `<pre>` typically stretches wider than its longest line, and that leftover space is still fair game for a callout.
+- When a side is already occupied by another callout on the same code block, a new callout shelf-stacks along that side (closest open slot to its own highlight) instead of jumping to a worse side.
+- In editor mode (Layout tab), drag a callout to override its position; the dragged position is written back into the marker as `@x,y` (e.g. `[!mark:ctor-dep@120,40]`) via the `/api/save-code-highlight-position` endpoint, so it persists across reloads and survives further edits to the code above it.
+- Multiple highlights per code block are supported; callouts avoid overlapping the code block, each other, and (best-effort, via a bounds-clamped fallback) the edges of the slide itself.
 
 ## Stack
 

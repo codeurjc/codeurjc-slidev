@@ -102,8 +102,28 @@ test.describe('Code Highlight Callouts E2E', () => {
     expect(await rangeSpans.count()).toBeGreaterThanOrEqual(4)
   })
 
-  test('callouts do not overlap the code block or each other', async ({ page }) => {
-    const codeBox = await page.locator('.slidev-page-1 pre:visible').first().boundingBox()
+  test('callouts do not overlap the code text or each other', async ({ page }) => {
+    // The obstacle used for placement is the actual code lines' bounding
+    // box, not the <pre> element's own (wider) container box -- a <pre>
+    // stretches to its container's full width regardless of how long the
+    // code actually is, and callouts are allowed to sit in that leftover
+    // space as long as they don't cover real code text. So this checks
+    // against the union of the `.line` rects, not `pre`'s own box.
+    const lineBoxes = await page.locator('.slidev-page-1 pre:visible .line').evaluateAll(
+      els => els.map((el) => {
+        const r = el.getBoundingClientRect()
+        return { x: r.x, y: r.y, width: r.width, height: r.height }
+      }),
+    )
+    const codeTextBox = lineBoxes.reduce((acc, r) => {
+      if (!acc) return r
+      const right = Math.max(acc.x + acc.width, r.x + r.width)
+      const bottom = Math.max(acc.y + acc.height, r.y + r.height)
+      const x = Math.min(acc.x, r.x)
+      const y = Math.min(acc.y, r.y)
+      return { x, y, width: right - x, height: bottom - y }
+    }, null as { x: number, y: number, width: number, height: number } | null)
+
     const callouts = page.locator('.slidev-page-1 .code-callout:visible')
     const count = await callouts.count()
     const boxes = []
@@ -115,7 +135,7 @@ test.describe('Code Highlight Callouts E2E', () => {
     }
     for (const box of boxes) {
       expect(box).toBeTruthy()
-      if (box && codeBox) expect(overlaps(box, codeBox)).toBe(false)
+      if (box && codeTextBox) expect(overlaps(box, codeTextBox)).toBe(false)
     }
     for (let i = 0; i < boxes.length; i++) {
       for (let j = i + 1; j < boxes.length; j++) {
