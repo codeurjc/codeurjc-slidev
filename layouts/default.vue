@@ -75,6 +75,13 @@ onMounted(() => {
 
   updateTrackedImage()
   nextTick(computeCallouts)
+  // Callout placement measures real rendered rects (code line widths, in
+  // particular), which shift once the presentation's web font finishes
+  // loading -- a reflow that a MutationObserver never sees (no DOM change)
+  // and that can land well after the first computeCallouts() pass. Without
+  // this, callouts measured against the pre-fallback-font layout can get
+  // stuck wherever that first (wrong) measurement placed them.
+  document.fonts?.ready?.then(() => computeCallouts())
   const observer = new MutationObserver(() => {
     updateTrackedImage()
     computeCallouts()
