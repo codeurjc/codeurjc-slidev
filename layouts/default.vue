@@ -90,8 +90,16 @@ onMounted(() => {
     observer.observe(contentInnerEl.value, { childList: true, subtree: true })
   }
   window.addEventListener('resize', computeCallouts)
+  // Slidev can mount a slide's layout while it's still 0x0 (e.g. kept alive
+  // off-screen ahead of a transition), which computeCallouts bails out of --
+  // no DOM mutation or window resize follows once it's later revealed at
+  // its real size, so nothing else would ever re-trigger placement. A
+  // ResizeObserver on the root catches exactly that size change.
+  const resizeObserver = new ResizeObserver(computeCallouts)
+  resizeObserver.observe(el)
   onUnmounted(() => {
     observer.disconnect()
+    resizeObserver.disconnect()
     window.removeEventListener('resize', computeCallouts)
   })
 })
@@ -194,6 +202,15 @@ function computeCallouts() {
   }
   const scale = getScale()
   const originRect = root.getBoundingClientRect()
+  // While Slidev keeps an adjacent slide's layout mounted but not yet laid
+  // out/visible (e.g. during its slide-preload/transition handling), this
+  // root measures 0x0. Placing against a zero-area slideRect makes every
+  // candidate fail the bounds check and fall through to the stacked
+  // fallback, whose clamp() forces both x and y to 0 -- i.e. every callout
+  // collapses to the top-left corner. Bail out and let the next trigger
+  // (ResizeObserver below, MutationObserver, fonts.ready, window resize)
+  // recompute once the slide actually has real dimensions.
+  if (originRect.width === 0 || originRect.height === 0) return
   const slideRect: Rect = { x: 0, y: 0, w: originRect.width / scale, h: originRect.height / scale }
 
   const groups = new Map<string, Element[]>()
