@@ -5,7 +5,7 @@ describe('parseCodeHighlights', () => {
   it('parses a single-line marker with a comment and strips it from the code', () => {
     const code = [
       'public class Foo {',
-      '  int x = 1; // [!mark:x-init] Sets the initial value',
+      '  int x = 1; // [!mark] Sets the initial value',
       '}',
     ].join('\n')
     const { code: stripped, highlights } = parseCodeHighlights(code)
@@ -15,42 +15,56 @@ describe('parseCodeHighlights', () => {
       '}',
     ].join('\n'))
     expect(highlights).toEqual([
-      expect.objectContaining({ id: 'x-init', kind: 'line', startLine: 1, endLine: 1, comment: 'Sets the initial value' }),
+      expect.objectContaining({ kind: 'line', startLine: 1, endLine: 1, comment: 'Sets the initial value' }),
     ])
   })
 
-  it('parses a multi-line range via start/end markers sharing an id', () => {
+  it('parses a multi-line range via start/end markers', () => {
     const code = [
-      'a(); // [!mark:loop:start] Loops over notes',
+      'a(); // [!mark:start] Loops over notes',
       'b();',
-      'c(); // [!mark:loop:end]',
+      'c(); // [!mark:end]',
     ].join('\n')
     const { highlights } = parseCodeHighlights(code)
     expect(highlights).toEqual([
-      expect.objectContaining({ id: 'loop', kind: 'range', startLine: 0, endLine: 2, comment: 'Loops over notes' }),
+      expect.objectContaining({ kind: 'range', startLine: 0, endLine: 2, comment: 'Loops over notes' }),
     ])
   })
 
-  it('parses a sub-line substring marker', () => {
-    const code = 'alumnos.getNotasAlumno(idAlumno); // [!mark:fetch(getNotasAlumno(idAlumno))] Fetches raw scores'
-    const { highlights } = parseCodeHighlights(code)
-    expect(highlights).toEqual([
-      expect.objectContaining({ id: 'fetch', kind: 'substring', substring: 'getNotasAlumno(idAlumno)', comment: 'Fetches raw scores' }),
-    ])
-  })
-
-  it('keeps the first occurrence when a non-range id is duplicated', () => {
+  it('pairs nested start/end markers like matching brackets', () => {
     const code = [
-      'a(); // [!mark:dup] first',
-      'b(); // [!mark:dup] second',
+      'a(); // [!mark:start] outer',
+      'b(); // [!mark:start] inner',
+      'c(); // [!mark:end]',
+      'd(); // [!mark:end]',
     ].join('\n')
     const { highlights } = parseCodeHighlights(code)
-    expect(highlights).toHaveLength(1)
-    expect(highlights[0]).toEqual(expect.objectContaining({ startLine: 0, comment: 'first' }))
+    expect(highlights).toEqual([
+      expect.objectContaining({ kind: 'range', startLine: 0, endLine: 3, comment: 'outer' }),
+      expect.objectContaining({ kind: 'range', startLine: 1, endLine: 2, comment: 'inner' }),
+    ])
+  })
+
+  it('parses a sub-line substring marker using character indexes', () => {
+    const code = 'alumnos.getNotasAlumno(idAlumno); // [!mark(8-32)] Fetches raw scores'
+    const { highlights } = parseCodeHighlights(code)
+    expect(highlights).toEqual([
+      expect.objectContaining({ kind: 'substring', substringRange: { start: 8, end: 32 }, comment: 'Fetches raw scores' }),
+    ])
+  })
+
+  it('assigns each highlight a distinct auto-generated id', () => {
+    const code = [
+      'a(); // [!mark] first',
+      'b(); // [!mark] second',
+    ].join('\n')
+    const { highlights } = parseCodeHighlights(code)
+    expect(highlights).toHaveLength(2)
+    expect(highlights[0].id).not.toBe(highlights[1].id)
   })
 
   it('ignores a dangling end marker with no matching start', () => {
-    const code = 'a(); // [!mark:orphan:end]'
+    const code = 'a(); // [!mark:end]'
     const { highlights } = parseCodeHighlights(code)
     expect(highlights).toEqual([])
   })
@@ -63,7 +77,7 @@ describe('parseCodeHighlights', () => {
   })
 
   it('parses a manual position override suffix', () => {
-    const code = 'a(); // [!mark:pos@120,45] moved'
+    const code = 'a(); // [!mark@120,45] moved'
     const { highlights } = parseCodeHighlights(code)
     expect(highlights[0].override).toEqual({ x: 120, y: 45 })
   })
@@ -71,18 +85,23 @@ describe('parseCodeHighlights', () => {
 
 describe('serializeMarkerOverride', () => {
   it('appends an override to a marker with none yet', () => {
-    const line = 'a(); // [!mark:x] comment'
-    expect(serializeMarkerOverride(line, 10, 20)).toBe('a(); // [!mark:x@10,20] comment')
+    const line = 'a(); // [!mark] comment'
+    expect(serializeMarkerOverride(line, 10, 20)).toBe('a(); // [!mark@10,20] comment')
   })
 
   it('replaces an existing override', () => {
-    const line = 'a(); // [!mark:x@1,2] comment'
-    expect(serializeMarkerOverride(line, 10, 20)).toBe('a(); // [!mark:x@10,20] comment')
+    const line = 'a(); // [!mark@1,2] comment'
+    expect(serializeMarkerOverride(line, 10, 20)).toBe('a(); // [!mark@10,20] comment')
   })
 
   it('preserves range/substring markers when adding an override', () => {
-    const line = 'a(); // [!mark:x:start] comment'
-    expect(serializeMarkerOverride(line, 5, 6)).toBe('a(); // [!mark:x:start@5,6] comment')
+    const line = 'a(); // [!mark:start] comment'
+    expect(serializeMarkerOverride(line, 5, 6)).toBe('a(); // [!mark:start@5,6] comment')
+  })
+
+  it('preserves a substring range when adding an override', () => {
+    const line = 'a(); // [!mark(1-3)] comment'
+    expect(serializeMarkerOverride(line, 5, 6)).toBe('a(); // [!mark(1-3)@5,6] comment')
   })
 
   it('returns the line unchanged if it has no marker', () => {
@@ -100,18 +119,18 @@ describe('injectHighlightSpans', () => {
 
   it('wraps a whole highlighted line in a data-highlight-id span', () => {
     const html = shikiHtml(['<span style="color:red">int</span> x = 1;'])
-    const { highlights } = parseCodeHighlights('int x = 1; // [!mark:h1] note')
+    const { highlights } = parseCodeHighlights('int x = 1; // [!mark] note')
     const out = injectHighlightSpans(html, highlights)
-    expect(out).toContain('data-highlight-id="h1"')
+    expect(out).toContain(`data-highlight-id="${highlights[0].id}"`)
     expect(out).toContain('data-comment="note"')
     expect(out).toContain('<span style="color:red">int</span> x = 1;</span>')
   })
 
   it('wraps only the matched substring, not the whole line', () => {
     const html = shikiHtml(['<span style="color:blue">foo</span>(<span style="color:green">bar</span>)'])
-    const { highlights } = parseCodeHighlights('foo(bar) // [!mark:call(bar)] the arg')
+    const { highlights } = parseCodeHighlights('foo(bar) // [!mark(4-7)] the arg')
     const out = injectHighlightSpans(html, highlights)
-    expect(out).toContain('data-highlight-id="call"')
+    expect(out).toContain(`data-highlight-id="${highlights[0].id}"`)
     // the wrapped fragment's text content is exactly "bar", not "foo(bar)"
     const wrapStart = out.indexOf('<span class="code-hl-mark"')
     const wrapOpenEnd = out.indexOf('>', wrapStart) + 1
@@ -124,12 +143,12 @@ describe('injectHighlightSpans', () => {
   it('wraps every line within a multi-line range with the same id', () => {
     const html = shikiHtml(['line0', 'line1', 'line2'])
     const { highlights } = parseCodeHighlights([
-      'line0 // [!mark:r:start] note',
+      'line0 // [!mark:start] note',
       'line1',
-      'line2 // [!mark:r:end]',
+      'line2 // [!mark:end]',
     ].join('\n'))
     const out = injectHighlightSpans(html, highlights)
-    expect(out.match(/data-highlight-id="r"/g)).toHaveLength(3)
+    expect(out.match(new RegExp(`data-highlight-id="${highlights[0].id}"`, 'g'))).toHaveLength(3)
   })
 
   it('returns html unchanged when there are no highlights', () => {

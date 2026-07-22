@@ -47,17 +47,17 @@ public class GestorNotas {
 
 	private DBAlumno alumnos;
 	
-	public GestorNotas(DBAlumno alumnos) { // [!mark:ctor-dep] Inyecta la dependencia de la base de datos
+	public GestorNotas(DBAlumno alumnos) { // [!mark] Inyecta la dependencia de la base de datos
 		this.alumnos = alumnos;
 	}
 	
 	public float calculaNotaMedia(long idAlumno) {
-		List<Float> notas = alumnos.getNotasAlumno(idAlumno); // [!mark:fetch(getNotasAlumno(idAlumno))] Obtiene las notas del alumno
-		float suma = 0.0f; // [!mark:loop:start] Recorre las notas para sumarlas
+		List<Float> notas = alumnos.getNotasAlumno(idAlumno); // [!mark(30-54)] Obtiene las notas del alumno
+		float suma = 0.0f; // [!mark:start] Recorre las notas para sumarlas
 		for(float nota : notas) {
 			suma += nota;
 		}
-		return suma / notas.size(); // [!mark:loop:end]
+		return suma / notas.size(); // [!mark:end]
 	}
 	
 }

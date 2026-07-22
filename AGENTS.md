@@ -21,27 +21,27 @@ Mark a line, line range, or substring inside a fenced code block, optionally wit
 ### Marker grammar
 
 ```
-// [!mark:<id>[:start|:end][(<substring>)][@<x>,<y>]] <comment>
+// [!mark[:start|:end][(<start>-<end>)][@<x>,<y>]] <comment>
 ```
 
-- `<id>` — a slug you choose (letters, digits, `_`, `-`), unique **within that code block**. It's not a sequence number, so inserting a new mark elsewhere doesn't require renumbering existing ones.
+- No id: presenters never name or reference a highlight, so one isn't part of the syntax — ids are generated internally (by encounter order within the code block) purely for DOM grouping and position bookkeeping.
 - `<comment>` — everything after the closing `]`, trimmed. If empty, the fragment still gets the highlight style but no callout is rendered.
-- The comment marker itself (`// [!mark:...]`) is stripped entirely from what the audience sees; only `<comment>` (if any) shows up, inside the callout box.
+- The comment marker itself (`// [!mark...]`) is stripped entirely from what the audience sees; only `<comment>` (if any) shows up, inside the callout box.
 
 ### Forms
 
 | Form | Syntax | Behavior |
 |---|---|---|
-| Whole line | `// [!mark:id] comment` | Highlights the entire line the marker is on. |
-| Multi-line range | `// [!mark:id:start] comment` ... `// [!mark:id:end]` | Highlights every line from `:start` through `:end` inclusive, as one highlight/callout. The comment can go on either marker; if both have one, `:start`'s wins. |
-| Substring | `// [!mark:id(exact text)] comment` | Highlights only the first occurrence of `exact text` on that line, not the whole line. The substring may itself contain parentheses. |
-| Position override | append `@<x>,<y>` right before the closing `]`, e.g. `[!mark:id@120,40]` | Pins the callout's position instead of auto-placing it. Written automatically when you drag a callout in the editor (see below) — you normally don't type this by hand. |
+| Whole line | `// [!mark] comment` | Highlights the entire line the marker is on. |
+| Multi-line range | `// [!mark:start] comment` ... `// [!mark:end]` | Highlights every line from `:start` through `:end` inclusive, as one highlight/callout. The comment can go on either marker; if both have one, `:start`'s wins. Pairing is nearest-unclosed-start-first, like matching brackets, so ranges can nest. |
+| Substring | `// [!mark(<start>-<end>)] comment` | Highlights only the character range `[<start>, <end>)` of that line (0-based, end-exclusive), not the whole line — count characters in the source line itself (including leading whitespace), not the rendered/Shiki-wrapped HTML. |
+| Position override | append `@<x>,<y>` right before the closing `]`, e.g. `[!mark@120,40]` | Pins the callout's position instead of auto-placing it. Written automatically when you drag a callout in the editor (see below) — you normally don't type this by hand. |
 
 ### Example
 
 ```java
-public GestorNotas(DBAlumno alumnos) { // [!mark:ctor-dep] Injects the DB dependency
-  this.alumnos = alumnos;              // [!mark:body(this.alumnos)] Just the substring
+public GestorNotas(DBAlumno alumnos) { // [!mark] Injects the DB dependency
+  this.alumnos = alumnos;              // [!mark(2-16)] Just the substring
 }
 ```
 
@@ -50,7 +50,7 @@ public GestorNotas(DBAlumno alumnos) { // [!mark:ctor-dep] Injects the DB depend
 - Callouts auto-place around the code block (right → left → below → above, first side that fits), sized to their comment text (capped at a max width, wrapping/growing taller for longer comments) rather than a fixed box.
 - The obstacle used for placement is the *actual code lines'* bounding box, not the `<pre>` element's full container width — a `<pre>` typically stretches wider than its longest line, and that leftover space is still fair game for a callout.
 - When a side is already occupied by another callout on the same code block, a new callout shelf-stacks along that side (closest open slot to its own highlight) instead of jumping to a worse side.
-- In editor mode (Layout tab), drag a callout to override its position; the dragged position is written back into the marker as `@x,y` (e.g. `[!mark:ctor-dep@120,40]`) via the `/api/save-code-highlight-position` endpoint, so it persists across reloads and survives further edits to the code above it.
+- In editor mode (Layout tab), drag a callout to override its position; the dragged position is written back into the marker as `@x,y` (e.g. `[!mark@120,40]`) via the `/api/save-code-highlight-position` endpoint, so it persists across reloads and survives further edits to the code above it.
 - Multiple highlights per code block are supported; callouts avoid overlapping the code block, each other, and (best-effort, via a bounds-clamped fallback) the edges of the slide itself.
 
 ## Stack

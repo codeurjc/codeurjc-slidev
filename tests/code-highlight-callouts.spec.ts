@@ -21,17 +21,17 @@ aspectRatio: 16/9
 
 \`\`\`java
 public class GestorNotas {
-  public GestorNotas(DBAlumno alumnos) { // [!mark:ctor-dep] Injects the DB dependency
+  public GestorNotas(DBAlumno alumnos) { // [!mark] Injects the DB dependency
     this.alumnos = alumnos;
   }
 
-  public float calculaNotaMedia(long idAlumno) { // [!mark:fetch(calculaNotaMedia)] Entry point
-    List<Float> notas = alumnos.getNotasAlumno(idAlumno); // [!mark:loop:start] Loops over notes
+  public float calculaNotaMedia(long idAlumno) { // [!mark(15-31)] Entry point
+    List<Float> notas = alumnos.getNotasAlumno(idAlumno); // [!mark:start] Loops over notes
     float suma = 0.0f;
     for (float nota : notas) {
       suma += nota;
     }
-    return suma / notas.size(); // [!mark:loop:end]
+    return suma / notas.size(); // [!mark:end]
   }
 }
 \`\`\`
@@ -85,7 +85,7 @@ test.describe('Code Highlight Callouts E2E', () => {
     const marks = page.locator('.slidev-page-1 [data-highlight-id]:visible')
     await expect(marks.first()).toBeVisible()
     const codeText = await page.locator('.slidev-page-1 pre:visible').first().innerText()
-    expect(codeText).not.toContain('[!mark:')
+    expect(codeText).not.toContain('[!mark')
   })
 
   test('each highlight with a comment renders a connected callout', async ({ page }) => {
@@ -98,7 +98,11 @@ test.describe('Code Highlight Callouts E2E', () => {
   })
 
   test('a multi-line range highlight wraps every line in its range with the same id', async ({ page }) => {
-    const rangeSpans = page.locator('.slidev-page-1 [data-highlight-id="loop"]:visible')
+    // Ids are auto-generated (no longer user-chosen), so look up the range's
+    // id via one of its spans (identified by its comment) rather than a
+    // hardcoded id string.
+    const rangeId = await page.locator('.slidev-page-1 [data-comment="Loops over notes"]:visible').first().getAttribute('data-highlight-id')
+    const rangeSpans = page.locator(`.slidev-page-1 [data-highlight-id="${rangeId}"]:visible`)
     expect(await rangeSpans.count()).toBeGreaterThanOrEqual(4)
   })
 
@@ -164,6 +168,6 @@ test.describe('Code Highlight Callouts E2E', () => {
     // Give the drag's fetch() a moment to land before reading the file back.
     await page.waitForTimeout(500)
     const updated = readFileSync(slidesPath, 'utf-8')
-    expect(updated).toMatch(/\[!mark:ctor-dep@-?\d+,-?\d+\]/)
+    expect(updated).toMatch(/\[!mark@-?\d+,-?\d+\]/)
   })
 })

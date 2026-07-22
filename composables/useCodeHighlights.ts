@@ -1,8 +1,16 @@
 // Parsing + rendering support for the inline code-highlight marker syntax:
-//   // [!mark:<id>] comment
-//   // [!mark:<id>:start] / // [!mark:<id>:end]   (multi-line range, shared id)
-//   // [!mark:<id>(<substring>)] comment           (sub-line/token highlight)
-//   // [!mark:<id>@<x>,<y>] comment                 (manual callout position override)
+//   // [!mark] comment
+//   // [!mark:start] / // [!mark:end]     (multi-line range; nearest unclosed
+//                                          start pairs with the next end, like
+//                                          matching brackets)
+//   // [!mark(<start>-<end>)] comment     (sub-line highlight; 0-based,
+//                                          end-exclusive character indices
+//                                          into the code line, not the
+//                                          rendered/Shiki-wrapped HTML)
+//   // [!mark@<x>,<y>] comment            (manual callout position override)
+// Highlight ids are internal bookkeeping only (DOM grouping, position-map
+// keys) -- presenters never write or reference them, so they're generated
+// from encounter order within a code block rather than parsed from the marker.
 // Runs in both a Node/Vite context (setup/transformers.ts) and in unit tests;
 // deliberately has no Vue or DOM dependency.
 
@@ -11,20 +19,19 @@ export interface CodeHighlight {
   kind: 'line' | 'range' | 'substring'
   startLine: number
   endLine: number
-  substring?: string
+  substringRange?: { start: number, end: number }
   comment: string
   override?: { x: number, y: number }
   /** Exact original source line the marker was parsed from (for round-tripping position overrides). */
   sourceLine: string
 }
 
-const MARKER_RE = /^(.*?)(?:\/\/|#)\s*\[!mark:([A-Za-z0-9_-]+)(?::(start|end))?(?:\(([\s\S]*?)\)(?=(?:@-?\d+,-?\d+)?\]))?(?:@(-?\d+),(-?\d+))?\]\s*(.*)$/
+const MARKER_RE = /^(.*?)(?:\/\/|#)\s*\[!mark(?::(start|end))?(?:\((\d+)-(\d+)\))?(?:@(-?\d+),(-?\d+))?\]\s*(.*)$/
 
 interface ParsedMarkerLine {
   codePrefix: string
-  id: string
   role?: 'start' | 'end'
-  substring?: string
+  substringRange?: { start: number, end: number }
   override?: { x: number, y: number }
   comment: string
 }
@@ -32,12 +39,11 @@ interface ParsedMarkerLine {
 function parseMarkerLine(line: string): ParsedMarkerLine | null {
   const m = line.match(MARKER_RE)
   if (!m) return null
-  const [, codePrefix, id, role, substring, ox, oy, comment] = m
+  const [, codePrefix, role, rangeStart, rangeEnd, ox, oy, comment] = m
   return {
     codePrefix: codePrefix.replace(/\s+$/, ''),
-    id,
     role: role as 'start' | 'end' | undefined,
-    substring: substring || undefined,
+    substringRange: rangeStart !== undefined ? { start: Number(rangeStart), end: Number(rangeEnd) } : undefined,
     override: ox !== undefined ? { x: Number(ox), y: Number(oy) } : undefined,
     comment: comment.trim(),
   }
@@ -47,8 +53,8 @@ export function parseCodeHighlights(code: string): { code: string, highlights: C
   const lines = code.split('\n')
   const strippedLines: string[] = []
   const highlights: CodeHighlight[] = []
-  const seenSingle = new Set<string>()
-  const pendingStarts = new Map<string, { line: number, comment: string, override?: { x: number, y: number }, sourceLine: string }>()
+  const pendingStarts: { line: number, comment: string, override?: { x: number, y: number }, sourceLine: string }[] = []
+  let nextId = 0
 
   lines.forEach((line, index) => {
     const parsed = parseMarkerLine(line)
@@ -59,15 +65,14 @@ export function parseCodeHighlights(code: string): { code: string, highlights: C
     strippedLines.push(parsed.codePrefix)
 
     if (parsed.role === 'start') {
-      pendingStarts.set(parsed.id, { line: index, comment: parsed.comment, override: parsed.override, sourceLine: line })
+      pendingStarts.push({ line: index, comment: parsed.comment, override: parsed.override, sourceLine: line })
       return
     }
     if (parsed.role === 'end') {
-      const start = pendingStarts.get(parsed.id)
-      pendingStarts.delete(parsed.id)
+      const start = pendingStarts.pop()
       if (!start) return // malformed: end with no matching start, ignore
       highlights.push({
-        id: parsed.id,
+        id: String(nextId++),
         kind: 'range',
         startLine: start.line,
         endLine: index,
@@ -78,14 +83,12 @@ export function parseCodeHighlights(code: string): { code: string, highlights: C
       return
     }
     // single-line (whole line or substring) highlight
-    if (seenSingle.has(parsed.id)) return // duplicate id: first occurrence wins
-    seenSingle.add(parsed.id)
     highlights.push({
-      id: parsed.id,
-      kind: parsed.substring ? 'substring' : 'line',
+      id: String(nextId++),
+      kind: parsed.substringRange ? 'substring' : 'line',
       startLine: index,
       endLine: index,
-      substring: parsed.substring,
+      substringRange: parsed.substringRange,
       comment: parsed.comment,
       override: parsed.override,
       sourceLine: line,
@@ -101,7 +104,7 @@ export function serializeMarkerOverride(sourceLine: string, x: number, y: number
   const rounded = { x: Math.round(x), y: Math.round(y) }
   if (MARKER_RE.test(sourceLine)) {
     return sourceLine.replace(
-      /(\[!mark:[A-Za-z0-9_-]+(?::(?:start|end))?(?:\([\s\S]*?\)(?=(?:@-?\d+,-?\d+)?\]))?)(?:@-?\d+,-?\d+)?(\])/,
+      /(\[!mark(?::(?:start|end))?(?:\(\d+-\d+\))?)(?:@-?\d+,-?\d+)?(\])/,
       `$1@${rounded.x},${rounded.y}$2`,
     )
   }
@@ -156,12 +159,11 @@ function buildTextMap(lineHtml: string): { plain: string, map: number[] } {
 }
 
 export function wrapSubstringInLineHtml(lineHtml: string, h: CodeHighlight): string {
-  const { plain, map } = buildTextMap(lineHtml)
-  const idx = plain.indexOf(h.substring!)
-  if (idx === -1) return lineHtml
-  const startHtml = map[idx]
-  const endPlainIdx = idx + h.substring!.length
-  const endHtml = endPlainIdx < map.length ? map[endPlainIdx] : lineHtml.length
+  const { map } = buildTextMap(lineHtml)
+  const { start, end } = h.substringRange!
+  if (start >= map.length || end <= start) return lineHtml
+  const startHtml = map[start]
+  const endHtml = end < map.length ? map[end] : lineHtml.length
   return (
     lineHtml.slice(0, startHtml)
     + `<span class="code-hl-mark"${highlightAttrs(h)}>`
@@ -215,7 +217,7 @@ export function injectHighlightSpans(html: string, highlights: CodeHighlight[]):
       let out = lineHtml
       for (const h of highlights) {
         if (index < h.startLine || index > h.endLine) continue
-        if (h.kind === 'substring' && h.substring && index === h.startLine) {
+        if (h.kind === 'substring' && h.substringRange && index === h.startLine) {
           out = wrapSubstringInLineHtml(out, h)
         } else {
           out = `<span class="code-hl-mark"${highlightAttrs(h)}>${out}</span>`
