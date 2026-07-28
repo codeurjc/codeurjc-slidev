@@ -46,3 +46,21 @@ aspectRatio: 16/9
 [!mark:"public GestorNotas(DBAlumno alumnos)"] Inyecta la dependencia de la base de datos
 [!mark:"getNotasAlumno(idAlumno)"] Obtiene las notas del alumno
 [!mark:"float suma = 0.0f;".."return suma / notas.size();"] Recorre las notas para sumarlas
+
+---
+
+# Dobles
+## Ejercicio 8: Solución con mock
+
+```mermaid
+graph LR
+    Test["GestorNotasTest"] -->|crea y configura| Mock["DBAlumno mock<br/>(dependencia simulada)"]
+    Mock -->|se inyecta en el constructor| SUT["GestorNotas<br/>(SUT)"]
+    Test -->|invoca el método a probar| SUT
+    SUT -->|usa| Mock
+    SUT -->|resultado| Test
+```
+
+- El test crea un **mock** de `DBAlumno` y define qué debe devolver `getNotasAlumno(id)`
+- El mock se pasa al constructor de `GestorNotas` (System Under Test)
+- Así el test no depende de una base de datos real

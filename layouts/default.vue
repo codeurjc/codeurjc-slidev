@@ -676,6 +676,19 @@ watch(editor.aspectLocked, (v) => {
   display: none;
 }
 
+/* Mermaid's ShadowRoot host (see @slidev/client Mermaid.vue) is otherwise an
+   inline/shrink-to-content element, so its inner svg's default width: 100%
+   resolves against that shrunk width and renders tiny. Giving the host a
+   definite width and centering it via margin auto lets the svg's width: 100%
+   fill it (capped by mermaid's own inline max-width style at the diagram's
+   natural size, so smaller diagrams don't get stretched beyond that). */
+.content-inner .mermaid {
+  display: block;
+  margin: 0 auto;
+  width: 850px;
+  max-width: 100%;
+}
+
 .content-overlay {
   position: absolute;
   top: var(--ed-content-y, 80px);
