@@ -5,7 +5,7 @@ TBD - defines how highlighted code fragments (see `code-highlight-marking`) get 
 ## Requirements
 
 ### Requirement: Each highlight renders a connected callout box
-Every highlight defined via the `code-highlight-marking` capability that has non-empty comment text SHALL render a callout box displaying that comment, connected to its highlighted fragment by an elbow-style (axis-aligned, two- or three-segment) connector line.
+Every highlight — whether defined via the `code-highlight-marking` capability's inline trailing-comment markers, or via the `external-highlight-anchors` capability's anchor declarations on a `<<<`-imported snippet — that has non-empty comment text SHALL render a callout box displaying that comment, connected to its highlighted fragment by an elbow-style (axis-aligned, two- or three-segment) connector line.
 
 #### Scenario: Highlight with comment produces a callout
 - **WHEN** a highlight `ctor-dep` has comment text "Injects the DB dependency"
@@ -14,6 +14,10 @@ Every highlight defined via the `code-highlight-marking` capability that has non
 #### Scenario: Highlight without comment produces no callout
 - **WHEN** a marker has no trailing comment text
 - **THEN** the fragment is still rendered with the highlight style, but no callout box or connector is rendered for it
+
+#### Scenario: Anchor-declared highlight on a file-sourced snippet produces a callout
+- **WHEN** a `<<<`-imported snippet has an anchor declaration `[!mark:"this.alumnos = alumnos"] Injects the DB dependency`
+- **THEN** a callout box containing that comment is rendered, connected to the matched line by the same elbow-connector mechanism used for inline markers
 
 ### Requirement: Callouts are auto-placed to avoid the code block and each other
 By default, each callout's position SHALL be computed automatically by trying candidate zones relative to the code block — right, left, below, above, in that order — and selecting the first candidate whose bounding box does not overlap the code block or any other already-placed callout on the same slide.

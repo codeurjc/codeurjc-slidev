@@ -42,23 +42,7 @@ aspectRatio: 16/9
 
 # Dobles
 ## Ejercicio 8: GestorNotas
-```java
-public class GestorNotas {
-
-	private DBAlumno alumnos;
-	
-	public GestorNotas(DBAlumno alumnos) { // [!mark] Inyecta la dependencia de la base de datos
-		this.alumnos = alumnos;
-	}
-	
-	public float calculaNotaMedia(long idAlumno) {
-		List<Float> notas = alumnos.getNotasAlumno(idAlumno); // [!mark(30-54)] Obtiene las notas del alumno
-		float suma = 0.0f; // [!mark:start] Recorre las notas para sumarlas
-		for(float nota : notas) {
-			suma += nota;
-		}
-		return suma / notas.size(); // [!mark:end]
-	}
-	
-}
-```
+<<< @/code/ejer8/src/main/java/es/codeurjc/test/gestor/GestorNotas.java[7-24] java
+[!mark:"public GestorNotas(DBAlumno alumnos)"] Inyecta la dependencia de la base de datos
+[!mark:"getNotasAlumno(idAlumno)"] Obtiene las notas del alumno
+[!mark:"float suma = 0.0f;".."return suma / notas.size();"] Recorre las notas para sumarlas

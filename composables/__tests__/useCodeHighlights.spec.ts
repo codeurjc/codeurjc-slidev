@@ -140,6 +140,42 @@ describe('injectHighlightSpans', () => {
     expect(wrapped).not.toContain('foo')
   })
 
+  it('wraps a substring that spans multiple sibling syntax-highlight spans without truncating', () => {
+    // Regression test: a naive single open/close tag pair inserted at the
+    // overall start/end offsets produces invalid overlapping markup when the
+    // substring crosses more than one Shiki token span -- the browser then
+    // "fixes" it by closing the highlight early, silently dropping
+    // everything after the first token.
+    const html = shikiHtml([
+      '<span style="color:a">List</span>&lt;<span style="color:c">Float</span>&gt; notas = alumnos.<span style="color:d">getNotasAlumno</span>(<span style="color:e">idAlumno</span>);',
+    ])
+    const code = 'List<Float> notas = alumnos.getNotasAlumno(idAlumno);'
+    const start = code.indexOf('getNotasAlumno(idAlumno)')
+    const end = start + 'getNotasAlumno(idAlumno)'.length
+    const highlight = { id: '0', kind: 'substring' as const, startLine: 0, endLine: 0, substringRange: { start, end }, comment: 'note', sourceLine: 'x' }
+    const out = injectHighlightSpans(html, [highlight])
+    // every mark fragment concatenated together (in document order) should
+    // reconstruct the full matched text, not just its first token
+    const marked = Array.from(out.matchAll(/<span class="code-hl-mark[^"]*"[^>]*>([^<]*)<\/span>/g)).map(m => m[1]).join('')
+    expect(marked).toBe('getNotasAlumno(idAlumno)')
+  })
+
+  it('marks the first/last segment of a multi-token substring so CSS can visually merge them', () => {
+    // Regression test: without these modifier classes each token's own
+    // bordered/rounded box renders as a visually separate box, making a
+    // single highlight look like it "breaks" at every token boundary.
+    const html = shikiHtml([
+      '<span style="color:d">getNotasAlumno</span>(<span style="color:e">idAlumno</span>)',
+    ])
+    const highlight = { id: '0', kind: 'substring' as const, startLine: 0, endLine: 0, substringRange: { start: 0, end: 24 }, comment: 'note', sourceLine: 'x' }
+    const out = injectHighlightSpans(html, [highlight])
+    const classes = Array.from(out.matchAll(/<span class="(code-hl-mark[^"]*)"/g)).map(m => m[1])
+    expect(classes.length).toBeGreaterThan(1)
+    expect(classes[0]).toContain('code-hl-mark-start')
+    expect(classes[classes.length - 1]).toContain('code-hl-mark-end')
+    expect(classes.slice(1, -1).every(c => c.includes('code-hl-mark-mid'))).toBe(true)
+  })
+
   it('wraps every line within a multi-line range with the same id', () => {
     const html = shikiHtml(['line0', 'line1', 'line2'])
     const { highlights } = parseCodeHighlights([

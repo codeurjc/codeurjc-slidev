@@ -767,11 +767,30 @@ watch(editor.aspectLocked, (v) => {
 
 /* Persistent code-fragment highlight (see composables/useCodeHighlights.ts).
    Distinct from Slidev's native {n-m} click-step dim/undim so the two don't
-   visually collide if a code block uses both. */
+   visually collide if a code block uses both. A substring highlight that
+   spans more than one Shiki syntax-highlight token renders as multiple
+   sibling .code-hl-mark spans (one per token, sharing data-highlight-id) --
+   border (not box-shadow, which can't be limited to just some sides) is used
+   here so the -start/-mid/-end modifiers below can "cut open" the touching
+   edges between them and read as one continuous box instead of several
+   separate ones. */
 .content-inner :where(.code-hl-mark) {
   background: rgba(203, 0, 23, 0.14);
   border-radius: 3px;
-  box-shadow: 0 0 0 1px rgba(203, 0, 23, 0.35);
+  border: 1px solid rgba(203, 0, 23, 0.35);
+}
+.content-inner :where(.code-hl-mark-start) {
+  border-radius: 3px 0 0 3px;
+  border-right: none;
+}
+.content-inner :where(.code-hl-mark-mid) {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+}
+.content-inner :where(.code-hl-mark-end) {
+  border-radius: 0 3px 3px 0;
+  border-left: none;
 }
 
 .code-callout-svg {
