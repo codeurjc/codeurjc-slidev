@@ -92,6 +92,72 @@ public float calculaNotaMedia(long idAlumno) {
 - En modo edición, arrastrar un callout escribe su posición como `@x,y` en la marca, para que persista entre recargas y sobreviva a ediciones posteriores del código
 
 ---
+
+# Importar código desde ficheros
+## ¿Qué es?
+- Antes había que copiar y pegar el código de ejemplo dentro de `slides.md`
+- Ahora se puede referenciar directamente un fichero del directorio `code/` (proyectos de ejercicios/ejemplos, ejecutables de verdad)
+- El fichero se lee en vivo y **se vuelve a renderizar si cambia**
+- El fichero referenciado queda completamente limpio: nunca se le añade ninguna marca ni sintaxis propia de la slide
+
+---
+
+# Importar código: sintaxis
+```
+<<< @/code/ruta/al/Fichero.java[selector] lang
+```
+- Sin selector: se muestra el fichero completo
+- `[N-M]`: rango de líneas absoluto (base 1, ambos inclusive)
+- `["primera línea".."última línea"]`: rango por contenido — desde la línea que contiene el primer texto hasta la que contiene el segundo, ambos inclusive
+    - Si no se encuentra alguno de los anclajes, se muestra el fichero completo (con aviso por consola)
+- Existe una convención de "raíz de código" (`code/` por defecto): un import que resuelva fuera de ahí solo genera un aviso por consola, no rompe el build
+
+---
+
+# Importar código: resaltados con anclajes
+- El fichero importado no puede llevar comentarios `// [!mark]`, así que los resaltados se declaran en `slides.md`, justo debajo del `<<<`, uno por línea
+- Referencian el snippet ya recortado (tal como se ve en la slide), no el fichero completo:
+    - `[!mark:N] comentario` — línea `N`
+    - `[!mark:N..M] comentario` — rango de líneas
+    - `[!mark:"texto"] comentario` — la subcadena `texto` (búsqueda literal)
+    - `[!mark:"texto"(<inicio>-<fin>)] comentario` — subcadena `[<inicio>, <fin>)` de la línea encontrada
+    - `[!mark:"a".."b"] comentario` — desde la línea de `a` hasta la de `b`
+    - `[!mark:"a"+N] comentario` — desde la línea de `a` hasta `N` líneas después
+    - `#N` / `#*` al final de un anclaje por contenido: elige la ocurrencia N-ésima, o resalta todas las ocurrencias
+- Igual que con las marcas inline, `@x,y` fija la posición y se escribe solo al arrastrar el callout
+
+---
+
+# Importar código: ejemplo
+```
+<<< @/code/ejer8/src/main/java/es/codeurjc/test/gestor/GestorNotas.java[7-24] java
+[!mark:"public GestorNotas(DBAlumno alumnos)"] Inyecta la dependencia de la base de datos
+[!mark:"getNotasAlumno(idAlumno)"] Obtiene las notas del alumno
+[!mark:"float suma = 0.0f;".."return suma / notas.size();"] Recorre las notas para sumarlas
+```
+- Muestra las líneas 7 a 24 de `GestorNotas.java` tal cual están en el proyecto real
+- Los tres resaltados y sus callouts se calculan sobre ese fragmento, sin tocar el fichero fuente
+
+---
+
+# Diagramas mermaid centrados
+- Los bloques ```` ```mermaid ```` ahora se centran y ocupan un ancho legible por defecto en el layout `default`, sin necesidad de markup extra en cada slide
+- Antes, el host ShadowRoot de mermaid se renderizaba encogido a su contenido, así que el `width: 100%` interno del svg se resolvía contra ese tamaño diminuto y el diagrama salía muy pequeño
+- Ahora ese host tiene un ancho fijo y centrado (`margin: 0 auto`), y el propio `max-width` inline de mermaid sigue evitando que diagramas pequeños se estiren de más
+
+---
+
+# Diagramas mermaid: ejemplo
+```mermaid
+graph LR
+    Test["GestorNotasTest"] -->|crea y configura| Mock["DBAlumno mock<br/>(dependencia simulada)"]
+    Mock -->|se inyecta en el constructor| SUT["GestorNotas<br/>(SUT)"]
+    Test -->|invoca el método a probar| SUT
+    SUT -->|usa| Mock
+    SUT -->|resultado| Test
+```
+
+---
 layout: copyright
 ---
 
