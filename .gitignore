@@ -11,3 +11,4 @@ e2e/layouts/*.vue
 layouts/layout-*.vue
 .claude/
 .opencode/
+target/
