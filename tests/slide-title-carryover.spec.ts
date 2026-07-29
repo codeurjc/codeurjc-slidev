@@ -11,6 +11,7 @@ const slidesPath = resolve(import.meta.dirname, '../e2e/slides.md')
 let originalSlides: string
 
 const FIXTURE_SLIDES = `---
+theme: codeurjc-slidev-theme
 layout: default
 colorSchema: light
 aspectRatio: 16/9

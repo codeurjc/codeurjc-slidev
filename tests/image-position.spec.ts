@@ -9,7 +9,8 @@ const defaultLayoutPath = resolve(layoutsDir, 'default.vue')
 const imagesDir = resolve(import.meta.dirname, '../public/images')
 
 let originalSlides: string
-let originalDefaultLayout: string
+let originalDefaultLayoutExisted: boolean
+let originalDefaultLayout: string | null
 
 // A minimal 1x1 transparent PNG, used as the pasted clipboard image.
 const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
@@ -45,12 +46,17 @@ async function pasteImage(page: Page, filename = 'pasted.png') {
 test.describe('Image Position E2E', () => {
   test.beforeAll(() => {
     originalSlides = readFileSync(slidesPath, 'utf-8')
-    originalDefaultLayout = readFileSync(defaultLayoutPath, 'utf-8')
+    originalDefaultLayoutExisted = existsSync(defaultLayoutPath)
+    originalDefaultLayout = originalDefaultLayoutExisted ? readFileSync(defaultLayoutPath, 'utf-8') : null
   })
 
   test.afterEach(async () => {
     writeFileSync(slidesPath, originalSlides, 'utf-8')
-    writeFileSync(defaultLayoutPath, originalDefaultLayout, 'utf-8')
+    if (originalDefaultLayoutExisted) {
+      writeFileSync(defaultLayoutPath, originalDefaultLayout!, 'utf-8')
+    } else if (existsSync(defaultLayoutPath)) {
+      rmSync(defaultLayoutPath)
+    }
     // Give the dev server time to reparse the restored fixtures before
     // deleting generated files, matching the settle delay used by the
     // image-paste suite (avoids a stale compiled module referencing a file
@@ -81,8 +87,12 @@ test.describe('Image Position E2E', () => {
     expect(forkedContent).toMatch(/--ed-image-w:\s*\d+px/)
 
     // The shared default layout file itself must be untouched.
-    const defaultContentAfter = readFileSync(defaultLayoutPath, 'utf-8')
-    expect(defaultContentAfter).toBe(originalDefaultLayout)
+    if (originalDefaultLayoutExisted) {
+      const defaultContentAfter = readFileSync(defaultLayoutPath, 'utf-8')
+      expect(defaultContentAfter).toBe(originalDefaultLayout)
+    } else {
+      expect(existsSync(defaultLayoutPath)).toBe(false)
+    }
 
     await expect(async () => {
       const slides = readFileSync(slidesPath, 'utf-8')

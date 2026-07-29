@@ -11,9 +11,16 @@ const defaultLayoutPath = resolve(e2eLayoutsDir, 'default.vue')
 
 let originalSlides: string
 let originalRootSlides: string
-let originalLayout: string
+// e2e/layouts/default.vue is no longer seeded (it's the theme package's
+// fallback template, not consumer content) -- it only appears once a test
+// actually edits the layout, creating a consumer-local override. Track
+// whether it existed beforehand so afterAll can restore the fixture to that
+// same pristine ("no local override yet") state.
+let originalLayoutExisted: boolean
+let originalLayout: string | null
 
 function removeGeneratedLayouts(dir: string) {
+  if (!existsSync(dir)) return
   for (const file of readdirSync(dir)) {
     if (file.startsWith('test-layout-') && file.endsWith('.vue')) {
       rmSync(resolve(dir, file))
@@ -25,13 +32,18 @@ test.describe('Layout Editor E2E', () => {
   test.beforeAll(() => {
     originalSlides = readFileSync(slidesPath, 'utf-8')
     originalRootSlides = readFileSync(rootSlidesPath, 'utf-8')
-    originalLayout = readFileSync(defaultLayoutPath, 'utf-8')
+    originalLayoutExisted = existsSync(defaultLayoutPath)
+    originalLayout = originalLayoutExisted ? readFileSync(defaultLayoutPath, 'utf-8') : null
   })
 
   test.afterAll(() => {
     writeFileSync(rootSlidesPath, originalRootSlides, 'utf-8')
     writeFileSync(slidesPath, originalSlides, 'utf-8')
-    writeFileSync(defaultLayoutPath, originalLayout, 'utf-8')
+    if (originalLayoutExisted) {
+      writeFileSync(defaultLayoutPath, originalLayout!, 'utf-8')
+    } else if (existsSync(defaultLayoutPath)) {
+      rmSync(defaultLayoutPath)
+    }
     removeGeneratedLayouts(e2eLayoutsDir)
     removeGeneratedLayouts(rootLayoutsDir)
   })
@@ -636,7 +648,8 @@ test.describe('Layout Editor E2E', () => {
     if (!existsSync(newLayoutPath)) {
       newLayoutPath = resolve(e2eLayoutsDir, `${layoutName}.vue`);
     }
-    const beforeOverwrite = readFileSync(defaultLayoutPath, 'utf-8');
+    const defaultExistedBeforeOverwrite = existsSync(defaultLayoutPath)
+    const beforeOverwrite = defaultExistedBeforeOverwrite ? readFileSync(defaultLayoutPath, 'utf-8') : null;
 
     // Reopen the editor on the new layout and make another change
     if (!(await page.locator('button:has-text("Hide editor")').isVisible().catch(() => false))) {
@@ -665,8 +678,12 @@ test.describe('Layout Editor E2E', () => {
     expect(currentLayout).toBe(layoutName);
 
     // default.vue must be untouched by this overwrite
-    const afterOverwrite = readFileSync(defaultLayoutPath, 'utf-8');
-    expect(afterOverwrite).toBe(beforeOverwrite);
+    if (defaultExistedBeforeOverwrite) {
+      const afterOverwrite = readFileSync(defaultLayoutPath, 'utf-8');
+      expect(afterOverwrite).toBe(beforeOverwrite);
+    } else {
+      expect(existsSync(defaultLayoutPath)).toBe(false);
+    }
 
     // The active layout file must contain the new value
     const newLayoutContent = readFileSync(newLayoutPath, 'utf-8');

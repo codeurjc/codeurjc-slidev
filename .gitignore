@@ -7,8 +7,7 @@ slides-export.pdf
 test-results/
 e2e/node_modules/
 e2e/layouts/*.vue
-!e2e/layouts/default.vue
-layouts/layout-*.vue
+packages/codeurjc-slidev-theme/layouts/layout-*.vue
 .claude/
 .opencode/
 target/

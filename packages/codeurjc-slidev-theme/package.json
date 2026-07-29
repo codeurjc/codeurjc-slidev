@@ -1,0 +1,48 @@
+{
+  "name": "codeurjc-slidev-theme",
+  "version": "0.1.0",
+  "description": "Slidev theme: draggable layout editor, code-highlight callouts, code-snippet import, and slide title carry-over for CodeURJC presentations",
+  "keywords": [
+    "slidev-theme",
+    "slidev"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "slidev": ">=52.0.0"
+  },
+  "slidev": {
+    "colorSchema": "light"
+  },
+  "files": [
+    "layouts",
+    "composables",
+    "!composables/__tests__",
+    "setup",
+    "_override",
+    "global-top.vue",
+    "vite.config.ts",
+    "uno.config.ts"
+  ],
+  "scripts": {
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@vueuse/core": "^14.3.0",
+    "markdown-it": "^14.2.0",
+    "unocss": "^66.7.3"
+  },
+  "peerDependencies": {
+    "@slidev/cli": "^52.15.0",
+    "@slidev/client": "^52.15.0",
+    "vue": "^3.5.39"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/vue": "^8.1.0",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "jsdom": "^29.1.1",
+    "vitest": "^4.1.9",
+    "vue": "^3.5.39"
+  }
+}

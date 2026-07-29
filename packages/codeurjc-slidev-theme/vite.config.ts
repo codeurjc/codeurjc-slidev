@@ -20,6 +20,13 @@ const IMAGE_MIME_EXT: Record<string, string> = {
   'image/gif': 'gif',
 }
 
+// `public/` (pasted-image assets) is consumer content, resolved against the
+// consuming project's root once this ships as an installable theme -- see
+// the `layoutDir`/`slidesPath` comments below for the same rationale.
+// Captured via `configResolved` since `resolveId` has no direct access to
+// `server.config.root` the way `configureServer` handlers do.
+let projectRoot = process.cwd()
+
 export default {
   plugins: [
     {
@@ -36,10 +43,13 @@ export default {
       // Vite serve them at /public/images/... and warn about it).
       name: 'slidev-slide-image-resolver',
       enforce: 'pre',
+      configResolved(config) {
+        projectRoot = config.root
+      },
       resolveId(id, importer) {
         if (!id.startsWith('/images/')) return null
         if (!importer || !/__slidev_\d+\.(md|frontmatter)/.test(importer)) return null
-        return resolve(import.meta.dirname, `public${id}`)
+        return resolve(projectRoot, `public${id}`)
       },
     },
     {
@@ -66,10 +76,38 @@ export default {
           const body = JSON.parse(Buffer.concat(chunks).toString())
           const { readFileSync, writeFileSync, realpathSync } = await import('fs')
           const { resolve: resolvePath } = await import('path')
-          const layoutDir = resolvePath(import.meta.dirname, 'layouts')
+          // `layouts/` is consumer content, not part of this package -- must
+          // resolve against the consuming project's root (Vite's resolved
+          // `config.root`, i.e. Slidev's `userRoot`), not against wherever
+          // this plugin file physically lives (e.g. inside node_modules once
+          // this ships as an installable theme).
+          const layoutDir = resolvePath(server.config.root, 'layouts')
           const currentLayoutName = (body.currentLayout && String(body.currentLayout).trim()) || 'default'
-          const layoutPath = resolvePath(layoutDir, `${currentLayoutName}.vue`)
+          const consumerLayoutPath = resolvePath(layoutDir, `${currentLayoutName}.vue`)
+          // A consumer project usually has no local copy of a layout it has
+          // never edited before (e.g. `default`, shipped by this theme
+          // package) -- fall back to the theme's own bundled copy so the
+          // very first edit works, then always write the result back into
+          // the consumer's own `layouts/` (below), creating a consumer-local
+          // override from that point on.
+          const packageLayoutPath = resolvePath(import.meta.dirname, 'layouts', `${currentLayoutName}.vue`)
+          const layoutPath = existsSync(consumerLayoutPath) ? consumerLayoutPath : packageLayoutPath
           let content = readFileSync(layoutPath, 'utf-8')
+
+          // The package's own layouts import shared code via paths relative
+          // to their location inside this package (e.g. `../composables/...`).
+          // When falling back to the package template, that relative import
+          // no longer resolves once the content is written into the
+          // consumer's own `layouts/` dir (which has no `composables/`
+          // sibling of its own) -- rewrite to the bare package specifier,
+          // which Node/Vite resolve through the consumer's `node_modules`
+          // regardless of where the file physically lives.
+          if (layoutPath === packageLayoutPath) {
+            content = content.replace(
+              /from '\.\.\/(composables\/[^']+)'/g,
+              `from 'codeurjc-slidev-theme/$1'`,
+            )
+          }
 
           // Build inline style attribute value with CSS variable overrides
           // Exclude position variables for hidden elements
@@ -147,6 +185,10 @@ export default {
           let layoutName = currentLayoutName
           const saveAs = body.saveAs !== false
           let writtenPath: string | null = null
+          let isNewFile = false
+
+          const { mkdirSync } = await import('fs')
+          mkdirSync(layoutDir, { recursive: true })
 
           if (saveAs) {
             let name: string
@@ -160,11 +202,17 @@ export default {
               name = `${name}-${Date.now()}`
             }
             writtenPath = resolvePath(layoutDir, `${name}.vue`)
+            isNewFile = true
             writeFileSync(writtenPath, content, 'utf-8')
             layoutName = name
           } else {
-            writtenPath = layoutPath
-            writeFileSync(layoutPath, content, 'utf-8')
+            // Overwriting always targets the consumer's own `layouts/`, even
+            // when the content was read from the theme's bundled fallback --
+            // this is what creates the consumer-local override from the
+            // first edit onward.
+            writtenPath = consumerLayoutPath
+            isNewFile = !existsSync(consumerLayoutPath)
+            writeFileSync(consumerLayoutPath, content, 'utf-8')
           }
 
           // Invalidate the layout module so Vite re-reads it from disk
@@ -180,11 +228,12 @@ export default {
             // Slidev's layouts virtual module (the list of known layout
             // names) only refreshes in response to its own fs watcher
             // noticing a real add, and a 'change' event on a path it has
-            // never seen doesn't trigger that. Without this, saveAs's newly
-            // written file can 404 as "Unknown layout" the moment frontmatter
-            // references it, since the layouts list is otherwise cached
-            // until invalidated.
-            server.watcher.emit(saveAs ? 'add' : 'change', resolvePath(realPath))
+            // never seen doesn't trigger that. Without this, a newly written
+            // file (via saveAs, or the first edit creating a consumer-local
+            // override of a theme-provided layout) can 404 as "Unknown
+            // layout" the moment frontmatter references it, since the
+            // layouts list is otherwise cached until invalidated.
+            server.watcher.emit(isNewFile ? 'add' : 'change', resolvePath(realPath))
           }
 
           res.statusCode = 200
@@ -217,7 +266,9 @@ export default {
             res.end()
             return
           }
-          const slidesPath = resolve(import.meta.dirname, 'slides.md')
+          // `slides.md` is consumer content -- same root-resolution rationale
+          // as `layoutDir` above.
+          const slidesPath = resolve(server.config.root, 'slides.md')
           const content = readFileSync(slidesPath, 'utf-8')
           const idx = content.indexOf(sourceLine)
           if (idx === -1) {
@@ -256,7 +307,9 @@ export default {
           const buffer = Buffer.concat(chunks)
           const { writeFileSync, mkdirSync, existsSync } = await import('fs')
           const { resolve: resolvePath } = await import('path')
-          const imagesDir = resolvePath(import.meta.dirname, 'public/images')
+          // Consumer content, resolved against the consuming project's root
+          // -- same rationale as `layoutDir`/`slidesPath` above.
+          const imagesDir = resolvePath(server.config.root, 'public/images')
           if (!existsSync(imagesDir)) mkdirSync(imagesDir, { recursive: true })
           const filename = `paste-${Date.now()}.${ext}`
           const writtenPath = resolvePath(imagesDir, filename)

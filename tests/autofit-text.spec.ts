@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { readFileSync, writeFileSync } from 'fs'
 import { resolve } from 'path'
-import { AUTOFIT_MAX_PT } from '../composables/useAutoFitText'
+import { AUTOFIT_MAX_PT } from '../packages/codeurjc-slidev-theme/composables/useAutoFitText'
 
 // 1pt = 4/3px at 96dpi (the ratio getComputedStyle reports fonts in).
 const CEILING_PX = AUTOFIT_MAX_PT * 4 / 3

@@ -1,4 +1,5 @@
 ---
+theme: codeurjc-slidev-theme
 layout: cover
 date: 02-2026
 subject: Ampliación de Ingeniería del Software

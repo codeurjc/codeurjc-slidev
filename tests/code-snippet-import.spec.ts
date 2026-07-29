@@ -17,6 +17,7 @@ const slidesPath = resolve(import.meta.dirname, '../e2e/slides.md')
 let originalSlides: string
 
 const FIXTURE_SLIDES = `---
+theme: codeurjc-slidev-theme
 layout: default
 colorSchema: light
 aspectRatio: 16/9
@@ -28,7 +29,7 @@ aspectRatio: 16/9
 [!mark:"public GestorNotas(DBAlumno alumnos)"] Injects the DB dependency
 [!mark:"float suma = 0.0f;".."return suma / notas.size();"] Sums up the notes
 
-<<< @/vite.config.ts ts notitle
+<<< @/../packages/codeurjc-slidev-theme/vite.config.ts ts notitle
 `
 
 async function waitForFixture(page: import('@playwright/test').Page) {

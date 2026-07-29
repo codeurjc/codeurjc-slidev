@@ -2,10 +2,17 @@
 
 ## Project overview
 
-Collection of themes, layouts, addons, and hacks for creating Slidev presentations in the CodeURJC group. Includes a custom layout editor that lets you drag/resize slide elements (red bar, logo, title, content) and save layouts via a Vite dev server middleware.
+A Slidev **theme** for CodeURJC presentations, published to npm as `codeurjc-slidev-theme`, plus a scaffolding CLI (`create-codeurjc-slidev`) for starting new presentations without cloning this repo. This repo itself is the theme's development, demo, and regression-test environment: its own `slides.md`/`code/` consume the theme package the same way an external consumer would (`theme: codeurjc-slidev-theme` frontmatter + a `workspace:*` dependency), via a pnpm workspace.
 
-**Architecture:**
-- `slides.md` — presentation source (REST API in React topic)
+Includes a custom layout editor that lets you drag/resize slide elements (red bar, logo, title, content) and save layouts via a Vite dev server middleware.
+
+**Workspace layout:**
+- `slides.md`, `code/` — this repo's own dev/demo presentation and referenced example code (NOT shipped to consumers — a scaffolded project starts with its own empty `code/`)
+- `packages/codeurjc-slidev-theme/` — the published theme package (`.vue`/`.ts` source shipped unbuilt, per Slidev's no-build theme convention)
+- `packages/create-codeurjc-slidev/` — the published scaffolding CLI (`index.mjs` + a bundled `template/` directory)
+- `openspec/` — OpenSpec change proposals
+
+**Theme package architecture** (`packages/codeurjc-slidev-theme/`):
 - `layouts/default.vue` — reusable slide layout with draggable element overlays and code-highlight callouts
 - `composables/useEditor.ts` — singleton state for element positions, undo, drag/resize, and save (fixed elements + dynamic per-slide keys, e.g. callouts)
 - `composables/useCodeHighlights.ts` — marker syntax parsing (inline trailing-comment markers **and** external anchor declarations, see "Code snippet import" below) + Shiki HTML post-processing for code-highlight callouts
@@ -15,7 +22,9 @@ Collection of themes, layouts, addons, and hacks for creating Slidev presentatio
 - `setup/transformers.ts` — registers a `pre` markdown-transformer that resolves `<<<` snippet imports (with slicing) into literal fenced code blocks before Slidev's own `<<<` handling ever sees them, plus the `codeblocks` transformer that renders highlights (from inline markers or external anchors) as callouts
 - `setup/preparser.ts` — registers a `transformSlide` preparser extension that injects carried title/subtitle headings into a slide's content and syncs the result into Slidev's own parsed `slide.title`
 - `_override/SideEditor.vue` — custom Slidev SideEditor override with a "Layout" tab
-- `vite.config.ts` — Vite transform hook that injects the SideEditor override; `/api/save-layout` middleware that persists layout CSS variables; `/api/save-code-highlight-position` middleware that persists a dragged callout's position into `slides.md`
+- `vite.config.ts` — Vite transform hook that injects the SideEditor override; `/api/save-layout` middleware that persists layout CSS variables; `/api/save-code-highlight-position` middleware that persists a dragged callout's position into `slides.md`. Consumer-owned paths (`layouts/` write target, `slides.md`) resolve against Vite's `server.config.root` (the consuming project's root), never against `import.meta.dirname` (this plugin file's own location inside `node_modules`) — package-owned paths (`_override/SideEditor.vue`, the fallback `layouts/default.vue` template) stay `import.meta.dirname`-relative. The save-layout middleware falls back to reading the theme's own bundled layout when a consumer has no local override yet, and always writes back into the consumer's `layouts/`, creating a consumer-local override from the first edit onward.
+
+Slidev auto-loads a theme package's `vite.config.ts`, `layouts/`, `setup/`, and `components/` by globbing every root in `[...theme/addon roots, userRoot]` — a consumer needs zero local Vite config for any of this to work.
 
 ## Code-highlight callouts
 
@@ -151,29 +160,30 @@ Slide 4: empty title — no title here, and none on slides after until a new one
 - **Styling:** UnoCSS
 - **Unit tests:** Vitest 4 + jsdom + `@testing-library/vue`
 - **E2e tests:** Playwright 1.61 (`@playwright/test`), Chromium
-- **Package manager:** pnpm
+- **Package manager:** pnpm (workspace — root + `packages/*`)
 
 ## Commands
 
 ```sh
 pnpm install
-pnpm dev                    # start slidev dev server (port 3030)
+pnpm dev                    # start slidev dev server on this repo's own slides.md (port 3030)
 pnpm build                  # build static slides
 pnpm export                 # export to PDF
-pnpm test                   # run unit tests (vitest)
+pnpm test                   # run the theme package's unit tests (vitest)
 pnpm test:e2e               # run e2e tests (playwright, auto-starts server)
 ```
 
 ## Tests
 
-- **Unit tests** (`vitest`): `pnpm test` — runs `composables/__tests__/*.spec.ts` in jsdom
+- **Unit tests** (`vitest`): `pnpm test` (delegates to `pnpm --filter codeurjc-slidev-theme test`) — runs `packages/codeurjc-slidev-theme/composables/__tests__/*.spec.ts` in jsdom
 - **E2e tests** (`playwright`): `pnpm test:e2e` — runs `tests/*.spec.ts` against a Chromium browser
 
-The e2e `webServer` in `playwright.config.ts` auto-starts Slidev on port 3030 using `e2e/slides.md` as entry. The `e2e/` directory contains symlinks to the root files (`slides.md`, `layouts/default.vue`, `composables/*.ts`, `_override/SideEditor.vue`, `setup/transformers.ts`, `public/`, `code/`) and its own `vite.config.ts`. Symlinks keep the e2e environment in sync with the root project — every new file added to `composables/` needs its own symlink under `e2e/composables/` or the e2e Slidev instance will fail to resolve it (`Cannot find module`). `e2e/vite.config.ts` is **not** a symlink — it's a standalone copy (with adjusted `__dirname` paths) that must be manually kept in sync with root `vite.config.ts` whenever the `/api/save-layout`/`/api/save-code-highlight-position` middlewares or the `VAR_MAP` change, or e2e tests will silently exercise stale save/restore logic. All test modifications are restored by `afterAll` hooks.
+The e2e `webServer` in `playwright.config.ts` auto-starts Slidev on port 3030 using `e2e/slides.md` as entry. `e2e/slides.md` declares `theme: codeurjc-slidev-theme`, so the theme package (resolved via the pnpm workspace link in `node_modules`) auto-loads through Slidev's own roots-merge — `e2e/` no longer needs symlinks to the theme's `composables/`/`setup/`/`_override/`/`layouts/`/`global-top.vue`/`vite.config.ts` (all removed; only the `code/` and `public/` symlinks remain, since those are e2e-specific asset fixtures unrelated to the theme). `e2e/layouts/` is intentionally not seeded with `default.vue` — the theme's own bundled layout is Slidev's fallback until an e2e test's save-layout call creates a consumer-local override, which is itself exercised as test coverage (see `tests/vite-consumer-root-resolution.spec.ts` and the fallback-handling tests in `tests/layout-editor.spec.ts`/`tests/image-position.spec.ts`). All test modifications are restored by `afterAll` hooks. Every `*.spec.ts` fixture that wholesale-replaces `e2e/slides.md`'s content must include `theme: codeurjc-slidev-theme` in its frontmatter — omitting it causes Slidev's "restarting on theme change" behavior to flap the dev server and cascade connection failures across later tests in the same run.
 
 ## Development cycle
 
-1. Implement feature (edit composables, layouts, or override components)
-2. Write/update tests (`composables/__tests__/` for unit, `tests/` for e2e)
+1. Implement feature (edit theme files under `packages/codeurjc-slidev-theme/composables/`, `layouts/`, `setup/`, or `_override/`)
+2. Write/update tests (`packages/codeurjc-slidev-theme/composables/__tests__/` for unit, `tests/` for e2e)
 3. `pnpm test && pnpm test:e2e`
 4. `git add -A && git commit -m "message"`
+5. To publish a new version of either package: bump `version` in `packages/<name>/package.json`, then `cd packages/<name> && npm publish --access public` (requires npm 2FA — the browser-based OTP-approval flow, not the classic `--otp=<code>` flag, worked reliably here). Must be run from the package's own directory, not the repo root (the root `package.json` is `private: true` with no `version` field and will crash `npm publish`'s prerelease check if run from there).

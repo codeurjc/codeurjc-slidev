@@ -1,0 +1,25 @@
+{
+  "name": "create-codeurjc-slidev",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Scaffold a new Slidev presentation using the CodeURJC theme (draggable layout editor, code-highlight callouts, snippet import, title carry-over)",
+  "license": "MIT",
+  "main": "index.mjs",
+  "bin": {
+    "create-codeurjc-slidev": "index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "template"
+  ],
+  "engines": {
+    "node": ">=20.12.0"
+  },
+  "dependencies": {
+    "ansis": "^4.3.1",
+    "minimist": "^1.2.8",
+    "pathe": "^2.0.3",
+    "prompts": "^2.4.2",
+    "tinyexec": "^1.2.4"
+  }
+}
