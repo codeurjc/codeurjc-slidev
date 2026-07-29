@@ -22,7 +22,6 @@ aspectRatio: 16/9
 
 ---
 
-# Casos de Test
 ## Ejercicio 2
 - Transforma el Ejercicio 1 para usar Test fixtures
 - Define un atributo `zero` que se inicializa en un método setUp anotado como `@BeforeEach`
@@ -40,8 +39,6 @@ aspectRatio: 16/9
 
 ---
 
-# Dobles
-## Ejercicio 8: GestorNotas
 <<< @/code/ejer8/src/main/java/es/codeurjc/test/gestor/GestorNotas.java[7-24] java
 [!mark:"public GestorNotas(DBAlumno alumnos)"] Inyecta la dependencia de la base de datos
 [!mark:"getNotasAlumno(idAlumno)"] Obtiene las notas del alumno
@@ -49,7 +46,6 @@ aspectRatio: 16/9
 
 ---
 
-# Dobles
 ## Ejercicio 8: Solución con mock
 
 ```mermaid

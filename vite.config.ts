@@ -277,5 +277,34 @@ export default {
         })
       },
     },
+    {
+      // Slidev's own `handleHotUpdate` only re-transforms/pushes an update
+      // for a slide's virtual `__slidev_<n>.md`/`.frontmatter` module when
+      // it finds that module already registered as an *importer* with a
+      // live HMR-connected client to push to (it pushes updates via
+      // `ctx.server.reloadModule`/the returned module list, but never calls
+      // `moduleGraph.invalidateModule` directly for a slide with no current
+      // subscriber). A slide number that was visited earlier in the dev
+      // server's lifetime, then not re-visited by any open page across a
+      // later edit, can keep serving a stale cached transform to the next
+      // *brand-new* page that requests it -- observed empirically running
+      // slides.md through many edits in one long-lived server (e.g. several
+      // Playwright suites swapping a shared fixture file in sequence).
+      // Force-invalidating every slide virtual module on every slides.md
+      // edit is a blunt but reliable fix: decks here are small, so
+      // re-transforming all of them is cheap, and it removes an entire
+      // class of "stale content on a route no one currently has open"
+      // staleness that no amount of client-side reload/retry can work
+      // around (the cache lives server-side, keyed by module id).
+      name: 'slidev-force-invalidate-slide-modules',
+      handleHotUpdate({ file, server }) {
+        if (!file.endsWith('slides.md')) return
+        for (const mod of server.moduleGraph.idToModuleMap.values()) {
+          if (mod.id && /__slidev_\d+\.(md|frontmatter)$/.test(mod.id)) {
+            server.moduleGraph.invalidateModule(mod)
+          }
+        }
+      },
+    },
   ],
 }

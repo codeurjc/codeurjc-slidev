@@ -11,7 +11,9 @@ Collection of themes, layouts, addons, and hacks for creating Slidev presentatio
 - `composables/useCodeHighlights.ts` — marker syntax parsing (inline trailing-comment markers **and** external anchor declarations, see "Code snippet import" below) + Shiki HTML post-processing for code-highlight callouts
 - `composables/useHighlightLayout.ts` — pure geometry for callout auto-placement and elbow connector routing
 - `composables/useSnippetImport.ts` — `<<< @/path[selector] lang` snippet-import parsing, selector resolution (line-range / content-anchor-range) against a file's text, and the code-root convention check
+- `composables/useSlideTitleCarryover.ts` — leading-heading parsing, the per-level (title/subtitle) carry-chain resolver, and heading injection for slide title/subtitle carry-over (see "Slide title carry-over" below)
 - `setup/transformers.ts` — registers a `pre` markdown-transformer that resolves `<<<` snippet imports (with slicing) into literal fenced code blocks before Slidev's own `<<<` handling ever sees them, plus the `codeblocks` transformer that renders highlights (from inline markers or external anchors) as callouts
+- `setup/preparser.ts` — registers a `transformSlide` preparser extension that injects carried title/subtitle headings into a slide's content and syncs the result into Slidev's own parsed `slide.title`
 - `_override/SideEditor.vue` — custom Slidev SideEditor override with a "Layout" tab
 - `vite.config.ts` — Vite transform hook that injects the SideEditor override; `/api/save-layout` middleware that persists layout CSS variables; `/api/save-code-highlight-position` middleware that persists a dragged callout's position into `slides.md`
 
@@ -94,6 +96,52 @@ Degradation is intentional and non-fatal: an anchor whose text isn't found is sk
 [!mark:"public GestorNotas(DBAlumno alumnos)"] Injects the DB dependency
 [!mark:"getNotasAlumno(idAlumno)"] Fetches the student's grades
 [!mark:"float suma = 0.0f;".."return suma / notas.size();"] Sums up the notes
+```
+
+## Slide title carry-over
+
+On `default`-layout slides, a missing leading `# Title` / `## Subtitle` is inherited from the nearest preceding `default`-layout slide that set one, so a run of slides sharing a title doesn't need it retyped on every one. Title and subtitle are tracked as two independent carry chains. Resolution/injection logic lives in `composables/useSlideTitleCarryover.ts`; it's wired up as a `transformSlide` preparser extension in `setup/preparser.ts` — which runs as part of parsing `slides.md` itself, so the carried heading is injected directly into the slide's content (what the dev server/build actually renders) and also feeds back into Slidev's own parsed `slide.title` (used by the presenter overview / table of contents).
+
+### Detection rule
+
+Only the *leading* heading lines of a slide's content count as "own": an optional `# ...` line, immediately followed (no blank line) by an optional `## ...` line. A heading anywhere else in the slide body is not part of this — it mirrors `layouts/default.vue`'s `h1:first-child` styling convention, not Slidev's own looser "first heading anywhere" title detection.
+
+### Resetting the chain
+
+| Trigger | Effect |
+|---|---|
+| A slide's own `# ...` (or `## ...`) | Starts a new value for that level, carried forward from there. |
+| An empty heading — bare `#` (or `##`), no text | Clears that level's chain from that slide forward, until a new explicit heading of that level appears. |
+| `resetTitle: true` in a slide's frontmatter | Clears **both** the title and subtitle chains at once, as an alternative to writing two empty headings. Can be combined with the same slide also setting its own new heading. |
+
+Only `default`-layout slides participate: a slide using any other layout (e.g. `layout: cover`) is skipped over — it neither contributes to nor breaks the chain for the `default`-layout slides around it.
+
+### Example
+
+```
+---
+layout: default
+---
+
+# Ejercicios
+
+Slide 1: sets the title.
+
+---
+
+Slide 2: no heading — carries "Ejercicios".
+
+---
+
+## Ejercicio 2
+
+Slide 3: still carries "Ejercicios", sets its own subtitle.
+
+---
+
+#
+
+Slide 4: empty title — no title here, and none on slides after until a new one is set.
 ```
 
 ## Stack

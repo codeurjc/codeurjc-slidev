@@ -46,7 +46,6 @@ aspectRatio: 16/9
 ---
 
 # Anotaciones de código: callouts
-## ¿Qué son?
 - Permiten marcar una línea, un rango de líneas o una subcadena dentro de un bloque de código
 - Cada marca puede llevar un comentario que se renderiza como una caja (callout) conectada al código mediante un conector en L
 - Las marcas se escriben como comentario al final de la línea de código y **se eliminan del código renderizado**: el público nunca las ve
@@ -94,7 +93,6 @@ public float calculaNotaMedia(long idAlumno) {
 ---
 
 # Importar código desde ficheros
-## ¿Qué es?
 - Antes había que copiar y pegar el código de ejemplo dentro de `slides.md`
 - Ahora se puede referenciar directamente un fichero del directorio `code/` (proyectos de ejercicios/ejemplos, ejecutables de verdad)
 - El fichero se lee en vivo y **se vuelve a renderizar si cambia**
@@ -159,6 +157,33 @@ graph LR
     SUT -->|usa| Mock
     SUT -->|resultado| Test
 ```
+
+---
+
+# Título y subtítulo heredados
+- Si una slide con layout `default` no empieza por `# Título`, hereda el título de la slide anterior que sí lo tuviera
+- El subtítulo (`## ...`) se hereda igual, pero de forma **independiente**: una slide puede cambiar solo el subtítulo y mantener el título, o al revés
+- Evita copiar y pegar el mismo `# Título` en cada slide de una misma sección
+- Una slide con layout distinto de `default` (p. ej. `cover`) no interrumpe la herencia: se salta al buscar la slide anterior
+
+---
+
+# Título heredado: cómo cortar la herencia
+- Una marca vacía (`#` o `##`, sin texto) corta la herencia desde esa slide en adelante, hasta que otra slide ponga un título/subtítulo nuevo
+- También se puede usar `resetTitle: true` en el frontmatter de una slide para cortar **ambas** herencias (título y subtítulo) a la vez, sin escribir las marcas vacías
+
+---
+
+# Herencia de título
+## Ejemplo: primera parte
+- Esta slide fija el título ("Herencia de título") y el subtítulo ("Ejemplo: primera parte")
+- La siguiente slide de este mismo fichero no repite `# Herencia de título`
+
+---
+
+## Ejemplo: segunda parte
+- Fíjate en el título de esta slide: sigue siendo "Herencia de título", heredado de la anterior
+- Solo se ha escrito `## Ejemplo: segunda parte` — el título no se ha vuelto a escribir
 
 ---
 layout: copyright
