@@ -111,6 +111,8 @@ public float calculaNotaMedia(long idAlumno) {
 - `["primera línea".."última línea"]`: rango por contenido — desde la línea que contiene el primer texto hasta la que contiene el segundo, ambos inclusive
     - Si no se encuentra alguno de los anclajes, se muestra el fichero completo (con aviso por consola)
 - Existe una convención de "raíz de código" (`code/` por defecto): un import que resuelva fuera de ahí solo genera un aviso por consola, no rompe el build
+- El bloque de código muestra automáticamente una barra de título con el nombre del fichero (p. ej. `GestorNotas.java`)
+    - Para ocultarla, añade `notitle` después del lenguaje: `<<< @/code/ruta/al/Fichero.java[selector] lang notitle`
 
 ---
 
@@ -137,6 +139,7 @@ public float calculaNotaMedia(long idAlumno) {
 ```
 - Muestra las líneas 7 a 24 de `GestorNotas.java` tal cual están en el proyecto real
 - Los tres resaltados y sus callouts se calculan sobre ese fragmento, sin tocar el fichero fuente
+- La barra de título ("GestorNotas.java") aparece sola, sin escribir nada extra en la slide
 
 ---
 

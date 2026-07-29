@@ -17,6 +17,8 @@ export interface ParsedSnippetImportLine {
   filePath: string
   selectorRaw: string | null
   lang: string
+  /** Set via a trailing `notitle` keyword after the language, e.g. `<<< @/path java notitle`. */
+  notitle: boolean
 }
 
 const SNIPPET_IMPORT_RE = /^<<<\s*([^\s[]+)/
@@ -40,8 +42,10 @@ export function parseSnippetImportLine(line: string): ParsedSnippetImportLine | 
     selectorRaw = line.slice(i + 1, j)
     i = j + 1
   }
-  const lang = line.slice(i).trim()
-  return { filePath, selectorRaw, lang }
+  const tail = line.slice(i).trim().split(/\s+/)
+  const lang = tail[0] ?? ''
+  const notitle = tail[1] === 'notitle'
+  return { filePath, selectorRaw, lang, notitle }
 }
 
 export type SnippetSelector =

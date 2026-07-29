@@ -68,6 +68,7 @@ Reference code from the `code/` directory (a runnable set of exercise/example pr
 - `[N-M]` — absolute line range (1-based, inclusive) from the file.
 - `["first line text".."last line text"]` — content-anchor range: from the line containing the first text through the line containing the second, inclusive, searched against the whole file. Falls back to the whole file (with a console warning) if either anchor text isn't found.
 - The code root (default `code/`) is a single configured convention; a `<<<` import resolving outside it logs a console warning (not a build failure).
+- The rendered code block's title bar (Slidev's native `` ```lang [title] `` fence mechanism, via the built-in `CodeBlockWrapper`) shows the imported file's basename (e.g. `GestorNotas.java`) by default. Append `notitle` after the language to suppress it: `<<< @/code/path/to/File.java[selector] lang notitle`. No file-type icon is forced for languages absent from Slidev's built-in icon map (e.g. `.java`) — the title still renders, just without an icon.
 
 ### Anchor grammar (highlights/callouts on imported snippets)
 

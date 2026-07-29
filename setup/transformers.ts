@@ -1,4 +1,4 @@
-import { dirname, resolve } from 'path'
+import { basename, dirname, resolve } from 'path'
 import { readFileSync } from 'fs'
 import { defineTransformersSetup } from '@slidev/types'
 import { injectHighlightSpans, parseCodeHighlights, parseExternalHighlightAnchors } from '../composables/useCodeHighlights'
@@ -16,6 +16,13 @@ import {
 function resolveImportPath(filePath: string, slideDir: string, userRoot: string): string {
   if (filePath.startsWith('@/')) return resolve(userRoot, filePath.slice(2))
   return resolve(slideDir, filePath)
+}
+
+/** Mirrors just enough of Slidev's own `wrapper_default` codeblock transformer to preserve its `[title]` rendering when this file's own `codeblocks` transformer intercepts a fence to inject highlight spans. */
+function wrapInCodeBlockTitle(info: string, html: string): string {
+  const title = /\[([^\]]*)\]/.exec(info)?.[1] ?? ''
+  const escaped = html.replace(/\{\{/g, '&lbrace;&lbrace;')
+  return `<CodeBlockWrapper title=${JSON.stringify(title)}>${escaped}</CodeBlockWrapper>`
 }
 
 export default defineTransformersSetup(() => ({
@@ -74,7 +81,8 @@ export default defineTransformersSetup(() => ({
         }
 
         const combined = combineCodeAndAnchors(slicedCode, anchorLines)
-        const fenceText = `\`\`\`${parsed.lang}\n${combined}\n\`\`\``
+        const fenceInfo = parsed.notitle ? parsed.lang : `${parsed.lang} [${basename(parsed.filePath)}]`
+        const fenceText = `\`\`\`${fenceInfo}\n${combined}\n\`\`\``
 
         const startOffset = lineStarts[i]
         const lastConsumedIdx = j - 1
@@ -90,19 +98,26 @@ export default defineTransformersSetup(() => ({
     },
   ],
   codeblocks: [
+    // Runs before Slidev's own built-in `wrapper_default` transformer (which
+    // is what normally wraps a fence in `<CodeBlockWrapper>` to render its
+    // `[title]`), so intercepting here to inject highlight spans -- as both
+    // branches below must, to reach the raw pre-Shiki code -- would otherwise
+    // silently drop the title bar for every highlighted snippet. Replicating
+    // just enough of wrapper_default's own wrapping (title extraction +
+    // mustache-escaping) keeps that behavior intact.
     async (ctx) => {
       const { code: realCode, anchorLines } = splitCodeAndAnchors(ctx.code)
       if (anchorLines.length > 0) {
         const highlights = parseExternalHighlightAnchors(realCode, anchorLines)
         if (highlights.length === 0) return undefined
         const html = await ctx.renderHighlighted({ code: realCode })
-        return injectHighlightSpans(html, highlights)
+        return wrapInCodeBlockTitle(ctx.info, injectHighlightSpans(html, highlights))
       }
 
       const { code, highlights } = parseCodeHighlights(ctx.code)
       if (highlights.length === 0) return undefined
       const html = await ctx.renderHighlighted({ code })
-      return injectHighlightSpans(html, highlights)
+      return wrapInCodeBlockTitle(ctx.info, injectHighlightSpans(html, highlights))
     },
   ],
 }))

@@ -15,6 +15,7 @@ describe('parseSnippetImportLine', () => {
       filePath: '@/code/ejer8/File.java',
       selectorRaw: null,
       lang: 'java',
+      notitle: false,
     })
   })
 
@@ -23,6 +24,7 @@ describe('parseSnippetImportLine', () => {
       filePath: '@/code/ejer8/File.java',
       selectorRaw: '9-15',
       lang: 'java',
+      notitle: false,
     })
   })
 
@@ -32,11 +34,25 @@ describe('parseSnippetImportLine', () => {
       filePath: '@/code/ejer8/File.java',
       selectorRaw: '"public float calculaNotaMedia".."return suma / notas.size();"',
       lang: 'java',
+      notitle: false,
     })
   })
 
   it('returns null for a non-import line', () => {
     expect(parseSnippetImportLine('just some text')).toBeNull()
+  })
+
+  it('parses a trailing notitle keyword', () => {
+    expect(parseSnippetImportLine('<<< @/code/ejer8/File.java[9-15] java notitle')).toEqual({
+      filePath: '@/code/ejer8/File.java',
+      selectorRaw: '9-15',
+      lang: 'java',
+      notitle: true,
+    })
+  })
+
+  it('defaults notitle to false when absent', () => {
+    expect(parseSnippetImportLine('<<< @/code/ejer8/File.java java')?.notitle).toBe(false)
   })
 })
 

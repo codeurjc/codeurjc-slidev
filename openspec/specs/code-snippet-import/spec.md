@@ -47,3 +47,18 @@ Referencing a file via `<<<` import SHALL NOT require or cause any modification 
 #### Scenario: Imported file is unchanged on disk
 - **WHEN** a file under the code root is referenced by one or more `<<<` imports across the deck
 - **THEN** the file's contents on disk are identical before and after the deck is built or served
+
+### Requirement: Imported snippets display the source file's basename as a title
+A `<<<` snippet import SHALL render its code block with a title bar showing the basename of the imported file (e.g. `GestorNotas.java`), using Slidev's native fence-title mechanism. A presenter SHALL be able to suppress the title for a specific import by appending a `notitle` keyword after the language token on the `<<<` line. No file-type icon SHALL be forced for languages absent from Slidev's built-in icon map; the title renders text-only in that case.
+
+#### Scenario: Snippet import shows the file's basename as a title
+- **WHEN** a slide contains `<<< @/code/ejer8/src/main/java/es/codeurjc/test/gestor/GestorNotas.java[7-22] java`
+- **THEN** the rendered code block has a title bar reading `GestorNotas.java`
+
+#### Scenario: notitle suppresses the title bar
+- **WHEN** a slide contains `<<< @/code/ejer8/src/main/java/es/codeurjc/test/gestor/GestorNotas.java[7-22] java notitle`
+- **THEN** the rendered code block has no title bar
+
+#### Scenario: A language missing a built-in icon still shows a text-only title
+- **WHEN** a slide contains a `<<<` import of a `.java` file (a language absent from Slidev's built-in file-type icon map)
+- **THEN** the title bar renders the basename as text, with no file-type icon

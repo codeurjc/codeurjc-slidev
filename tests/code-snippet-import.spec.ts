@@ -28,7 +28,7 @@ aspectRatio: 16/9
 [!mark:"public GestorNotas(DBAlumno alumnos)"] Injects the DB dependency
 [!mark:"float suma = 0.0f;".."return suma / notas.size();"] Sums up the notes
 
-<<< @/vite.config.ts ts
+<<< @/vite.config.ts ts notitle
 `
 
 async function waitForFixture(page: import('@playwright/test').Page) {
@@ -87,6 +87,16 @@ test.describe('Code Snippet Import E2E', () => {
     const codeText = await page.locator('.slidev-page-1 pre:visible').nth(1).innerText()
     expect(codeText.length).toBeGreaterThan(0)
     expect(codeText).not.toContain('<<<')
+  })
+
+  test('shows a title bar with the imported file\'s basename', async ({ page }) => {
+    const wrapper = page.locator('.slidev-page-1 .slidev-code-wrapper:visible').first()
+    await expect(wrapper.locator('.slidev-code-block-title')).toHaveText('GestorNotas.java')
+  })
+
+  test('notitle suppresses the title bar', async ({ page }) => {
+    const wrapper = page.locator('.slidev-page-1 .slidev-code-wrapper:visible').nth(1)
+    await expect(wrapper.locator('.slidev-code-block-title')).toHaveCount(0)
   })
 
   test('dragging a callout on an anchor-produced highlight persists its position', async ({ page }) => {
