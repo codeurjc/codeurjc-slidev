@@ -10,6 +10,7 @@ Includes a custom layout editor that lets you drag/resize slide elements (red ba
 - `slides.md`, `code/` — this repo's own dev/demo presentation and referenced example code (NOT shipped to consumers — a scaffolded project starts with its own empty `code/`)
 - `packages/codeurjc-slidev-theme/` — the published theme package (`.vue`/`.ts` source shipped unbuilt, per Slidev's no-build theme convention)
 - `packages/create-codeurjc-slidev/` — the published scaffolding CLI (`index.mjs` + a bundled `template/` directory)
+- `packages/vscode-codeurjc-slidev/` — VSCode extension providing editor support for this theme's custom `slides.md` grammar (see "VSCode editor support" below)
 - `openspec/` — OpenSpec change proposals
 
 **Theme package architecture** (`packages/codeurjc-slidev-theme/`):
@@ -181,6 +182,18 @@ Slide 3: still carries "Ejercicios", sets its own subtitle.
 Slide 4: empty title — no title here, and none on slides after until a new one is set.
 ```
 
+## VSCode editor support
+
+`packages/vscode-codeurjc-slidev/` is a VSCode extension that previews this theme's grammar directly in the editor, without running the Slidev dev server. It reuses the theme package's composables verbatim (`workspace:*` dependency, deep imports like `codeurjc-slidev-theme/composables/useCodeHighlights`) rather than reimplementing the grammar — activation is gated on a document's frontmatter declaring `theme: codeurjc-slidev-theme` (`src/themeGate.ts`), so it stays inert for unrelated markdown.
+
+- `src/documentScan.ts` — shared raw-text scanning: fenced code blocks, `<<<` import + directive-line blocks, and slide-number counting (by `---` separators, skipping the frontmatter's own pair).
+- `src/markerDecorations.ts` — pure translation from a fence's marker/highlight parsing (via `parseCodeHighlights`) to document-absolute line/character positions, for dimming marker text and boxing highlighted spans in the open buffer.
+- `src/importAnalysis.ts` — hovers and diagnostics for `<<<` imports and their anchor/`[!source]` directive lines, reusing `resolveSnippetSelector` and `parseExternalHighlightAnchors`'s `onWarn`/`onError` hooks (each anchor line is resolved individually so a diagnostic can be attached to its exact line). Reading the imported file is injected (`ResolveImport`), so this stays testable without touching disk.
+- `src/referenceIndex/` — the reverse-reference feature: `indexBuilder.ts` builds, per target file, a *recipe* of which slide/anchor-line/selector combinations reference it (no file reads, no absolute line numbers yet); `codeLens.ts` resolves those recipes against a target file's live editor text on demand, so an edit to the target file alone is reflected immediately without any index invalidation — only an edit to the markdown file itself requires rebuilding that file's contribution (`updateReferenceIndexForFile`). `scanner.ts` is the only fs-touching part (workspace enumeration + `@/...` path resolution against the code-root convention).
+- `src/extension.ts` — thin adapter wiring the above to real `vscode` decorations/Hover/Diagnostic/CodeLens providers; deliberately not unit tested itself (see Tests below).
+
+Adding a small new marker/anchor form to the theme's grammar should not require touching this package's parsing logic at all — only `documentScan.ts`'s directive-line detection (if the new form isn't `[!mark:...]`/`[!source ...]`-shaped) would need updating.
+
 ## Stack
 
 - **Framework:** Vue 3 + TypeScript
@@ -197,14 +210,16 @@ pnpm install
 pnpm dev                    # start slidev dev server on this repo's own slides.md (port 3030)
 pnpm build                  # build static slides
 pnpm export                 # export to PDF
-pnpm test                   # run the theme package's unit tests (vitest)
+pnpm test                   # run the theme package's + vscode extension's unit tests (vitest)
 pnpm test:e2e               # run e2e tests (playwright, auto-starts server)
+pnpm test:extension         # run the vscode extension's extension-host smoke tests (@vscode/test-electron)
 ```
 
 ## Tests
 
-- **Unit tests** (`vitest`): `pnpm test` (delegates to `pnpm --filter codeurjc-slidev-theme test`) — runs `packages/codeurjc-slidev-theme/composables/__tests__/*.spec.ts` in jsdom
+- **Unit tests** (`vitest`): `pnpm test` (delegates to `pnpm --filter codeurjc-slidev-theme --filter vscode-codeurjc-slidev test`) — runs `packages/codeurjc-slidev-theme/composables/__tests__/*.spec.ts` in jsdom, and `packages/vscode-codeurjc-slidev/src/**/__tests__/*.spec.ts` in plain Node (no `vscode` module dependency at this layer — the extension's decoration/hover/CodeLens *logic* returns plain data shapes, converted to real `vscode.Range`/`Hover`/etc. only in the thin `src/extension.ts` adapter)
 - **E2e tests** (`playwright`): `pnpm test:e2e` — runs `tests/*.spec.ts` against a Chromium browser
+- **VSCode extension-host smoke tests** (`@vscode/test-electron` + Mocha): `pnpm test:extension` — downloads/launches a real VSCode build against the fixture workspace at `packages/vscode-codeurjc-slidev/test-extension/fixture/`, asserting the extension activates, registers its command, and that hovers/CodeLens actually render end-to-end. Needs a display: on a headless machine (including this repo's own sandboxed dev environment) run it under `xvfb-run -a pnpm test:extension` — plain `pnpm test:extension` fails with a Chromium "unresponsive window" error with no display server available. This is a deliberately thin smoke layer (see `packages/vscode-codeurjc-slidev/`'s design rationale) — grammar edge cases belong in the vitest layer above, not here.
 
 The e2e `webServer` in `playwright.config.ts` auto-starts Slidev on port 3030 using `e2e/slides.md` as entry. `e2e/slides.md` declares `theme: codeurjc-slidev-theme`, so the theme package (resolved via the pnpm workspace link in `node_modules`) auto-loads through Slidev's own roots-merge — `e2e/` no longer needs symlinks to the theme's `composables/`/`setup/`/`_override/`/`layouts/`/`global-top.vue`/`vite.config.ts` (all removed; only the `code/` and `public/` symlinks remain, since those are e2e-specific asset fixtures unrelated to the theme). `e2e/layouts/` is intentionally not seeded with `default.vue` — the theme's own bundled layout is Slidev's fallback until an e2e test's save-layout call creates a consumer-local override, which is itself exercised as test coverage (see `tests/vite-consumer-root-resolution.spec.ts` and the fallback-handling tests in `tests/layout-editor.spec.ts`/`tests/image-position.spec.ts`). All test modifications are restored by `afterAll` hooks. Every `*.spec.ts` fixture that wholesale-replaces `e2e/slides.md`'s content must include `theme: codeurjc-slidev-theme` in its frontmatter — omitting it causes Slidev's "restarting on theme change" behavior to flap the dev server and cascade connection failures across later tests in the same run.
 
@@ -216,4 +231,5 @@ Most spec files still share the single `legacy`-project dev server above (hence 
 2. Write/update tests (`packages/codeurjc-slidev-theme/composables/__tests__/` for unit, `tests/` for e2e)
 3. `pnpm test && pnpm test:e2e`
 4. `git add -A && git commit -m "message"`
-5. To publish a new version of either package: bump `version` in `packages/<name>/package.json`, then `cd packages/<name> && npm publish --access public` (requires npm 2FA — the browser-based OTP-approval flow, not the classic `--otp=<code>` flag, worked reliably here). Must be run from the package's own directory, not the repo root (the root `package.json` is `private: true` with no `version` field and will crash `npm publish`'s prerelease check if run from there).
+5. To publish a new version of the theme or CLI package: bump `version` in `packages/<name>/package.json`, then `cd packages/<name> && npm publish --access public` (requires npm 2FA — the browser-based OTP-approval flow, not the classic `--otp=<code>` flag, worked reliably here). Must be run from the package's own directory, not the repo root (the root `package.json` is `private: true` with no `version` field and will crash `npm publish`'s prerelease check if run from there).
+6. To publish a new version of the VSCode extension: bump `version` in `packages/vscode-codeurjc-slidev/package.json`, then from that directory `pnpm run package` (production esbuild bundle to `dist/extension.cjs`) followed by `npx vsce publish` — a separate credential/2FA flow from npm's (a VSCode Marketplace publisher access token, not an npm OTP).

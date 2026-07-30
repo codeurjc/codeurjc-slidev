@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseCodeHighlights, injectHighlightSpans, serializeMarkerOverride, isInlineSourceMarkerLine, extractInlineSourceLink } from '../useCodeHighlights'
+import { parseCodeHighlights, injectHighlightSpans, serializeMarkerOverride, isInlineSourceMarkerLine, extractInlineSourceLink, findMarkerSpan } from '../useCodeHighlights'
 
 describe('parseCodeHighlights', () => {
   it('parses a single-line marker with a comment and strips it from the code', () => {
@@ -225,5 +225,24 @@ describe('isInlineSourceMarkerLine / extractInlineSourceLink', () => {
   it('returns a null url and unchanged code when there is no marker', () => {
     const code = 'int x = 1;'
     expect(extractInlineSourceLink(code)).toEqual({ code, url: null })
+  })
+})
+
+describe('findMarkerSpan', () => {
+  it('finds the span of a whole-line marker comment', () => {
+    const line = '  this.alumnos = alumnos; // [!mark] Injects the dependency'
+    const span = findMarkerSpan(line)
+    expect(span!.end).toBe(line.length)
+    expect(line.slice(span!.start)).toBe('// [!mark] Injects the dependency')
+  })
+
+  it('finds the span of a #-comment marker', () => {
+    const line = 'x = 1  # [!mark(2-3)] note'
+    const span = findMarkerSpan(line)
+    expect(line.slice(span!.start)).toBe('# [!mark(2-3)] note')
+  })
+
+  it('returns null for a line with no marker', () => {
+    expect(findMarkerSpan('int x = 1;')).toBeNull()
   })
 })

@@ -6,8 +6,9 @@
     "dev": "slidev --open --remote",
     "build": "slidev build",
     "export": "slidev export",
-    "test": "pnpm --filter codeurjc-slidev-theme test",
-    "test:e2e": "playwright test"
+    "test": "pnpm --filter codeurjc-slidev-theme --filter vscode-codeurjc-slidev test",
+    "test:e2e": "playwright test",
+    "test:extension": "pnpm --filter vscode-codeurjc-slidev test:extension"
   },
   "dependencies": {
     "@slidev/cli": "^52.15.0",

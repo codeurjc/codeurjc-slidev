@@ -2,6 +2,7 @@ packages:
   - .
   - packages/*
 allowBuilds:
+  esbuild: true
   playwright-chromium: false
 onlyBuiltDependencies:
   - esbuild

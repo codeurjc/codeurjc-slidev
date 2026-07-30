@@ -12,3 +12,4 @@ packages/codeurjc-slidev-theme/layouts/layout-*.vue
 .claude/
 .opencode/
 target/
+packages/vscode-codeurjc-slidev/.vscode-test/

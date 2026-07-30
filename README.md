@@ -39,6 +39,17 @@ pnpm dev tutorial.md
 
 See `CLAUDE.md` for the full grammar/behavior reference (marker syntax, snippet-import selectors, title carry-over rules).
 
+## VSCode editor support
+
+A companion VSCode extension previews this theme's custom `slides.md` grammar directly in the editor, without running the Slidev dev server:
+
+- **Marker preview** — dims `// [!mark]` markers in a fenced code block (since they're stripped from the rendered slide) while boxing the code they highlight, so you can see what the audience will see without building the deck.
+- **Anchor/source hovers** — hovering a `[!mark:...]` anchor line or a `[!source ...]` directive line (following a `<<<` snippet import) shows what it resolves to: the target file, the matched line, the anchor's comment, or the source-link URL.
+- **Diagnostics** — an unresolved or ambiguous anchor, or an out-of-range `#N` occurrence, shows up as a real editor diagnostic instead of only a Vite dev-server console warning.
+- **Reverse references** — open a file under `code/` on its own and, if any `<<<` import anywhere in the workspace references a line in it, a CodeLens shows which slide(s) reference it, with click-through navigation back to the slide.
+
+Not yet published to the Marketplace — see [`packages/vscode-codeurjc-slidev/README.md`](packages/vscode-codeurjc-slidev/README.md) for how to run it locally.
+
 ## Other docs
 
 - **[ROADMAP.md](ROADMAP.md)** — planned features and ideas not yet implemented

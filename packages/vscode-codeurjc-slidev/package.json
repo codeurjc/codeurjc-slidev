@@ -1,0 +1,50 @@
+{
+  "name": "vscode-codeurjc-slidev",
+  "displayName": "CodeURJC Slidev Theme Support",
+  "description": "Editor support for codeurjc-slidev-theme's custom slides.md grammar: marker/anchor decorations, hovers, diagnostics, and reverse code references.",
+  "version": "0.1.0",
+  "publisher": "codeurjc",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.cjs",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codeurjc-slidev.openReference",
+        "title": "CodeURJC Slidev: Open referencing slide"
+      }
+    ]
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "node esbuild.js --production",
+    "test": "vitest",
+    "test:extension": "node esbuild.js && node ./test-extension/runTest.mjs"
+  },
+  "dependencies": {
+    "codeurjc-slidev-theme": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.4.1",
+    "esbuild": "^0.24.2",
+    "mocha": "^10.8.2",
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.9"
+  }
+}

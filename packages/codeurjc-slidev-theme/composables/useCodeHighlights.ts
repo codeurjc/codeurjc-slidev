@@ -36,6 +36,19 @@ interface ParsedMarkerLine {
   comment: string
 }
 
+/**
+ * Finds the character span of a `// [!mark...]`/`# [!mark...]` marker comment
+ * within a raw source line (from the comment prefix through end of line), or
+ * null if the line has no marker. Exposed for external consumers (e.g. an
+ * editor integration) that need to decorate/dim the marker text itself
+ * without re-deriving the marker grammar.
+ */
+export function findMarkerSpan(line: string): { start: number, end: number } | null {
+  const m = line.match(MARKER_RE)
+  if (!m) return null
+  return { start: m[1].length, end: line.length }
+}
+
 function parseMarkerLine(line: string): ParsedMarkerLine | null {
   const m = line.match(MARKER_RE)
   if (!m) return null
