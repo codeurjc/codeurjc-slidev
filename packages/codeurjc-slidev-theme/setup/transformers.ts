@@ -51,9 +51,16 @@ export default defineTransformersSetup(() => ({
       const userRoot = ctx.options.userRoot
       const warn = (message: string) => console.warn(`[code-snippet-import] slide ${ctx.slide.index}: ${message}`)
 
+      let inFence = false
       let i = 0
       while (i < lines.length) {
-        const parsed = parseSnippetImportLine(lines[i])
+        if (/^\s*(```+|~~~+)/.test(lines[i])) {
+          inFence = !inFence
+          i++
+          continue
+        }
+
+        const parsed = inFence ? null : parseSnippetImportLine(lines[i])
         if (!parsed) {
           i++
           continue
@@ -64,7 +71,14 @@ export default defineTransformersSetup(() => ({
           warn(`import resolves outside the "${DEFAULT_CODE_ROOT}" root: ${absPath}`)
         }
 
-        const fileText = readFileSync(absPath, 'utf-8')
+        let fileText: string
+        try {
+          fileText = readFileSync(absPath, 'utf-8')
+        } catch {
+          warn(`could not read file, leaving line as-is: ${absPath}`)
+          i++
+          continue
+        }
 
         let selector = null
         if (parsed.selectorRaw !== null) {

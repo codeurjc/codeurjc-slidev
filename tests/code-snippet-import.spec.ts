@@ -1,18 +1,17 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { readFileSync, writeFileSync } from 'fs'
-import { resolve } from 'path'
+import { resolve, join } from 'path'
 
-// Follows the same temporary-fixture-swap convention as
-// tests/code-highlight-callouts.spec.ts: this suite needs its own slide
-// content (a real `<<<` import against e2e/code, a symlink to the repo's
-// own code/ directory), so it replaces e2e/slides.md for its run and
-// restores the original in afterAll. Both the in-root and out-of-root
-// imports live on the single slide (rather than a second slide) since
-// navigating to a second route immediately after a fixture swap proved
-// unreliable once other suites' fixture swaps had already run against the
-// same long-lived dev server in the full e2e run -- slide 1 alone avoids
-// that route/HMR interaction entirely.
-const slidesPath = resolve(import.meta.dirname, '../e2e/slides.md')
+// This suite needs its own slide content (a real `<<<` import against
+// e2e/code, a symlink to the repo's own code/ directory), so it replaces
+// slides.md in its own worker-local copy of e2e/ (see ./fixtures.ts's
+// `workerDeck`) and restores the original in afterAll. Both the in-root and
+// out-of-root imports live on the single slide (rather than a second slide)
+// since navigating to a second route immediately after a fixture swap
+// proved unreliable once other suites' fixture swaps had already run
+// against the same long-lived dev server in the full e2e run -- slide 1
+// alone avoids that route/HMR interaction entirely.
+let slidesPath: string
 
 let originalSlides: string
 
@@ -30,6 +29,16 @@ aspectRatio: 16/9
 [!mark:"float suma = 0.0f;".."return suma / notas.size();"] Sums up the notes
 
 <<< @/../packages/codeurjc-slidev-theme/vite.config.ts ts notitle
+
+---
+layout: default
+---
+
+# Illustrative syntax, not a real import
+
+\`\`\`
+<<< @/code/ruta/al/Fichero.java[selector] lang
+\`\`\`
 `
 
 async function waitForFixture(page: import('@playwright/test').Page) {
@@ -46,7 +55,8 @@ async function waitForFixture(page: import('@playwright/test').Page) {
 test.describe('Code Snippet Import E2E', () => {
   test.describe.configure({ timeout: 150000 })
 
-  test.beforeAll(async () => {
+  test.beforeAll(async ({ workerDeck }) => {
+    slidesPath = join(workerDeck.dir, 'slides.md')
     originalSlides = readFileSync(slidesPath, 'utf-8')
     await new Promise(r => setTimeout(r, 2000))
     writeFileSync(slidesPath, FIXTURE_SLIDES, 'utf-8')
@@ -118,5 +128,13 @@ test.describe('Code Snippet Import E2E', () => {
     await page.waitForTimeout(500)
     const updated = readFileSync(slidesPath, 'utf-8')
     expect(updated).toMatch(/\[!mark:"public GestorNotas\(DBAlumno alumnos\)"@-?\d+,-?\d+\]/)
+  })
+
+  test('a `<<<` shown as illustrative text inside a plain fence does not break the slide', async ({ page }) => {
+    await page.goto('/2')
+    await page.waitForSelector('.slidev-page-2 .content')
+    await expect(page.locator('.slidev-page-2 h1')).toHaveText('Illustrative syntax, not a real import')
+    const codeText = await page.locator('.slidev-page-2 pre:visible').first().innerText()
+    expect(codeText).toContain('<<< @/code/ruta/al/Fichero.java[selector] lang')
   })
 })

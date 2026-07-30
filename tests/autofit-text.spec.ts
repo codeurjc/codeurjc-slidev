@@ -1,6 +1,7 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from './fixtures'
+import type { Page } from '@playwright/test'
 import { readFileSync, writeFileSync } from 'fs'
-import { resolve } from 'path'
+import { join } from 'path'
 import { AUTOFIT_MAX_PT } from '../packages/codeurjc-slidev-theme/composables/useAutoFitText'
 
 // 1pt = 4/3px at 96dpi (the ratio getComputedStyle reports fonts in).
@@ -9,15 +10,10 @@ const CEILING_PX = AUTOFIT_MAX_PT * 4 / 3
 // This suite needs a multi-slide deck (to navigate to fixture slides by
 // index and exercise v-click), but tests/layout-editor.spec.ts assumes the
 // shared e2e/slides.md fixture has exactly one slide. Rather than permanently
-// growing that shared fixture (which broke unrelated layout-editor drag/
-// resize/save assertions -- multi-slide decks change how Slidev mounts
-// prev/current/next slide instances), this suite temporarily replaces
-// e2e/slides.md for its own run and restores the original content in
-// afterAll, following the same backup/restore convention layout-editor.spec.ts
-// uses. playwright.config.ts runs with workers: 1 so no other spec file's
-// tests can run concurrently against the temporarily-swapped file.
-const slidesPath = resolve(import.meta.dirname, '../e2e/slides.md')
-
+// growing that shared fixture, this suite runs against its own worker-local
+// copy of e2e/ (see ./fixtures.ts's `workerDeck`), appending its slides
+// there and restoring the original content in afterAll.
+let slidesPath: string
 let originalSlides: string
 
 // Fixture slides appended at fixed indices:
@@ -107,7 +103,8 @@ async function contentBoxVars(page: Page): Promise<{ x: string; y: string; w: st
 }
 
 test.describe('Content text auto-fit', () => {
-  test.beforeAll(() => {
+  test.beforeAll(async ({ workerDeck }) => {
+    slidesPath = join(workerDeck.dir, 'slides.md')
     originalSlides = readFileSync(slidesPath, 'utf-8')
     writeFileSync(slidesPath, originalSlides + FIXTURE_SLIDES, 'utf-8')
   })
