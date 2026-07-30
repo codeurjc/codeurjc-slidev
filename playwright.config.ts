@@ -45,6 +45,7 @@ export default defineConfig({
       testMatch: [
         'autofit-text.spec.ts',
         'code-snippet-import.spec.ts',
+        'code-source-links.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'] },
     },

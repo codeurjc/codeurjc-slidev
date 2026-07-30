@@ -7,6 +7,7 @@ lesson: "Bloque 1: Introducción a pruebas software"
 authors: Micael Gallego, Francisco Gortázar, Michel Maes, Óscar Soto e Iván Chicano
 colorSchema: light
 aspectRatio: 16/9
+codeSourceLinkBranch: main
 ---
 
 # Ejercicios Tema 1.2: Pruebas unitarias

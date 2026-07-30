@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseCodeHighlights, injectHighlightSpans, serializeMarkerOverride } from '../useCodeHighlights'
+import { parseCodeHighlights, injectHighlightSpans, serializeMarkerOverride, isInlineSourceMarkerLine, extractInlineSourceLink } from '../useCodeHighlights'
 
 describe('parseCodeHighlights', () => {
   it('parses a single-line marker with a comment and strips it from the code', () => {
@@ -190,5 +190,40 @@ describe('injectHighlightSpans', () => {
   it('returns html unchanged when there are no highlights', () => {
     const html = shikiHtml(['plain'])
     expect(injectHighlightSpans(html, [])).toBe(html)
+  })
+})
+
+describe('isInlineSourceMarkerLine / extractInlineSourceLink', () => {
+  it('recognizes a // [!source url] marker line', () => {
+    expect(isInlineSourceMarkerLine('// [!source https://github.com/owner/repo/blob/main/File.java]')).toBe(true)
+  })
+
+  it('recognizes a #-comment marker line', () => {
+    expect(isInlineSourceMarkerLine('# [!source https://example.com]')).toBe(true)
+  })
+
+  it('rejects a plain code line', () => {
+    expect(isInlineSourceMarkerLine('int x = 1;')).toBe(false)
+  })
+
+  it('strips the marker line and reports its url', () => {
+    const code = [
+      'public class Foo {',
+      '// [!source https://github.com/owner/repo/blob/main/Foo.java]',
+      '  int x = 1;',
+      '}',
+    ].join('\n')
+    const { code: stripped, url } = extractInlineSourceLink(code)
+    expect(url).toBe('https://github.com/owner/repo/blob/main/Foo.java')
+    expect(stripped).toBe([
+      'public class Foo {',
+      '  int x = 1;',
+      '}',
+    ].join('\n'))
+  })
+
+  it('returns a null url and unchanged code when there is no marker', () => {
+    const code = 'int x = 1;'
+    expect(extractInlineSourceLink(code)).toEqual({ code, url: null })
   })
 })

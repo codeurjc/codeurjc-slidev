@@ -7,6 +7,8 @@ import {
   combineCodeAndAnchors,
   splitCodeAndAnchors,
   isAnchorDeclarationLine,
+  isSourceDirectiveLine,
+  parseSourceDirective,
 } from '../useSnippetImport'
 
 describe('parseSnippetImportLine', () => {
@@ -81,28 +83,31 @@ const FILE_TEXT = [
 
 describe('resolveSnippetSelector', () => {
   it('returns the whole file when there is no selector', () => {
-    expect(resolveSnippetSelector(FILE_TEXT, null)).toBe(FILE_TEXT)
+    expect(resolveSnippetSelector(FILE_TEXT, null)).toEqual({ text: FILE_TEXT, startLine: 1, endLine: 6 })
   })
 
   it('slices by absolute line range', () => {
-    expect(resolveSnippetSelector(FILE_TEXT, { kind: 'lineRange', start: 2, end: 4 })).toBe('line2\nline3 START\nline4')
+    expect(resolveSnippetSelector(FILE_TEXT, { kind: 'lineRange', start: 2, end: 4 }))
+      .toEqual({ text: 'line2\nline3 START\nline4', startLine: 2, endLine: 4 })
   })
 
   it('falls back to the whole file and warns when the line range is out of bounds', () => {
     const warn = vi.fn()
-    expect(resolveSnippetSelector(FILE_TEXT, { kind: 'lineRange', start: 5, end: 50 }, warn)).toBe(FILE_TEXT)
+    expect(resolveSnippetSelector(FILE_TEXT, { kind: 'lineRange', start: 5, end: 50 }, warn))
+      .toEqual({ text: FILE_TEXT, startLine: 1, endLine: 6 })
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('out of bounds'))
   })
 
   it('slices by content-anchor range', () => {
     const selector = { kind: 'contentRange' as const, startText: 'START', endText: 'END' }
-    expect(resolveSnippetSelector(FILE_TEXT, selector)).toBe('line3 START\nline4\nline5 END')
+    expect(resolveSnippetSelector(FILE_TEXT, selector))
+      .toEqual({ text: 'line3 START\nline4\nline5 END', startLine: 3, endLine: 5 })
   })
 
   it('falls back to the whole file and warns when a content anchor is not found', () => {
     const warn = vi.fn()
     const selector = { kind: 'contentRange' as const, startText: 'START', endText: 'nope' }
-    expect(resolveSnippetSelector(FILE_TEXT, selector, warn)).toBe(FILE_TEXT)
+    expect(resolveSnippetSelector(FILE_TEXT, selector, warn)).toEqual({ text: FILE_TEXT, startLine: 1, endLine: 6 })
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('nope'))
   })
 })
@@ -142,5 +147,57 @@ describe('isAnchorDeclarationLine', () => {
 
   it('rejects a plain code line', () => {
     expect(isAnchorDeclarationLine('int x = 1;')).toBe(false)
+  })
+})
+
+describe('isSourceDirectiveLine', () => {
+  it('recognizes a bare [!source] directive', () => {
+    expect(isSourceDirectiveLine('[!source]')).toBe(true)
+  })
+
+  it('recognizes a directive with content', () => {
+    expect(isSourceDirectiveLine('[!source none]')).toBe(true)
+  })
+
+  it('rejects a plain code line', () => {
+    expect(isSourceDirectiveLine('int x = 1;')).toBe(false)
+  })
+
+  it('rejects an anchor-declaration line', () => {
+    expect(isSourceDirectiveLine('[!mark:1] comment')).toBe(false)
+  })
+})
+
+describe('parseSourceDirective', () => {
+  it('parses a bare [!source] as auto mode', () => {
+    expect(parseSourceDirective('[!source]')).toEqual({ mode: 'auto', bottom: false })
+  })
+
+  it('parses [!source none] as suppression', () => {
+    expect(parseSourceDirective('[!source none]')).toEqual({ mode: 'none', bottom: false })
+  })
+
+  it('parses [!source bottom] as a placement-only override', () => {
+    expect(parseSourceDirective('[!source bottom]')).toEqual({ mode: 'auto', bottom: true })
+  })
+
+  it('parses an explicit URL override', () => {
+    expect(parseSourceDirective('[!source https://example.com/File.java]')).toEqual({
+      mode: 'url',
+      url: 'https://example.com/File.java',
+      bottom: false,
+    })
+  })
+
+  it('parses a combined bottom + URL override', () => {
+    expect(parseSourceDirective('[!source bottom https://example.com/File.java]')).toEqual({
+      mode: 'url',
+      url: 'https://example.com/File.java',
+      bottom: true,
+    })
+  })
+
+  it('returns null for a malformed directive', () => {
+    expect(parseSourceDirective('[!source')).toBeNull()
   })
 })

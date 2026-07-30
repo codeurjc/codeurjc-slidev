@@ -1,29 +1,65 @@
 import { basename, dirname, resolve } from 'path'
 import { readFileSync } from 'fs'
 import { defineTransformersSetup } from '@slidev/types'
-import { injectHighlightSpans, parseCodeHighlights, parseExternalHighlightAnchors } from '../composables/useCodeHighlights'
+import {
+  extractInlineSourceLink,
+  injectHighlightSpans,
+  parseCodeHighlights,
+  parseExternalHighlightAnchors,
+} from '../composables/useCodeHighlights'
 import {
   combineCodeAndAnchors,
+  combineWithSourceLink,
   DEFAULT_CODE_ROOT,
   isAnchorDeclarationLine,
+  isSourceDirectiveLine,
   isWithinCodeRoot,
   parseSnippetImportLine,
   parseSnippetSelector,
+  parseSourceDirective,
   resolveSnippetSelector,
   splitCodeAndAnchors,
+  splitSourceLink,
+  type CombinedSourceLink,
 } from '../composables/useSnippetImport'
 import { injectCarriedHeadings, isDefaultLayout, parseLeadingHeadings, resolveSlideHeadings, type SlideForHeadingResolve } from '../composables/useSlideTitleCarryover'
+import { buildGithubSourceLink } from '../composables/useSourceLink'
 
 function resolveImportPath(filePath: string, slideDir: string, userRoot: string): string {
   if (filePath.startsWith('@/')) return resolve(userRoot, filePath.slice(2))
   return resolve(slideDir, filePath)
 }
 
-/** Mirrors just enough of Slidev's own `wrapper_default` codeblock transformer to preserve its `[title]` rendering when this file's own `codeblocks` transformer intercepts a fence to inject highlight spans. */
-function wrapInCodeBlockTitle(info: string, html: string): string {
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+}
+
+/** The small clickable GitHub-style icon rendered beside a titled code block's title bar. Absolutely positioned within `.slidev-code-wrapper` (already `position: relative` in Slidev's own `CodeBlockWrapper`), offset clear of its native copy button. */
+function sourceLinkIconHtml(url: string): string {
+  return `<a class="slidev-source-link-icon" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer" title="View source" style="position:absolute;top:0.5rem;right:2.25rem;z-index:1;display:flex;opacity:0.7" onclick="event.stopPropagation()"><span class="i-carbon-logo-github" style="width:1.1rem;height:1.1rem"></span></a>`
+}
+
+/**
+ * Mirrors just enough of Slidev's own `wrapper_default` codeblock transformer
+ * to preserve its `[title]` rendering when this file's own `codeblocks`
+ * transformer intercepts a fence to inject highlight spans and/or a source
+ * link. When `sourceLink` is set, its placement is decided here: beside the
+ * title (a real icon, inlined into the wrapper's slot content) when a title
+ * is shown and bottom placement wasn't forced, otherwise a `data-source-link-*`
+ * attribute pair on the wrapper root (which -- since it's a plain, undeclared
+ * prop -- falls through onto `CodeBlockWrapper`'s single root element via
+ * Vue's automatic attribute inheritance) for `layouts/default.vue` to collect
+ * into the slide's bottom row.
+ */
+function wrapCodeBlock(info: string, html: string, sourceLink: CombinedSourceLink | null): string {
   const title = /\[([^\]]*)\]/.exec(info)?.[1] ?? ''
   const escaped = html.replace(/\{\{/g, '&lbrace;&lbrace;')
-  return `<CodeBlockWrapper title=${JSON.stringify(title)}>${escaped}</CodeBlockWrapper>`
+  if (!sourceLink) return `<CodeBlockWrapper title=${JSON.stringify(title)}>${escaped}</CodeBlockWrapper>`
+
+  const placedAtTitle = !sourceLink.bottom && title !== ''
+  const linkAttrs = ` data-source-link-url="${escapeAttr(sourceLink.url)}" data-source-link-placement="${placedAtTitle ? 'title' : 'bottom'}"`
+  const icon = placedAtTitle ? sourceLinkIconHtml(sourceLink.url) : ''
+  return `<CodeBlockWrapper title=${JSON.stringify(title)}${linkAttrs}>${escaped}${icon}</CodeBlockWrapper>`
 }
 
 export default defineTransformersSetup(() => ({
@@ -135,16 +171,42 @@ export default defineTransformersSetup(() => ({
           selector = parseSnippetSelector(parsed.selectorRaw)
           if (selector === null) warn(`malformed selector "[${parsed.selectorRaw}]"; showing the whole file`)
         }
-        const slicedCode = resolveSnippetSelector(fileText, selector, warn)
+        const { text: slicedCode, startLine, endLine } = resolveSnippetSelector(fileText, selector, warn)
 
+        // Consume any immediately following `[!mark:...]` anchor-declaration
+        // lines and/or a `[!source ...]` directive line, in either order.
         let j = i + 1
         const anchorLines: string[] = []
-        while (j < lines.length && isAnchorDeclarationLine(lines[j].trim())) {
-          anchorLines.push(lines[j].trim())
-          j++
+        let directive = null as ReturnType<typeof parseSourceDirective> | null
+        while (j < lines.length) {
+          const trimmed = lines[j].trim()
+          if (isAnchorDeclarationLine(trimmed)) {
+            anchorLines.push(trimmed)
+            j++
+            continue
+          }
+          if (isSourceDirectiveLine(trimmed)) {
+            const parsedDirective = parseSourceDirective(trimmed)
+            if (parsedDirective) directive = parsedDirective
+            else warn(`malformed "[!source ...]" directive: "${trimmed}"`)
+            j++
+            continue
+          }
+          break
         }
 
-        const combined = combineCodeAndAnchors(slicedCode, anchorLines)
+        let sourceLink: CombinedSourceLink | null = null
+        if (directive?.mode !== 'none') {
+          const configuredBranch = typeof ctx.options.data.headmatter.codeSourceLinkBranch === 'string'
+            ? ctx.options.data.headmatter.codeSourceLinkBranch
+            : undefined
+          const url = directive?.mode === 'url'
+            ? directive.url!
+            : buildGithubSourceLink(absPath, { startLine, endLine, isWholeFile: selector === null }, configuredBranch)
+          if (url) sourceLink = { url, bottom: directive?.bottom ?? false }
+        }
+
+        const combined = combineWithSourceLink(combineCodeAndAnchors(slicedCode, anchorLines), sourceLink)
         const fenceInfo = parsed.notitle ? parsed.lang : `${parsed.lang} [${basename(parsed.filePath)}]`
         const fenceText = `\`\`\`${fenceInfo}\n${combined}\n\`\`\``
 
@@ -164,24 +226,46 @@ export default defineTransformersSetup(() => ({
   codeblocks: [
     // Runs before Slidev's own built-in `wrapper_default` transformer (which
     // is what normally wraps a fence in `<CodeBlockWrapper>` to render its
-    // `[title]`), so intercepting here to inject highlight spans -- as both
-    // branches below must, to reach the raw pre-Shiki code -- would otherwise
-    // silently drop the title bar for every highlighted snippet. Replicating
-    // just enough of wrapper_default's own wrapping (title extraction +
-    // mustache-escaping) keeps that behavior intact.
+    // `[title]`), so intercepting here to inject highlight spans and/or a
+    // source-link icon -- both need the raw pre-Shiki code -- would
+    // otherwise silently drop the title bar for every highlighted or
+    // source-linked snippet. Replicating just enough of wrapper_default's own
+    // wrapping (title extraction + mustache-escaping) keeps that behavior
+    // intact. Only falls through to Slidev's own native transformer
+    // (returning undefined) when there's neither a highlight nor a source
+    // link to add -- a plain fence is otherwise untouched.
     async (ctx) => {
-      const { code: realCode, anchorLines } = splitCodeAndAnchors(ctx.code)
+      const { payload, link: importSourceLink } = splitSourceLink(ctx.code)
+      const { code: afterAnchorSplit, anchorLines } = splitCodeAndAnchors(payload)
+
+      let sourceLink = importSourceLink
+      let code = afterAnchorSplit
+      let highlights
+
       if (anchorLines.length > 0) {
-        const highlights = parseExternalHighlightAnchors(realCode, anchorLines)
-        if (highlights.length === 0) return undefined
-        const html = await ctx.renderHighlighted({ code: realCode })
-        return wrapInCodeBlockTitle(ctx.info, injectHighlightSpans(html, highlights))
+        highlights = parseExternalHighlightAnchors(code, anchorLines)
+      } else {
+        // Only hand-typed (non-`<<<`-imported) fences can carry an inline
+        // `// [!source ...]` marker -- an import's link travels via the
+        // sentinel above instead, resolved/overridden back in the `pre`
+        // stage where the file path is known.
+        if (!sourceLink) {
+          const extracted = extractInlineSourceLink(code)
+          code = extracted.code
+          if (extracted.url) {
+            const title = /\[([^\]]*)\]/.exec(ctx.info)?.[1] ?? ''
+            sourceLink = { url: extracted.url, bottom: title === '' }
+          }
+        }
+        const parsed = parseCodeHighlights(code)
+        code = parsed.code
+        highlights = parsed.highlights
       }
 
-      const { code, highlights } = parseCodeHighlights(ctx.code)
-      if (highlights.length === 0) return undefined
+      if (highlights.length === 0 && !sourceLink) return undefined
       const html = await ctx.renderHighlighted({ code })
-      return wrapInCodeBlockTitle(ctx.info, injectHighlightSpans(html, highlights))
+      const highlighted = highlights.length > 0 ? injectHighlightSpans(html, highlights) : html
+      return wrapCodeBlock(ctx.info, highlighted, sourceLink)
     },
   ],
 }))

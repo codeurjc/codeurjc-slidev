@@ -17,9 +17,10 @@ Includes a custom layout editor that lets you drag/resize slide elements (red ba
 - `composables/useEditor.ts` — singleton state for element positions, undo, drag/resize, and save (fixed elements + dynamic per-slide keys, e.g. callouts)
 - `composables/useCodeHighlights.ts` — marker syntax parsing (inline trailing-comment markers **and** external anchor declarations, see "Code snippet import" below) + Shiki HTML post-processing for code-highlight callouts
 - `composables/useHighlightLayout.ts` — pure geometry for callout auto-placement and elbow connector routing
-- `composables/useSnippetImport.ts` — `<<< @/path[selector] lang` snippet-import parsing, selector resolution (line-range / content-anchor-range) against a file's text, and the code-root convention check
+- `composables/useSnippetImport.ts` — `<<< @/path[selector] lang` snippet-import parsing, selector resolution (line-range / content-anchor-range, now also reporting the resolved 1-based line numbers) against a file's text, the code-root convention check, and `[!source ...]` directive-line parsing (see "Code source links" below)
+- `composables/useSourceLink.ts` — GitHub `origin`-remote detection (walking up to the nearest `.git` from the imported file, resolving symlinks first), default-branch resolution, and GitHub source-URL assembly; git access is injected so it's unit-testable without a real repo
 - `composables/useSlideTitleCarryover.ts` — leading-heading parsing, the per-level (title/subtitle) carry-chain resolver, and heading injection for slide title/subtitle carry-over (see "Slide title carry-over" below)
-- `setup/transformers.ts` — registers a `pre` markdown-transformer that resolves `<<<` snippet imports (with slicing) into literal fenced code blocks before Slidev's own `<<<` handling ever sees them, plus the `codeblocks` transformer that renders highlights (from inline markers or external anchors) as callouts
+- `setup/transformers.ts` — registers a `pre` markdown-transformer that resolves `<<<` snippet imports (with slicing) into literal fenced code blocks before Slidev's own `<<<` handling ever sees them, plus the `codeblocks` transformer that renders highlights (from inline markers or external anchors) and source-link icons as callouts/title decorations
 - `setup/preparser.ts` — registers a `transformSlide` preparser extension that injects carried title/subtitle headings into a slide's content and syncs the result into Slidev's own parsed `slide.title`
 - `_override/SideEditor.vue` — custom Slidev SideEditor override with a "Layout" tab
 - `vite.config.ts` — Vite transform hook that injects the SideEditor override; `/api/save-layout` middleware that persists layout CSS variables; `/api/save-code-highlight-position` middleware that persists a dragged callout's position into `slides.md`. Consumer-owned paths (`layouts/` write target, `slides.md`) resolve against Vite's `server.config.root` (the consuming project's root), never against `import.meta.dirname` (this plugin file's own location inside `node_modules`) — package-owned paths (`_override/SideEditor.vue`, the fallback `layouts/default.vue` template) stay `import.meta.dirname`-relative. The save-layout middleware falls back to reading the theme's own bundled layout when a consumer has no local override yet, and always writes back into the consumer's `layouts/`, creating a consumer-local override from the first edit onward.
@@ -106,6 +107,33 @@ Degradation is intentional and non-fatal: an anchor whose text isn't found is sk
 [!mark:"getNotasAlumno(idAlumno)"] Fetches the student's grades
 [!mark:"float suma = 0.0f;".."return suma / notas.size();"] Sums up the notes
 ```
+
+## Code source links
+
+A code block can carry a clickable link back to its real source: beside the title when one is shown, or in a row along the bottom of the slide otherwise. Resolution lives in `composables/useSourceLink.ts`; directive/marker parsing lives in `composables/useSnippetImport.ts` (imports) and `composables/useCodeHighlights.ts` (manual fences); wiring and rendering-placement decisions live in `setup/transformers.ts`; the bottom row lives in `layouts/default.vue`.
+
+### Imported snippets: auto-detected, directive-overridable
+
+A `<<<` import whose file lives under a git repo with a `github.com` `origin` remote gets a source link automatically — no authoring required. The linked branch is `codeSourceLinkBranch` from the deck's own frontmatter if set, else the repo's actual default branch: first the local `refs/remotes/origin/HEAD` symref (`git symbolic-ref`), and if that's unset (only `git clone` itself, or an explicit `git remote set-head origin -a`, ever writes it — a repo assembled via `init`+`remote add`+`fetch` won't have it) falling back to asking the remote directly (`git ls-remote --symref origin HEAD`). With none of those available, no link is added. The link is deep-linked to the shown line range (`#L<start>-L<end>`), or has no fragment for a whole-file import.
+
+A `[!source ...]` directive line, placed immediately after the `<<<` line (in the same position as `[!mark:...]` anchor-declaration lines, and freely interleavable with them):
+
+| Form | Syntax | Behavior |
+|---|---|---|
+| Default | `[!source]` | Auto-detected link (the default even with no directive line at all). |
+| Override | `[!source https://...]` | Replaces the auto-detected URL. |
+| Suppress | `[!source none]` | No link is rendered for this import, even if one would auto-detect. |
+| Force bottom | `[!source bottom]` | Renders in the bottom row instead of beside the title, keeping whatever URL would otherwise apply. |
+| Force bottom + override | `[!source bottom https://...]` | Both at once. |
+
+### Manual (non-imported) fences: opt-in only
+
+A hand-typed fenced code block has no backing file, so no auto-detection is possible. A standalone `// [!source https://...]` (or `#`-comment) marker line inside the fence attaches a link manually; it's stripped from the rendered code, same as `[!mark]` markers. With no marker, there's no link.
+
+### Placement
+
+- A visible title (an import's basename, or a manual fence's own `[title]`) with no `bottom` override → the link renders as a small clickable icon beside the title text.
+- No visible title (`notitle`, or a manual fence with no `[title]`), or `bottom` set → the link renders instead as an icon in a row along the bottom of the slide. Multiple such blocks on one slide each get their own icon in that row (hover shows the source file/URL); there's no connector line back to the originating block, unlike code-highlight callouts.
 
 ## Slide title carry-over
 

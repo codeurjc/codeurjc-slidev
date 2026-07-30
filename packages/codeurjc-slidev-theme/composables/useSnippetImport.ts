@@ -74,41 +74,50 @@ export function parseSnippetSelector(raw: string): SnippetSelector | null {
   return null
 }
 
+export interface ResolvedSnippet {
+  text: string
+  /** 1-based, inclusive -- the real line numbers within `fileText` that `text` was sliced from. */
+  startLine: number
+  endLine: number
+}
+
 /**
- * Slices `fileText` per `selector`. Falls back to the whole file (with a
- * warning) when the selector is out of range or its anchor text can't be
- * found -- consistent with this feature's "degrade visibly, never break the
- * slide" philosophy.
+ * Slices `fileText` per `selector`, also reporting the real 1-based line
+ * numbers the slice came from (used to build GitHub line-range links).
+ * Falls back to the whole file (with a warning) when the selector is out of
+ * range or its anchor text can't be found -- consistent with this feature's
+ * "degrade visibly, never break the slide" philosophy.
  */
 export function resolveSnippetSelector(
   fileText: string,
   selector: SnippetSelector | null,
   warn: (message: string) => void = (m) => console.warn(m),
-): string {
-  if (!selector) return fileText
+): ResolvedSnippet {
   const lines = fileText.split(/\r?\n/)
+
+  if (!selector) return { text: fileText, startLine: 1, endLine: lines.length }
 
   if (selector.kind === 'lineRange') {
     const start = selector.start - 1
     const end = selector.end - 1
     if (start < 0 || end >= lines.length || start > end) {
       warn(`[code-snippet-import] line range ${selector.start}-${selector.end} is out of bounds; showing the whole file`)
-      return fileText
+      return { text: fileText, startLine: 1, endLine: lines.length }
     }
-    return lines.slice(start, end + 1).join('\n')
+    return { text: lines.slice(start, end + 1).join('\n'), startLine: selector.start, endLine: selector.end }
   }
 
   const startIdx = lines.findIndex(l => l.includes(selector.startText))
   if (startIdx === -1) {
     warn(`[code-snippet-import] start anchor not found: "${selector.startText}"; showing the whole file`)
-    return fileText
+    return { text: fileText, startLine: 1, endLine: lines.length }
   }
   const endIdx = lines.findIndex((l, i) => i >= startIdx && l.includes(selector.endText))
   if (endIdx === -1) {
     warn(`[code-snippet-import] end anchor not found: "${selector.endText}"; showing the whole file`)
-    return fileText
+    return { text: fileText, startLine: 1, endLine: lines.length }
   }
-  return lines.slice(startIdx, endIdx + 1).join('\n')
+  return { text: lines.slice(startIdx, endIdx + 1).join('\n'), startLine: startIdx + 1, endLine: endIdx + 1 }
 }
 
 /** Whether `absPath` resolves to somewhere under `<projectRoot>/<codeRoot>`. */
@@ -147,4 +156,73 @@ export function splitCodeAndAnchors(combined: string): { code: string, anchorLin
 /** True for a bare anchor-declaration line (`[!mark:...]`), as opposed to a snippet-import line. */
 export function isAnchorDeclarationLine(line: string): boolean {
   return /^\[!mark:/.test(line)
+}
+
+// --- Source-link directive ------------------------------------------------
+// A `[!source ...]` line, standalone like an anchor-declaration line, placed
+// immediately after a `<<<` import line to override that import's
+// auto-detected GitHub source link:
+//   [!source]                    default: let auto-detection decide
+//   [!source https://...]        override the URL
+//   [!source none]                suppress the link entirely
+//   [!source bottom]              force bottom-row placement (keep any auto-
+//                                  detected/default URL)
+//   [!source bottom https://...]  both: force bottom-row placement AND override the URL
+
+export interface SourceDirective {
+  mode: 'auto' | 'url' | 'none'
+  url?: string
+  bottom: boolean
+}
+
+/** True for a bare source-link directive line (`[!source...]`), as opposed to a snippet-import or anchor-declaration line. */
+export function isSourceDirectiveLine(line: string): boolean {
+  return /^\[!source(?:\s|\])/.test(line)
+}
+
+const SOURCE_DIRECTIVE_RE = /^\[!source(?:\s+([^\]]*))?\]\s*$/
+
+/** Parses a `[!source ...]` directive line. Returns null if malformed. */
+export function parseSourceDirective(line: string): SourceDirective | null {
+  const m = SOURCE_DIRECTIVE_RE.exec(line.trim())
+  if (!m) return null
+  const tokens = (m[1] ?? '').trim().split(/\s+/).filter(Boolean)
+  if (tokens.includes('none')) return { mode: 'none', bottom: false }
+  const bottom = tokens.includes('bottom')
+  const url = tokens.find(t => t !== 'bottom')
+  if (url) return { mode: 'url', url, bottom }
+  return { mode: 'auto', bottom }
+}
+
+// --- Source-link payload sentinel ------------------------------------------
+// A resolved (or overridden) source link for a `<<<` import is threaded from
+// the `pre` transformer stage to the `codeblocks` stage the same way anchor
+// declarations are: appended behind a distinct sentinel, layered *outside*
+// the anchor-lines sentinel so splitting one never has to know about the
+// other (see setup/transformers.ts: split source-link first, then anchors).
+
+export const SOURCE_LINK_SENTINEL = '§§§ SLIDEV_SOURCE_LINK §§§'
+
+export interface CombinedSourceLink {
+  url: string
+  /** Force bottom-row placement even if the code block has a visible title. */
+  bottom: boolean
+}
+
+export function combineWithSourceLink(payload: string, link: CombinedSourceLink | null): string {
+  if (!link) return payload
+  return `${payload}\n${SOURCE_LINK_SENTINEL}\n${JSON.stringify(link)}`
+}
+
+/** Splits a source-link-combined payload back into the inner payload and the resolved link (if any). */
+export function splitSourceLink(combined: string): { payload: string, link: CombinedSourceLink | null } {
+  const idx = combined.indexOf(`\n${SOURCE_LINK_SENTINEL}\n`)
+  if (idx === -1) return { payload: combined, link: null }
+  const payload = combined.slice(0, idx)
+  const jsonStr = combined.slice(idx + SOURCE_LINK_SENTINEL.length + 2)
+  try {
+    return { payload, link: JSON.parse(jsonStr) }
+  } catch {
+    return { payload, link: null }
+  }
 }

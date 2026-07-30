@@ -135,6 +135,45 @@ function setCalloutRef(id: string, el: Element | null) {
   else calloutEls.delete(id)
 }
 
+// --- Bottom-row source links --------------------------------------------
+// A code block with no visible title (an import with `notitle`, a manual
+// fence with no `[title]`) -- or one with `[!source bottom]` forced -- can't
+// show its source-link icon beside a title bar that isn't there, so it's
+// collected here instead and rendered as a simple icon row along the bottom
+// of the slide (see setup/transformers.ts's `wrapCodeBlock`, which marks the
+// relevant `CodeBlockWrapper` root with `data-source-link-placement="bottom"`
+// whenever a title-bar icon isn't the right home for its link). No
+// obstacle-avoidance/connector-routing here (contrast with
+// useHighlightLayout.ts's callout placement) -- it's just an ordered row,
+// since a bottom row of same-size icons has no collision problem to solve.
+
+interface BottomSourceLinkItem {
+  url: string
+  label: string
+}
+
+const bottomSourceLinks = ref<BottomSourceLinkItem[]>([])
+
+/** Best-effort short label for a source link's hover tooltip: the URL's last path segment, stripped of any `#L..` line-range fragment. */
+function sourceLinkLabel(url: string): string {
+  const withoutFragment = url.split('#')[0]
+  const segments = withoutFragment.split('/').filter(Boolean)
+  return segments[segments.length - 1] || url
+}
+
+function computeBottomSourceLinks() {
+  const container = contentInnerEl.value
+  if (!container) {
+    bottomSourceLinks.value = []
+    return
+  }
+  const els = Array.from(container.querySelectorAll('[data-source-link-placement="bottom"]'))
+  bottomSourceLinks.value = els.map((el) => {
+    const url = el.getAttribute('data-source-link-url') || ''
+    return { url, label: sourceLinkLabel(url) }
+  }).filter(item => item.url)
+}
+
 // Highlight ids whose callout position is presenter-controlled (either via a
 // markdown `@x,y` override or an in-session drag) rather than recomputed
 // fresh on every pass. Local to this mounted instance so it naturally resets
@@ -194,6 +233,7 @@ function deriveSide(rect: Rect, codeRect: Rect): Side {
 }
 
 function computeCallouts() {
+  computeBottomSourceLinks()
   const root = rootEl.value
   const container = contentInnerEl.value
   if (!root || !container) {
@@ -524,6 +564,18 @@ watch(editor.aspectLocked, (v) => {
       @mousedown.stop="startCalloutDrag($event, item)"
     >{{ item.comment }}</div>
 
+    <div v-if="bottomSourceLinks.length > 0" class="source-link-bottom-row">
+      <a
+        v-for="(item, idx) in bottomSourceLinks"
+        :key="`${item.url}-${idx}`"
+        class="source-link-bottom-icon"
+        :href="item.url"
+        :title="item.label"
+        target="_blank"
+        rel="noopener noreferrer"
+      ><span class="i-carbon-logo-github" /></a>
+    </div>
+
   </div>
 </template>
 
@@ -851,6 +903,39 @@ watch(editor.aspectLocked, (v) => {
 .editing .code-callout.el-active {
   outline-color: #cb0017;
   outline-style: solid;
+}
+
+/* Bottom row of source-link icons for code blocks with no visible title (see
+   computeBottomSourceLinks above) -- a plain centered row, no per-block
+   connector or collision-avoidance since it's just an ordered list of
+   same-size icons along one edge. */
+.source-link-bottom-row {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  z-index: 45;
+}
+
+.source-link-bottom-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.source-link-bottom-icon:hover {
+  opacity: 1;
+}
+
+.source-link-bottom-icon .i-carbon-logo-github {
+  width: 100%;
+  height: 100%;
 }
 
 .delete-btn {

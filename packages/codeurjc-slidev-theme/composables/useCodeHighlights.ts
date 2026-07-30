@@ -523,6 +523,37 @@ export function parseExternalHighlightAnchors(
   return highlights
 }
 
+// --- Inline source-link marker ---------------------------------------------
+// A standalone `// [!source <url>]` (or `#`-comment) line inside a hand-typed
+// fenced code block (one with no backing `<<<` import, so no file path to
+// auto-detect a link from) attaches a manual source link to that block. It's
+// a whole line, not a trailing comment on a code line -- stripped from the
+// rendered code like `[!mark]` markers are.
+
+const INLINE_SOURCE_MARKER_RE = /^\s*(?:\/\/|#)\s*\[!source\s+(\S+)\]\s*$/
+
+/** True for a standalone inline `// [!source <url>]` marker line. */
+export function isInlineSourceMarkerLine(line: string): boolean {
+  return INLINE_SOURCE_MARKER_RE.test(line)
+}
+
+/**
+ * Strips any inline `// [!source <url>]` marker line out of `code`, returning
+ * the cleaned code plus the last such URL found (multiple markers in one
+ * block would be an authoring mistake; the last one wins rather than
+ * erroring, consistent with this feature's degrade-quietly philosophy).
+ */
+export function extractInlineSourceLink(code: string): { code: string, url: string | null } {
+  let url: string | null = null
+  const lines = code.split('\n').filter((line) => {
+    const m = INLINE_SOURCE_MARKER_RE.exec(line)
+    if (!m) return true
+    url = m[1]
+    return false
+  })
+  return { code: lines.join('\n'), url }
+}
+
 /** Injects `data-highlight-id`/`data-comment` spans into Shiki-rendered HTML for the given highlights. */
 export function injectHighlightSpans(html: string, highlights: CodeHighlight[]): string {
   if (highlights.length === 0) return html
