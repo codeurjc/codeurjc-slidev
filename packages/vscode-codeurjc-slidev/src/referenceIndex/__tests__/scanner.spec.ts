@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
-import { findMarkdownFiles, readThemeTaggedMarkdownFiles, makeResolveImportPath, findProjectRoot, resolveImportAbsPath, resolveImportTarget } from '../scanner'
+import { findMarkdownFiles, readThemeTaggedMarkdownFiles, makeResolveImportPath, findProjectRoot, resolveImportAbsPath, resolveImportTarget, listCodeRootDirectory } from '../scanner'
 
 let dir: string
 
@@ -84,6 +84,31 @@ describe('resolveImportTarget', () => {
       absPath: `${dirname(root)}/outside.java`,
       escapesCodeRoot: true,
     })
+  })
+})
+
+describe('listCodeRootDirectory', () => {
+  it('lists top-level code-root entries, skipping ignored directories', () => {
+    const root = makeFixture()
+    mkdirSync(join(root, 'code', 'ejer8'), { recursive: true })
+    mkdirSync(join(root, 'code', 'node_modules'), { recursive: true })
+    const entries = listCodeRootDirectory(root, '')
+    expect(entries.sort((a, b) => a.name.localeCompare(b.name))).toEqual([
+      { name: 'ejer8', isDirectory: true },
+      { name: 'Foo.java', isDirectory: false },
+    ])
+  })
+
+  it('lists entries of a nested directory', () => {
+    const root = makeFixture()
+    mkdirSync(join(root, 'code', 'ejer8'), { recursive: true })
+    writeFileSync(join(root, 'code', 'ejer8', 'Bar.java'), 'public class Bar {}')
+    expect(listCodeRootDirectory(root, 'ejer8')).toEqual([{ name: 'Bar.java', isDirectory: false }])
+  })
+
+  it('returns an empty list for a non-existent directory', () => {
+    const root = makeFixture()
+    expect(listCodeRootDirectory(root, 'does-not-exist')).toEqual([])
   })
 })
 

@@ -12,3 +12,7 @@ public GestorNotas(DBAlumno alumnos) { // [!mark] Injects the dependency
 
 <<< @/code/Foo.java java
 [!mark:"getNotasAlumno"] Fetches the student's grades
+
+---
+
+<<< @/

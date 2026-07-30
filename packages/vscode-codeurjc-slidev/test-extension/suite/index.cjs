@@ -11,6 +11,8 @@ exports.run = function run() {
 
   mocha.addFile(path.join(testsRoot, 'activation.test.cjs'))
   mocha.addFile(path.join(testsRoot, 'annotations.test.cjs'))
+  mocha.addFile(path.join(testsRoot, 'completion.test.cjs'))
+  mocha.addFile(path.join(testsRoot, 'selectorCommands.test.cjs'))
 
   return new Promise((resolve, reject) => {
     try {

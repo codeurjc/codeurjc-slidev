@@ -47,6 +47,7 @@ A companion VSCode extension previews this theme's custom `slides.md` grammar di
 - **Anchor/source hovers** — hovering a `[!mark:...]` anchor line or a `[!source ...]` directive line (following a `<<<` snippet import) shows what it resolves to: the target file, the matched line, the anchor's comment, or the source-link URL.
 - **Diagnostics** — an unresolved or ambiguous anchor, an out-of-range `#N` occurrence, a `<<<` import that escapes the code root, or a source link with no resolvable git branch, all show up as real editor diagnostics instead of only a Vite dev-server console warning.
 - **Reverse references** — open a file under `code/` on its own and, if any `<<<` import anywhere in the workspace references a line in it, a CodeLens shows which slide(s) reference it, with click-through navigation back to the slide.
+- **Path completion + selector commands** — typing `<<< @/` offers file/folder completions rooted at the code root; a "Copy Selector for Selection" / "Paste Selector into Import" command pair computes a `[N-M]` or `["a".."b"]` selector from any selection and writes it into an existing `<<<` import's bracket, without hand-counting lines.
 
 Not yet published to the Marketplace — see [`packages/vscode-codeurjc-slidev/README.md`](packages/vscode-codeurjc-slidev/README.md) for how to run it locally.
 

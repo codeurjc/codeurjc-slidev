@@ -11,8 +11,11 @@ import { computeMarkerDecorations } from './markerDecorations'
 import { analyzeImports, type ResolveImport } from './importAnalysis'
 import { buildReferenceIndex, updateReferenceIndexForFile, type ReferenceIndex } from './referenceIndex/indexBuilder'
 import { computeCodeLensesForDocument, type ReferenceMention } from './referenceIndex/codeLens'
-import { readThemeTaggedMarkdownFiles, makeResolveImportPath, findProjectRoot, resolveImportTarget } from './referenceIndex/scanner'
+import { readThemeTaggedMarkdownFiles, makeResolveImportPath, findProjectRoot, resolveImportTarget, listCodeRootDirectory } from './referenceIndex/scanner'
 import { makeClassifySourceLink } from './sourceLinkDiagnostics'
+import { computeImportPathContext, filterPathEntries } from './pathCompletion'
+import { computeSelectorForSelection } from './selectorFromSelection'
+import { parseSnippetImportLine, parseSnippetSelector, serializeSnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 
 const dimDecorationType = vscode.window.createTextEditorDecorationType({ opacity: '0.4' })
 const highlightDecorationType = vscode.window.createTextEditorDecorationType({
@@ -101,6 +104,26 @@ export function activate(context: vscode.ExtensionContext): void {
   })
   context.subscriptions.push(hoverProvider)
 
+  const pathCompletionProvider = vscode.languages.registerCompletionItemProvider('markdown', {
+    provideCompletionItems(document, position) {
+      if (!isRelevantDocument(document)) return undefined
+      const linePrefix = document.lineAt(position.line).text.slice(0, position.character)
+      const ctx = computeImportPathContext(linePrefix)
+      if (!ctx) return undefined
+      const projectRoot = findProjectRoot(document.uri.fsPath)
+      const entries = filterPathEntries(listCodeRootDirectory(projectRoot, ctx.dirRelPath), ctx.segmentPrefix)
+      const replaceRange = new vscode.Range(position.translate(0, -ctx.segmentPrefix.length), position)
+      return entries.map((entry) => {
+        const item = new vscode.CompletionItem(entry.name, entry.isDirectory ? vscode.CompletionItemKind.Folder : vscode.CompletionItemKind.File)
+        item.insertText = entry.isDirectory ? `${entry.name}/` : entry.name
+        item.range = replaceRange
+        if (entry.isDirectory) item.command = { command: 'editor.action.triggerSuggest', title: '' }
+        return item
+      })
+    },
+  }, '/')
+  context.subscriptions.push(pathCompletionProvider)
+
   // --- Reference index + CodeLens -----------------------------------------
 
   let referenceIndex: ReferenceIndex = new Map()
@@ -186,6 +209,51 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   }))
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => rebuildIndexForWorkspace()))
+
+  // --- Selector copy/paste commands ---------------------------------------
+
+  context.subscriptions.push(vscode.commands.registerCommand('codeurjc-slidev.copySelectorForSelection', async () => {
+    const editor = vscode.window.activeTextEditor
+    if (!editor || editor.selection.isEmpty) {
+      vscode.window.showErrorMessage('Select one or more lines first to copy a Slidev selector.')
+      return
+    }
+    const fileLines = editor.document.getText().split('\n')
+    const startLine = editor.selection.start.line + 1 // 1-based, matching the <<< grammar
+    // A whole-line selection (gutter click, Shift+Down) typically lands
+    // `end` at column 0 of the line *after* the last intended line -- treat
+    // that as not actually including that trailing line.
+    const endsAtLineStart = editor.selection.end.character === 0 && editor.selection.end.line > editor.selection.start.line
+    const endLine = editor.selection.end.line + (endsAtLineStart ? 0 : 1)
+    const selectorRaw = computeSelectorForSelection(fileLines, { startLine, endLine })
+    await vscode.env.clipboard.writeText(`[${selectorRaw}]`)
+    vscode.window.showInformationMessage(`Copied Slidev selector: [${selectorRaw}]`)
+  }))
+
+  context.subscriptions.push(vscode.commands.registerCommand('codeurjc-slidev.pasteSelectorIntoImport', async () => {
+    const editor = vscode.window.activeTextEditor
+    if (!editor) return
+    const line = editor.document.lineAt(editor.selection.active.line)
+    if (!parseSnippetImportLine(line.text)) {
+      vscode.window.showErrorMessage('Place the cursor on a <<< import line first.')
+      return
+    }
+
+    const clipboardText = (await vscode.env.clipboard.readText()).trim()
+    const bracketMatch = /^\[([\s\S]*)\]$/.exec(clipboardText)
+    const selectorRaw = bracketMatch ? bracketMatch[1] : clipboardText
+    if (!parseSnippetSelector(selectorRaw)) {
+      vscode.window.showErrorMessage(`Clipboard content is not a valid Slidev selector: ${clipboardText}`)
+      return
+    }
+
+    const newLineText = serializeSnippetSelector(line.text, selectorRaw)
+    if (newLineText === null) {
+      vscode.window.showErrorMessage('Could not update the import line.')
+      return
+    }
+    await editor.edit((builder) => { builder.replace(line.range, newLineText) })
+  }))
 }
 
 export function deactivate(): void {}

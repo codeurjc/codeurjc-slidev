@@ -23,15 +23,22 @@ export interface ParsedSnippetImportLine {
 
 const SNIPPET_IMPORT_RE = /^<<<\s*([^\s[]+)/
 
-/** Parses a `<<< @/path[selector] lang` line; returns null if the line isn't a snippet import. */
-export function parseSnippetImportLine(line: string): ParsedSnippetImportLine | null {
+/**
+ * Scans a `<<< @/path[selector] lang` line for the file-path end position and
+ * the `[selector]` bracket span (if any), shared by `parseSnippetImportLine`
+ * and `serializeSnippetSelector` so both agree on exactly the same position.
+ * Returns null if the line isn't a snippet import, or its selector bracket is
+ * unterminated.
+ */
+function scanSnippetImportLine(line: string): { filePath: string, fileEndIndex: number, bracketStart: number, bracketEnd: number } | null {
   const m = SNIPPET_IMPORT_RE.exec(line)
   if (!m) return null
   const filePath = m[1]
-  let i = m[0].length
-  let selectorRaw: string | null = null
-  if (line[i] === '[') {
-    let j = i + 1
+  const fileEndIndex = m[0].length
+  let bracketStart = -1
+  let bracketEnd = -1
+  if (line[fileEndIndex] === '[') {
+    let j = fileEndIndex + 1
     let inQuotes = false
     while (j < line.length) {
       if (line[j] === '"' && line[j - 1] !== '\\') inQuotes = !inQuotes
@@ -39,13 +46,40 @@ export function parseSnippetImportLine(line: string): ParsedSnippetImportLine | 
       j++
     }
     if (j >= line.length) return null // unterminated selector
-    selectorRaw = line.slice(i + 1, j)
-    i = j + 1
+    bracketStart = fileEndIndex
+    bracketEnd = j + 1 // exclusive, past the closing ]
   }
-  const tail = line.slice(i).trim().split(/\s+/)
+  return { filePath, fileEndIndex, bracketStart, bracketEnd }
+}
+
+/** Parses a `<<< @/path[selector] lang` line; returns null if the line isn't a snippet import. */
+export function parseSnippetImportLine(line: string): ParsedSnippetImportLine | null {
+  const scanned = scanSnippetImportLine(line)
+  if (!scanned) return null
+  const { filePath, fileEndIndex, bracketStart, bracketEnd } = scanned
+  const selectorRaw = bracketStart === -1 ? null : line.slice(bracketStart + 1, bracketEnd - 1)
+  const tail = line.slice(bracketStart === -1 ? fileEndIndex : bracketEnd).trim().split(/\s+/)
   const lang = tail[0] ?? ''
   const notitle = tail[1] === 'notitle'
   return { filePath, selectorRaw, lang, notitle }
+}
+
+/**
+ * Writes `newSelectorRaw` into an existing `<<<` import line's `[selector]`
+ * bracket -- replacing one if present, inserting one if absent -- leaving the
+ * file path, language, and any trailing keywords (e.g. `notitle`) unchanged.
+ * The write-back counterpart to `parseSnippetImportLine`, for editor tooling
+ * that computes a selector and needs to splice it in without re-deriving this
+ * line's bracket position. Returns null if `line` isn't a snippet import.
+ */
+export function serializeSnippetSelector(line: string, newSelectorRaw: string): string | null {
+  const scanned = scanSnippetImportLine(line)
+  if (!scanned) return null
+  const { fileEndIndex, bracketStart, bracketEnd } = scanned
+  if (bracketStart === -1) {
+    return `${line.slice(0, fileEndIndex)}[${newSelectorRaw}]${line.slice(fileEndIndex)}`
+  }
+  return `${line.slice(0, bracketStart)}[${newSelectorRaw}]${line.slice(bracketEnd)}`
 }
 
 export type SnippetSelector =

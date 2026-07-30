@@ -9,6 +9,7 @@ import {
   isAnchorDeclarationLine,
   isSourceDirectiveLine,
   parseSourceDirective,
+  serializeSnippetSelector,
 } from '../useSnippetImport'
 
 describe('parseSnippetImportLine', () => {
@@ -199,5 +200,40 @@ describe('parseSourceDirective', () => {
 
   it('returns null for a malformed directive', () => {
     expect(parseSourceDirective('[!source')).toBeNull()
+  })
+})
+
+describe('serializeSnippetSelector', () => {
+  it('inserts a selector into an import with none', () => {
+    expect(serializeSnippetSelector('<<< @/code/Foo.java java', '7-24')).toBe('<<< @/code/Foo.java[7-24] java')
+  })
+
+  it('replaces an existing line-range selector', () => {
+    expect(serializeSnippetSelector('<<< @/code/Foo.java[1-5] java', '"a".."b"')).toBe('<<< @/code/Foo.java["a".."b"] java')
+  })
+
+  it('replaces an existing content-anchor selector', () => {
+    expect(serializeSnippetSelector('<<< @/code/Foo.java["a".."b"] java', '7-24')).toBe('<<< @/code/Foo.java[7-24] java')
+  })
+
+  it('preserves a trailing notitle keyword when inserting', () => {
+    expect(serializeSnippetSelector('<<< @/code/Foo.java java notitle', '7-24')).toBe('<<< @/code/Foo.java[7-24] java notitle')
+  })
+
+  it('preserves a trailing notitle keyword when replacing', () => {
+    expect(serializeSnippetSelector('<<< @/code/Foo.java[1-5] java notitle', '7-24')).toBe('<<< @/code/Foo.java[7-24] java notitle')
+  })
+
+  it('round-trips through parseSnippetImportLine', () => {
+    const line = serializeSnippetSelector('<<< @/code/Foo.java java', '7-24')!
+    expect(parseSnippetImportLine(line)).toEqual({ filePath: '@/code/Foo.java', selectorRaw: '7-24', lang: 'java', notitle: false })
+  })
+
+  it('returns null for a non-import line', () => {
+    expect(serializeSnippetSelector('just some text', '7-24')).toBeNull()
+  })
+
+  it('returns null for an unterminated existing selector', () => {
+    expect(serializeSnippetSelector('<<< @/code/Foo.java[1-5 java', '7-24')).toBeNull()
   })
 })

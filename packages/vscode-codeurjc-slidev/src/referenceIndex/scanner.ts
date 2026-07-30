@@ -6,6 +6,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve, dirname, sep } from 'node:path'
 import { DEFAULT_CODE_ROOT, isWithinCodeRoot } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 import { usesCodeurjcSlidevTheme } from '../themeGate'
+import type { PathEntry } from '../pathCompletion'
 import type { ResolveImportPath } from './indexBuilder'
 
 const IGNORED_DIRS = new Set(['node_modules', '.git', 'dist', '.e2e-worker'])
@@ -66,6 +67,19 @@ export function makeResolveImportPath(projectRoot: string, codeRoot: string = DE
       return null
     }
     return absPath
+  }
+}
+
+/** Lists the entries of `<projectRoot>/<codeRoot>/<dirRelPath>`, for `<<< @/...` path completion -- one directory level at a time (unlike `findMarkdownFiles`'s full recursive walk). Returns an empty list for a directory that doesn't exist, rather than throwing. */
+export function listCodeRootDirectory(projectRoot: string, dirRelPath: string, codeRoot: string = DEFAULT_CODE_ROOT): PathEntry[] {
+  const absDir = join(projectRoot, codeRoot, dirRelPath)
+  try {
+    return readdirSync(absDir, { withFileTypes: true })
+      .filter(entry => !IGNORED_DIRS.has(entry.name))
+      .map(entry => ({ name: entry.name, isDirectory: entry.isDirectory() }))
+  }
+  catch {
+    return []
   }
 }
 

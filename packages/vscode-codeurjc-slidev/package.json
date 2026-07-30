@@ -21,6 +21,14 @@
       {
         "command": "codeurjc-slidev.openReference",
         "title": "CodeURJC Slidev: Open referencing slide"
+      },
+      {
+        "command": "codeurjc-slidev.copySelectorForSelection",
+        "title": "CodeURJC Slidev: Copy Selector for Selection"
+      },
+      {
+        "command": "codeurjc-slidev.pasteSelectorIntoImport",
+        "title": "CodeURJC Slidev: Paste Selector into Import"
       }
     ]
   },
