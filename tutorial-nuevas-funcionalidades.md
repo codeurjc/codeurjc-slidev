@@ -186,6 +186,28 @@ graph LR
 - Solo se ha escrito `## Ejemplo: segunda parte` — el título no se ha vuelto a escribir
 
 ---
+
+# Empezar un proyecto nuevo
+- Ya no hace falta clonar este repositorio para crear una presentación con el tema de CodeURJC
+- El tema y el CLI de scaffolding están publicados en npm:
+    - [`codeurjc-slidev-theme`](https://www.npmjs.com/package/codeurjc-slidev-theme) — el tema en sí (`theme: codeurjc-slidev-theme`)
+    - [`create-codeurjc-slidev`](https://www.npmjs.com/package/create-codeurjc-slidev) — CLI que genera un proyecto nuevo desde cero
+
+---
+
+# Empezar un proyecto nuevo: pasos
+```sh
+pnpm create codeurjc-slidev mi-charla
+cd mi-charla
+pnpm install
+pnpm dev
+```
+- El CLI pregunta el nombre del proyecto (si no se pasa como argumento) y si quieres instalar/arrancar el dev server al terminar
+- Genera un proyecto mínimo y autocontenido: `package.json`, `slides.md`, `code/` (vacío) y `public/images/logo.png`
+- No hace falta ningún `vite.config.ts` local: la dependencia `codeurjc-slidev-theme` aporta el layout, el editor y todas las funcionalidades de este tutorial
+- También funciona con `npm create codeurjc-slidev` o `yarn create codeurjc-slidev`
+
+---
 layout: copyright
 ---
 
