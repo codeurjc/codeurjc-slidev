@@ -1,14 +1,14 @@
-// Hover previews and diagnostics for `<<<` imports and their following
-// `[!mark:...]`/`[!source ...]` directive lines. Reading the imported file is
-// injected via `resolveImport` so this stays testable with in-memory fixtures
-// -- the real extension supplies an fs-backed implementation.
+// Hover previews, diagnostics, and CodeLens data for `<<<` imports and their
+// following `[!mark:...]`/`[!source ...]` directive lines. Reading the
+// imported file is injected via `resolveImport` so this stays testable with
+// in-memory fixtures -- the real extension supplies an fs-backed
+// implementation.
 
-import { parseSnippetSelector, resolveSnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
+import { parseSnippetSelector, resolveSnippetSelector, parseSourceDirective } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 import { parseExternalHighlightAnchors } from 'codeurjc-slidev-theme/composables/useCodeHighlights'
-import { parseSourceDirective } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 import { findImportBlocks } from './documentScan'
 import { parseFrontmatterField } from './themeGate'
-import type { ClassifySourceLink } from './sourceLinkDiagnostics'
+import type { ResolveSourceLink } from './sourceLinkDiagnostics'
 
 export interface ResolvedImport {
   targetAbsPath: string
@@ -32,17 +32,27 @@ export interface DiagnosticInfo {
   severity: 'warning' | 'error'
 }
 
+export interface ImportCodeLensAction {
+  /** 0-based document line the CodeLens attaches to (the `<<<` import line itself). */
+  line: number
+  openFile: { absPath: string, startLine: number, endLine: number, isWholeFile: boolean }
+  /** The URL "Open source ↗" should open, or null to omit that lens entirely. */
+  openSourceUrl: string | null
+}
+
 export interface ImportAnalysis {
   hovers: HoverInfo[]
   diagnostics: DiagnosticInfo[]
+  codeLensActions: ImportCodeLensAction[]
 }
 
-const defaultClassifySourceLink: ClassifySourceLink = () => 'ok'
+const defaultResolveSourceLink: ResolveSourceLink = () => ({ status: 'ok', url: null })
 
-/** Analyzes every `<<<` import and its directive lines in `text`, producing hover previews and diagnostics. */
-export function analyzeImports(text: string, resolveImport: ResolveImport, classifySourceLink: ClassifySourceLink = defaultClassifySourceLink): ImportAnalysis {
+/** Analyzes every `<<<` import and its directive lines in `text`, producing hover previews, diagnostics, and CodeLens data. */
+export function analyzeImports(text: string, resolveImport: ResolveImport, resolveSourceLink: ResolveSourceLink = defaultResolveSourceLink): ImportAnalysis {
   const hovers: HoverInfo[] = []
   const diagnostics: DiagnosticInfo[] = []
+  const codeLensActions: ImportCodeLensAction[] = []
   const configuredBranch = parseFrontmatterField(text, 'codeSourceLinkBranch')
 
   for (const block of findImportBlocks(text)) {
@@ -70,26 +80,53 @@ export function analyzeImports(text: string, resolveImport: ResolveImport, class
       contents: `**${resolved.targetAbsPath}** (lines ${slice.startLine}-${slice.endLine})`,
     })
 
-    let sourceDirectiveLine: number | null = null
-    let sourceMode: 'auto' | 'url' | 'none' = 'auto' // no directive at all defaults to auto, same as the theme
+    // Determine the source-link mode (an explicit directive, or the implicit
+    // "auto" default when there's no directive line at all) before handling
+    // the remaining (anchor) directives, so both the hover and the CodeLens
+    // below can share one resolution rather than resolving twice.
+    const sourceDirective = block.directives.find(d => d.kind === 'source')
+    const parsedSource = sourceDirective ? parseSourceDirective(sourceDirective.text) : null
+
+    let openSourceUrl: string | null = null
+    if (sourceDirective && !parsedSource) {
+      hovers.push({ line: sourceDirective.line, contents: 'Malformed [!source] directive' })
+    }
+    else if (parsedSource?.mode === 'none') {
+      hovers.push({ line: sourceDirective!.line, contents: 'Source link suppressed for this block' })
+    }
+    else if (parsedSource?.mode === 'url') {
+      openSourceUrl = parsedSource.url!
+      hovers.push({ line: sourceDirective!.line, contents: `Source link: ${parsedSource.url}${parsedSource.bottom ? ' (bottom row)' : ''}` })
+    }
+    else {
+      // Auto mode: either no directive at all (implicit), or an explicit
+      // `[!source]`/`[!source bottom]`.
+      const isWholeFile = selector === null
+      const resolvedLink = resolveSourceLink(resolved.targetAbsPath, { startLine: slice.startLine, endLine: slice.endLine, isWholeFile }, configuredBranch)
+      openSourceUrl = resolvedLink.url
+      if (resolvedLink.status === 'no-branch') {
+        diagnostics.push({
+          line: sourceDirective?.line ?? block.importLine,
+          message: 'No git branch could be resolved for this import\'s source link -- set `codeSourceLinkBranch` in the deck frontmatter, or configure the repo\'s default branch (e.g. `git remote set-head origin -a`).',
+          severity: 'warning',
+        })
+      }
+      if (sourceDirective) {
+        hovers.push({
+          line: sourceDirective.line,
+          contents: openSourceUrl ? `Source link: ${openSourceUrl}${parsedSource?.bottom ? ' (bottom row)' : ''}` : 'Source link: none resolves for this import',
+        })
+      }
+    }
+
+    codeLensActions.push({
+      line: block.importLine,
+      openFile: { absPath: resolved.targetAbsPath, startLine: slice.startLine, endLine: slice.endLine, isWholeFile: selector === null },
+      openSourceUrl,
+    })
 
     for (const directive of block.directives) {
-      if (directive.kind === 'source') {
-        const parsed = parseSourceDirective(directive.text)
-        sourceDirectiveLine = directive.line
-        sourceMode = parsed?.mode ?? 'auto'
-        hovers.push({
-          line: directive.line,
-          contents: !parsed
-            ? 'Malformed [!source] directive'
-            : parsed.mode === 'none'
-              ? 'Source link suppressed for this block'
-              : parsed.mode === 'url'
-                ? `Source link: ${parsed.url}${parsed.bottom ? ' (bottom row)' : ''}`
-                : `Source link: auto-detected${parsed.bottom ? ' (bottom row)' : ''}`,
-        })
-        continue
-      }
+      if (directive.kind === 'source') continue // already handled above
 
       // Anchor directive: resolve it in isolation (one anchor line per call)
       // so a warning/error can be attributed to exactly this document line.
@@ -102,15 +139,7 @@ export function analyzeImports(text: string, resolveImport: ResolveImport, class
         hovers.push({ line: directive.line, contents: `Line ${absLine}: ${h.comment || '(no comment)'}` })
       }
     }
-
-    if (sourceMode === 'auto' && classifySourceLink(resolved.targetAbsPath, configuredBranch) === 'no-branch') {
-      diagnostics.push({
-        line: sourceDirectiveLine ?? block.importLine,
-        message: 'No git branch could be resolved for this import\'s source link -- set `codeSourceLinkBranch` in the deck frontmatter, or configure the repo\'s default branch (e.g. `git remote set-head origin -a`).',
-        severity: 'warning',
-      })
-    }
   }
 
-  return { hovers, diagnostics }
+  return { hovers, diagnostics, codeLensActions }
 }

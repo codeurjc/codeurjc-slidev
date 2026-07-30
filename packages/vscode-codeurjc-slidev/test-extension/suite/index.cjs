@@ -9,6 +9,7 @@ exports.run = function run() {
   const mocha = new Mocha({ ui: 'bdd', timeout: 20000, color: true })
   const testsRoot = path.resolve(__dirname)
 
+  mocha.addFile(path.join(testsRoot, 'importSourceCodeLens.test.cjs'))
   mocha.addFile(path.join(testsRoot, 'activation.test.cjs'))
   mocha.addFile(path.join(testsRoot, 'annotations.test.cjs'))
   mocha.addFile(path.join(testsRoot, 'completion.test.cjs'))

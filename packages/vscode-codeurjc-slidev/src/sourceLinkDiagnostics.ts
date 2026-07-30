@@ -1,23 +1,33 @@
-// Classifies why a `<<<` import's source link might not resolve, reusing the
-// theme's own git-resolution logic verbatim (`resolveRepoLinkInfoCached`).
-// Only the "found a repo and a GitHub remote, but couldn't resolve a branch"
-// case is worth a diagnostic -- no repo, or a repo with a non-GitHub/no
-// remote, are both intentional/expected "no link" states the theme already
-// degrades silently for (see design.md).
+// Resolves a `<<<` import's source link, reusing the theme's own git-resolution
+// logic verbatim (`resolveRepoLinkInfoCached`, `buildGithubSourceLink`).
+// Answers two related questions about the same file with one git round-trip:
+// whether a link resolves at all (only the "found a repo and a GitHub remote,
+// but couldn't resolve a branch" case is worth a diagnostic -- no repo, or a
+// repo with a non-GitHub/no remote, are both intentional/expected "no link"
+// states the theme already degrades silently for, see design.md) and, when it
+// does resolve, the actual URL (for hovers and the "Open source" CodeLens).
 
-import { resolveRepoLinkInfoCached, type GitRunner } from 'codeurjc-slidev-theme/composables/useSourceLink'
+import { resolveRepoLinkInfoCached, buildGithubSourceLink, type GitRunner, type SourceLinkSelection } from 'codeurjc-slidev-theme/composables/useSourceLink'
 
 export type SourceLinkStatus = 'ok' | 'no-repo' | 'no-remote' | 'no-branch'
 
-export type ClassifySourceLink = (absFilePath: string, configuredBranch: string | null) => SourceLinkStatus
+export interface ResolvedSourceLink {
+  status: SourceLinkStatus
+  /** The resolved URL when `status` is `'ok'`, else null. */
+  url: string | null
+}
 
-/** Builds a `ClassifySourceLink` backed by real git access (or an injected `GitRunner` for tests). */
-export function makeClassifySourceLink(git?: GitRunner): ClassifySourceLink {
-  return (absFilePath, configuredBranch) => {
+export type ResolveSourceLink = (absFilePath: string, selection: SourceLinkSelection, configuredBranch: string | null) => ResolvedSourceLink
+
+/** Builds a `ResolveSourceLink` backed by real git access (or an injected `GitRunner` for tests). */
+export function makeResolveSourceLink(git?: GitRunner): ResolveSourceLink {
+  return (absFilePath, selection, configuredBranch) => {
     const info = resolveRepoLinkInfoCached(absFilePath, git)
-    if (!info) return 'no-repo'
-    if (!info.github) return 'no-remote'
-    if (!(configuredBranch ?? info.defaultBranch)) return 'no-branch'
-    return 'ok'
+    if (!info) return { status: 'no-repo', url: null }
+    if (!info.github) return { status: 'no-remote', url: null }
+    if (!(configuredBranch ?? info.defaultBranch)) return { status: 'no-branch', url: null }
+    // Re-resolves via `resolveRepoLinkInfoCached` internally, but that's a
+    // process-lifetime cache hit per repo root, not a second real git call.
+    return { status: 'ok', url: buildGithubSourceLink(absFilePath, selection, configuredBranch, git) }
   }
 }

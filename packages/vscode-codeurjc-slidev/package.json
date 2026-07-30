@@ -29,6 +29,14 @@
       {
         "command": "codeurjc-slidev.pasteSelectorIntoImport",
         "title": "CodeURJC Slidev: Paste Selector into Import"
+      },
+      {
+        "command": "codeurjc-slidev.openImportedFile",
+        "title": "CodeURJC Slidev: Open imported file"
+      },
+      {
+        "command": "codeurjc-slidev.openImportSource",
+        "title": "CodeURJC Slidev: Open source"
       }
     ]
   },

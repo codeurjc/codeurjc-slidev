@@ -12,7 +12,7 @@ import { analyzeImports, type ResolveImport } from './importAnalysis'
 import { buildReferenceIndex, updateReferenceIndexForFile, type ReferenceIndex } from './referenceIndex/indexBuilder'
 import { computeCodeLensesForDocument, type ReferenceMention } from './referenceIndex/codeLens'
 import { readThemeTaggedMarkdownFiles, makeResolveImportPath, findProjectRoot, resolveImportTarget, listCodeRootDirectory } from './referenceIndex/scanner'
-import { makeClassifySourceLink } from './sourceLinkDiagnostics'
+import { makeResolveSourceLink } from './sourceLinkDiagnostics'
 import { computeImportPathContext, filterPathEntries } from './pathCompletion'
 import { computeSelectorForSelection } from './selectorFromSelection'
 import { parseSnippetImportLine, parseSnippetSelector, serializeSnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
@@ -61,7 +61,7 @@ function createFsResolveImport(mdDocumentPath: string): ResolveImport {
   }
 }
 
-const classifySourceLink = makeClassifySourceLink()
+const resolveSourceLink = makeResolveSourceLink()
 
 export function activate(context: vscode.ExtensionContext): void {
   const diagnostics = vscode.languages.createDiagnosticCollection('codeurjc-slidev')
@@ -72,7 +72,7 @@ export function activate(context: vscode.ExtensionContext): void {
       diagnostics.delete(document.uri)
       return
     }
-    const { diagnostics: found } = analyzeImports(document.getText(), createFsResolveImport(document.uri.fsPath), classifySourceLink)
+    const { diagnostics: found } = analyzeImports(document.getText(), createFsResolveImport(document.uri.fsPath), resolveSourceLink)
     diagnostics.set(document.uri, found.map(d => new vscode.Diagnostic(
       toRange(d.line, 0, d.line, document.lineAt(d.line).text.length),
       d.message,
@@ -96,13 +96,51 @@ export function activate(context: vscode.ExtensionContext): void {
   const hoverProvider = vscode.languages.registerHoverProvider('markdown', {
     provideHover(document, position) {
       if (!isRelevantDocument(document)) return undefined
-      const { hovers } = analyzeImports(document.getText(), createFsResolveImport(document.uri.fsPath))
+      const { hovers } = analyzeImports(document.getText(), createFsResolveImport(document.uri.fsPath), resolveSourceLink)
       const hits = hovers.filter(h => h.line === position.line)
       if (hits.length === 0) return undefined
       return new vscode.Hover(hits.map(h => h.contents).join('\n\n'))
     },
   })
   context.subscriptions.push(hoverProvider)
+
+  const importCodeLensProvider = vscode.languages.registerCodeLensProvider('markdown', {
+    provideCodeLenses(document) {
+      if (!isRelevantDocument(document)) return []
+      const { codeLensActions } = analyzeImports(document.getText(), createFsResolveImport(document.uri.fsPath), resolveSourceLink)
+      return codeLensActions.flatMap((action) => {
+        const range = toRange(action.line, 0, action.line, 0)
+        const lenses = [new vscode.CodeLens(range, {
+          title: 'Open imported file',
+          command: 'codeurjc-slidev.openImportedFile',
+          arguments: [action.openFile],
+        })]
+        if (action.openSourceUrl) {
+          lenses.push(new vscode.CodeLens(range, {
+            title: 'Open source ↗',
+            command: 'codeurjc-slidev.openImportSource',
+            arguments: [action.openSourceUrl],
+          }))
+        }
+        return lenses
+      })
+    },
+  })
+  context.subscriptions.push(importCodeLensProvider)
+
+  context.subscriptions.push(vscode.commands.registerCommand('codeurjc-slidev.openImportedFile', async (openFile: { absPath: string, startLine: number, endLine: number, isWholeFile: boolean }) => {
+    const document = await vscode.workspace.openTextDocument(openFile.absPath)
+    const editor = await vscode.window.showTextDocument(document)
+    if (!openFile.isWholeFile) {
+      const range = toRange(openFile.startLine - 1, 0, openFile.endLine - 1, document.lineAt(openFile.endLine - 1).text.length)
+      editor.selection = new vscode.Selection(range.start, range.end)
+      editor.revealRange(range)
+    }
+  }))
+
+  context.subscriptions.push(vscode.commands.registerCommand('codeurjc-slidev.openImportSource', async (url: string) => {
+    await vscode.env.openExternal(vscode.Uri.parse(url))
+  }))
 
   const pathCompletionProvider = vscode.languages.registerCompletionItemProvider('markdown', {
     provideCompletionItems(document, position) {

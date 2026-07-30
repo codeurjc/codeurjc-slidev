@@ -10,6 +10,7 @@ A VSCode extension that previews [`codeurjc-slidev-theme`](../codeurjc-slidev-th
 - **Reverse references** — open a file under `code/` on its own (not through `slides.md`) and, if any `<<<` import anywhere in the workspace references a line in it, a CodeLens appears above that line (e.g. "📽 2 references — Slide 3, Slide 12"). Clicking it jumps back to the slide; with more than one reference it prompts you to pick which one.
 - **Path completion** — typing `<<< @/` in a theme-tagged `slides.md` offers file/folder completions rooted at the configured code root, narrowing as you type further path segments.
 - **Copy/paste a selector** — select some lines (in any file) and run **"CodeURJC Slidev: Copy Selector for Selection"** to copy a `[N-M]` or `["first line".."last line"]` selector for that selection to the clipboard (preferring the content-anchor form when it's safe — both boundary lines non-blank and unique in the file — since that form survives later edits elsewhere in the file). Then, with the cursor on an existing `<<<` import line, run **"CodeURJC Slidev: Paste Selector into Import"** to splice the copied selector into that line's bracket.
+- **Import CodeLens** — a `<<<` import line shows "Open imported file" (jumps straight to the resolved file, revealing its resolved line range) and, whenever a source-link URL actually resolves, "Open source ↗" (opens it in the browser) — the same real resolution the hover uses, not a placeholder.
 
 See the root [`AGENTS.md`](../../AGENTS.md#vscode-editor-support) for the extension's internal architecture.
 

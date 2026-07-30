@@ -2,12 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { clearRepoLinkInfoCache, type GitRunner } from 'codeurjc-slidev-theme/composables/useSourceLink'
-import { makeClassifySourceLink } from '../sourceLinkDiagnostics'
+import { clearRepoLinkInfoCache, type GitRunner, type SourceLinkSelection } from 'codeurjc-slidev-theme/composables/useSourceLink'
+import { makeResolveSourceLink } from '../sourceLinkDiagnostics'
 
-describe('makeClassifySourceLink', () => {
+describe('makeResolveSourceLink', () => {
   let repoDir: string
   let filePath: string
+  const selection: SourceLinkSelection = { startLine: 9, endLine: 15, isWholeFile: false }
 
   beforeEach(() => {
     clearRepoLinkInfoCache()
@@ -30,33 +31,55 @@ describe('makeClassifySourceLink', () => {
     }
   }
 
-  it('returns "ok" when a GitHub remote and default branch both resolve', () => {
-    const classify = makeClassifySourceLink(fakeGit('git@github.com:codeurjc/codeurjc-slidev.git', 'refs/remotes/origin/main'))
-    expect(classify(filePath, null)).toBe('ok')
+  it('resolves "ok" with the real URL when a GitHub remote and default branch both resolve', () => {
+    const resolve = makeResolveSourceLink(fakeGit('git@github.com:codeurjc/codeurjc-slidev.git', 'refs/remotes/origin/main'))
+    expect(resolve(filePath, selection, null)).toEqual({
+      status: 'ok',
+      url: 'https://github.com/codeurjc/codeurjc-slidev/blob/main/code/File.java#L9-L15',
+    })
   })
 
-  it('returns "ok" when no default branch resolves but a branch is configured', () => {
-    const classify = makeClassifySourceLink(fakeGit('git@github.com:codeurjc/codeurjc-slidev.git', null, null))
-    expect(classify(filePath, 'develop')).toBe('ok')
+  it('resolves "ok" with a configured branch overriding the auto-detected default', () => {
+    const resolve = makeResolveSourceLink(fakeGit('git@github.com:codeurjc/codeurjc-slidev.git', 'refs/remotes/origin/main'))
+    expect(resolve(filePath, selection, 'develop')).toEqual({
+      status: 'ok',
+      url: 'https://github.com/codeurjc/codeurjc-slidev/blob/develop/code/File.java#L9-L15',
+    })
   })
 
-  it('returns "no-branch" when a GitHub remote resolves but no default branch does, and none is configured', () => {
-    const classify = makeClassifySourceLink(fakeGit('git@github.com:codeurjc/codeurjc-slidev.git', null, null))
-    expect(classify(filePath, null)).toBe('no-branch')
+  it('resolves "ok" with a whole-file selection suppressing the line fragment', () => {
+    const resolve = makeResolveSourceLink(fakeGit('git@github.com:codeurjc/codeurjc-slidev.git', 'refs/remotes/origin/main'))
+    expect(resolve(filePath, { startLine: 1, endLine: 1, isWholeFile: true }, null)).toEqual({
+      status: 'ok',
+      url: 'https://github.com/codeurjc/codeurjc-slidev/blob/main/code/File.java',
+    })
   })
 
-  it('returns "no-remote" for a non-GitHub remote', () => {
-    const classify = makeClassifySourceLink(fakeGit('https://gitlab.com/owner/repo.git', 'refs/remotes/origin/main'))
-    expect(classify(filePath, null)).toBe('no-remote')
+  it('resolves "ok" when no default branch resolves but a branch is configured', () => {
+    const resolve = makeResolveSourceLink(fakeGit('git@github.com:codeurjc/codeurjc-slidev.git', null, null))
+    expect(resolve(filePath, selection, 'develop')).toEqual({
+      status: 'ok',
+      url: 'https://github.com/codeurjc/codeurjc-slidev/blob/develop/code/File.java#L9-L15',
+    })
   })
 
-  it('returns "no-remote" when there is no remote at all', () => {
-    const classify = makeClassifySourceLink(fakeGit(null, null))
-    expect(classify(filePath, null)).toBe('no-remote')
+  it('resolves "no-branch" (with no url) when a GitHub remote resolves but no default branch does, and none is configured', () => {
+    const resolve = makeResolveSourceLink(fakeGit('git@github.com:codeurjc/codeurjc-slidev.git', null, null))
+    expect(resolve(filePath, selection, null)).toEqual({ status: 'no-branch', url: null })
   })
 
-  it('returns "no-repo" for a file outside any git repository', () => {
-    const classify = makeClassifySourceLink(fakeGit('git@github.com:codeurjc/codeurjc-slidev.git', 'refs/remotes/origin/main'))
-    expect(classify(join(tmpdir(), 'not-a-repo', 'File.java'), null)).toBe('no-repo')
+  it('resolves "no-remote" (with no url) for a non-GitHub remote', () => {
+    const resolve = makeResolveSourceLink(fakeGit('https://gitlab.com/owner/repo.git', 'refs/remotes/origin/main'))
+    expect(resolve(filePath, selection, null)).toEqual({ status: 'no-remote', url: null })
+  })
+
+  it('resolves "no-remote" (with no url) when there is no remote at all', () => {
+    const resolve = makeResolveSourceLink(fakeGit(null, null))
+    expect(resolve(filePath, selection, null)).toEqual({ status: 'no-remote', url: null })
+  })
+
+  it('resolves "no-repo" (with no url) for a file outside any git repository', () => {
+    const resolve = makeResolveSourceLink(fakeGit('git@github.com:codeurjc/codeurjc-slidev.git', 'refs/remotes/origin/main'))
+    expect(resolve(join(tmpdir(), 'not-a-repo', 'File.java'), selection, null)).toEqual({ status: 'no-repo', url: null })
   })
 })
