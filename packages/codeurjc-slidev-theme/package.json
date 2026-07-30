@@ -12,13 +12,21 @@
     "slidev": ">=52.0.0"
   },
   "slidev": {
-    "colorSchema": "light"
+    "colorSchema": "light",
+    "defaults": {
+      "fonts": {
+        "sans": "Avenir Next,Nunito Sans",
+        "mono": "Fira Code",
+        "local": "Avenir Next"
+      }
+    }
   },
   "files": [
     "layouts",
     "composables",
     "!composables/__tests__",
     "setup",
+    "styles",
     "_override",
     "global-top.vue",
     "vite.config.ts",

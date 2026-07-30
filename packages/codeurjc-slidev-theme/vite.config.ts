@@ -331,6 +331,31 @@ export default {
       },
     },
     {
+      // Slidev resolves the active theme from `slides.md`'s own headmatter,
+      // which means its *very first* parse of the file (used just to read
+      // that headmatter, before the theme -- and thus this package's own
+      // `setup/preparser.ts` -- is even known) runs with a roots list that
+      // doesn't include this theme yet. That first parse's result becomes
+      // the server's permanent in-memory slide data unless/until a real file
+      // edit triggers a reparse (which does use the fully-resolved roots) --
+      // so on a cold `pnpm dev` start, preparser-driven features like slide
+      // title/subtitle carry-over silently never apply to any slide, until
+      // the presenter happens to edit slides.md. Forcing one synthetic
+      // change event right after the dev server starts listening triggers
+      // that same reparse path immediately, so carry-over (and any other
+      // preparser extension) is correct from the first load rather than
+      // only after a first edit.
+      name: 'slidev-force-initial-reparse-for-preparser-extensions',
+      configureServer(server) {
+        server.httpServer?.once('listening', () => {
+          const entry = resolve(server.config.root, 'slides.md')
+          if (existsSync(entry)) {
+            setTimeout(() => server.watcher.emit('change', entry), 0)
+          }
+        })
+      },
+    },
+    {
       // Slidev's own `handleHotUpdate` only re-transforms/pushes an update
       // for a slide's virtual `__slidev_<n>.md`/`.frontmatter` module when
       // it finds that module already registered as an *importer* with a
