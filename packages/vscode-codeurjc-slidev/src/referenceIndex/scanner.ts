@@ -36,13 +36,32 @@ export function readThemeTaggedMarkdownFiles(root: string): Record<string, strin
   return files
 }
 
-/** Resolves a `<<<` import's `@/...` path against `projectRoot`/`codeRoot`, the same convention `isWithinCodeRoot` checks. Warns (rather than throws) and returns null if the resolved path escapes the code root. */
+/**
+ * Resolves a `<<<` import's file path to an absolute path, mirroring the
+ * theme's own convention (`setup/transformers.ts`'s unexported
+ * `resolveImportPath`): an `@/...` path resolves against `projectRoot`,
+ * anything else resolves against the importing markdown file's own
+ * directory.
+ */
+export function resolveImportAbsPath(importFilePath: string, mdPath: string, projectRoot: string): string {
+  const abs = importFilePath.startsWith('@/')
+    ? resolve(projectRoot, importFilePath.slice(2))
+    : resolve(dirname(mdPath), importFilePath)
+  return abs.split(sep).join('/')
+}
+
+/** Resolves a `<<<` import's file path plus whether it escapes the code root -- an escape is a warning, not a hard failure (the theme still reads/renders the file). */
+export function resolveImportTarget(importFilePath: string, mdPath: string, projectRoot: string, codeRoot: string = DEFAULT_CODE_ROOT): { absPath: string, escapesCodeRoot: boolean } {
+  const absPath = resolveImportAbsPath(importFilePath, mdPath, projectRoot)
+  const normalizedRoot = projectRoot.split(sep).join('/')
+  return { absPath, escapesCodeRoot: !isWithinCodeRoot(absPath, normalizedRoot, codeRoot) }
+}
+
+/** Resolves a `<<<` import's `@/...` path against `projectRoot`/`codeRoot`, the same convention `isWithinCodeRoot` checks. Warns (rather than throws) and returns null if the resolved path escapes the code root -- used only for the reference index, which simply skips indexing an out-of-bounds target rather than surfacing a diagnostic (the active-buffer diagnostic for this lives in `importAnalysis.ts`/`resolveImportTarget` above). */
 export function makeResolveImportPath(projectRoot: string, codeRoot: string = DEFAULT_CODE_ROOT, warn: (message: string) => void = (m) => console.warn(m)): ResolveImportPath {
-  return (_mdPath, importFilePath) => {
-    const relPath = importFilePath.replace(/^@\//, '')
-    const absPath = resolve(projectRoot, relPath).split(sep).join('/')
-    const normalizedRoot = projectRoot.split(sep).join('/')
-    if (!isWithinCodeRoot(absPath, normalizedRoot, codeRoot)) {
+  return (mdPath, importFilePath) => {
+    const { absPath, escapesCodeRoot } = resolveImportTarget(importFilePath, mdPath, projectRoot, codeRoot)
+    if (escapesCodeRoot) {
       warn(`[vscode-codeurjc-slidev] import path escapes the code root: ${importFilePath}`)
       return null
     }

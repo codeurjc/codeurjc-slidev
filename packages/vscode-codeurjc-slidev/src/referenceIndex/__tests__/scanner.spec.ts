@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { findMarkdownFiles, readThemeTaggedMarkdownFiles, makeResolveImportPath, findProjectRoot } from '../scanner'
+import { join, dirname } from 'node:path'
+import { findMarkdownFiles, readThemeTaggedMarkdownFiles, makeResolveImportPath, findProjectRoot, resolveImportAbsPath, resolveImportTarget } from '../scanner'
 
 let dir: string
 
@@ -52,6 +52,38 @@ describe('makeResolveImportPath', () => {
     const resolve = makeResolveImportPath(root, 'code', (m) => warnings.push(m))
     expect(resolve('slides.md', '@/../outside.java')).toBeNull()
     expect(warnings).toHaveLength(1)
+  })
+})
+
+describe('resolveImportAbsPath', () => {
+  it('resolves an @/ path against the project root', () => {
+    const root = makeFixture()
+    expect(resolveImportAbsPath('@/code/Foo.java', join(root, 'slides.md'), root)).toBe(`${root}/code/Foo.java`)
+  })
+
+  it('resolves a plain relative path against the importing markdown file\'s own directory', () => {
+    const root = makeFixture()
+    mkdirSync(join(root, 'slides'), { recursive: true })
+    writeFileSync(join(root, 'slides', 'Foo.java'), 'public class Foo {}')
+    expect(resolveImportAbsPath('./Foo.java', join(root, 'slides', 'deck.md'), root)).toBe(`${root}/slides/Foo.java`)
+  })
+})
+
+describe('resolveImportTarget', () => {
+  it('reports escapesCodeRoot: false for a path under the code root', () => {
+    const root = makeFixture()
+    expect(resolveImportTarget('@/code/Foo.java', join(root, 'slides.md'), root)).toEqual({
+      absPath: `${root}/code/Foo.java`,
+      escapesCodeRoot: false,
+    })
+  })
+
+  it('reports escapesCodeRoot: true for a path outside the code root', () => {
+    const root = makeFixture()
+    expect(resolveImportTarget('@/../outside.java', join(root, 'slides.md'), root)).toEqual({
+      absPath: `${dirname(root)}/outside.java`,
+      escapesCodeRoot: true,
+    })
   })
 })
 

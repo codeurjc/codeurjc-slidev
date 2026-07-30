@@ -11,7 +11,8 @@ import { computeMarkerDecorations } from './markerDecorations'
 import { analyzeImports, type ResolveImport } from './importAnalysis'
 import { buildReferenceIndex, updateReferenceIndexForFile, type ReferenceIndex } from './referenceIndex/indexBuilder'
 import { computeCodeLensesForDocument, type ReferenceMention } from './referenceIndex/codeLens'
-import { readThemeTaggedMarkdownFiles, makeResolveImportPath, findProjectRoot } from './referenceIndex/scanner'
+import { readThemeTaggedMarkdownFiles, makeResolveImportPath, findProjectRoot, resolveImportTarget } from './referenceIndex/scanner'
+import { makeClassifySourceLink } from './sourceLinkDiagnostics'
 
 const dimDecorationType = vscode.window.createTextEditorDecorationType({ opacity: '0.4' })
 const highlightDecorationType = vscode.window.createTextEditorDecorationType({
@@ -43,21 +44,21 @@ function updateDecorations(editor: vscode.TextEditor): void {
   }))
 }
 
-/** Builds a `ResolveImport` (file-text-reading) callback scoped to a specific markdown document's project root. */
+/** Builds a `ResolveImport` (file-text-reading) callback scoped to a specific markdown document's project root. Escaping the code root is reported (via `escapesCodeRoot`), not treated as a resolution failure -- the theme still reads/renders the file in that case. */
 function createFsResolveImport(mdDocumentPath: string): ResolveImport {
   const projectRoot = findProjectRoot(mdDocumentPath)
-  const resolvePath = makeResolveImportPath(projectRoot)
   return (importFilePath) => {
-    const targetAbsPath = resolvePath(mdDocumentPath, importFilePath)
-    if (!targetAbsPath) return null
+    const { absPath, escapesCodeRoot } = resolveImportTarget(importFilePath, mdDocumentPath, projectRoot)
     try {
-      return { targetAbsPath, fileText: readFileSync(targetAbsPath, 'utf-8') }
+      return { targetAbsPath: absPath, fileText: readFileSync(absPath, 'utf-8'), escapesCodeRoot }
     }
     catch {
       return null
     }
   }
 }
+
+const classifySourceLink = makeClassifySourceLink()
 
 export function activate(context: vscode.ExtensionContext): void {
   const diagnostics = vscode.languages.createDiagnosticCollection('codeurjc-slidev')
@@ -68,7 +69,7 @@ export function activate(context: vscode.ExtensionContext): void {
       diagnostics.delete(document.uri)
       return
     }
-    const { diagnostics: found } = analyzeImports(document.getText(), createFsResolveImport(document.uri.fsPath))
+    const { diagnostics: found } = analyzeImports(document.getText(), createFsResolveImport(document.uri.fsPath), classifySourceLink)
     diagnostics.set(document.uri, found.map(d => new vscode.Diagnostic(
       toRange(d.line, 0, d.line, document.lineAt(d.line).text.length),
       d.message,
