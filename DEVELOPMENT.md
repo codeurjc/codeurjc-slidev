@@ -9,6 +9,8 @@ This repo is a pnpm workspace. The theme package lives in `packages/codeurjc-sli
 - **Styling:** UnoCSS
 - **Unit tests:** Vitest 4 + jsdom + `@testing-library/vue`
 - **E2e tests:** Playwright 1.61 (`@playwright/test`), Chromium
+- **Lint/format:** ESLint (`@antfu/eslint-config`, flat config) — one tool for both, no separate Prettier
+- **Pre-commit hooks:** `simple-git-hooks` + `lint-staged` (installed automatically by `pnpm install`'s `prepare` script; runs `eslint --fix` on staged files)
 - **Package manager:** pnpm (workspace)
 
 ## Commands
@@ -18,9 +20,17 @@ pnpm install
 pnpm dev          # start slidev dev server on this repo's own slides.md (port 3030)
 pnpm build        # build static slides
 pnpm export       # export to PDF
-pnpm test         # run the theme package's unit tests (vitest)
+pnpm lint         # eslint . --cache
+pnpm lint:fix     # eslint . --cache --fix
+pnpm typecheck    # vue-tsc/tsc --noEmit across the theme + vscode extension packages
+pnpm test         # run the theme package's + vscode extension's unit tests (vitest)
 pnpm test:e2e     # run e2e tests (playwright, auto-starts dev server(s) against e2e/slides.md and per-worker fixtures)
+pnpm test:extension  # vscode extension-host smoke tests (needs a display; xvfb-run on headless machines)
 ```
+
+## CI
+
+`.github/workflows/test.yml` runs on every push/PR to `main`: `lint`, `typecheck`, `unit-test`, `e2e`, and `build` as independent parallel jobs. `.github/workflows/extension-test.yml` runs the (slower, Electron-based) `test:extension` smoke suite via `xvfb-run`, but only on push to `main` and only when `packages/vscode-codeurjc-slidev/**` changed — it's not a PR-blocking check.
 
 ## Project structure
 
@@ -49,7 +59,8 @@ codeurjc-slidev/
 
 1. Edit the theme (`packages/codeurjc-slidev-theme/layouts/`, `composables/`, `setup/`, etc.)
 2. Write/update tests (`packages/codeurjc-slidev-theme/composables/__tests__/` for unit, `tests/` for e2e)
-3. Run `pnpm test && pnpm test:e2e`
-4. Commit: `git add -A && git commit -m "message"`
+3. Run `pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e`
+4. Commit: `git add -A && git commit -m "message"` — a pre-commit hook runs `eslint --fix` on staged files automatically
+5. CI re-runs lint/typecheck/test/e2e/build on the pushed branch/PR (see "CI" above)
 
 Publishing a new version of either package: bump its `version` in `packages/<name>/package.json`, then `cd packages/<name> && npm publish --access public` (requires npm 2FA).

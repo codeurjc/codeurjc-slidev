@@ -1,6 +1,6 @@
-import { test, expect } from './fixtures'
-import { readFileSync, writeFileSync } from 'fs'
-import { resolve, join } from 'path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { expect, test } from './fixtures'
 
 // This suite needs its own slide content (a real `<<<` import against
 // e2e/code, a symlink to the repo's own code/ directory), so it replaces
@@ -45,8 +45,10 @@ async function waitForFixture(page: import('@playwright/test').Page) {
   const deadline = Date.now() + 100000
   for (;;) {
     const ready = await page.locator('.slidev-page-1 pre').count().then(c => c >= 2).catch(() => false)
-    if (ready) return
-    if (Date.now() > deadline) throw new Error('code-snippet-import fixture never appeared to compile on the dev server')
+    if (ready)
+      return
+    if (Date.now() > deadline)
+      throw new Error('code-snippet-import fixture never appeared to compile on the dev server')
     await page.reload().catch(() => {})
     await page.waitForTimeout(1000)
   }
@@ -118,7 +120,8 @@ test.describe('Code Snippet Import E2E', () => {
     const callout = page.locator('.slidev-page-1 .code-callout:visible', { hasText: 'Injects the DB dependency' })
     const box = await callout.boundingBox()
     expect(box).toBeTruthy()
-    if (!box) return
+    if (!box)
+      return
 
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await page.mouse.down()

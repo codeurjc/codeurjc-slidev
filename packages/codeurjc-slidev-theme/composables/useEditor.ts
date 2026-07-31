@@ -1,4 +1,4 @@
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 
 interface Rect {
   x: number
@@ -22,7 +22,7 @@ const ELEMENTS: Record<string, {
     label: 'Red Bar',
     color: '#cb0017',
     initial: { x: 0, y: 0, w: 980, h: 10 },
-    cssOutput: (pos) => [
+    cssOutput: pos => [
       'position: absolute',
       `top: ${pos.y}px`,
       `left: ${pos.x}px`,
@@ -32,12 +32,12 @@ const ELEMENTS: Record<string, {
       'z-index: 100',
     ].map(l => `  ${l};`).join('\n'),
   },
-  logo: {
+  'logo': {
     label: 'Logo',
     color: '#e8792b',
     initial: { x: 24, y: 20, w: 80, h: 48 },
     invertX: true,
-    cssOutput: (pos) => [
+    cssOutput: pos => [
       'position: absolute',
       `top: ${pos.y}px`,
       `right: ${pos.x}px`,
@@ -46,11 +46,11 @@ const ELEMENTS: Record<string, {
       'z-index: 50',
     ].map(l => `  ${l};`).join('\n'),
   },
-  title: {
+  'title': {
     label: 'Title',
     color: '#2563eb',
     initial: { x: 24, y: 20, w: 400, h: 48 },
-    cssOutput: (pos) => [
+    cssOutput: pos => [
       'position: absolute',
       `top: ${pos.y}px`,
       `left: ${pos.x}px`,
@@ -65,22 +65,22 @@ const ELEMENTS: Record<string, {
       'font-size: 36pt',
     ].map(l => `  ${l};`).join('\n'),
   },
-  content: {
+  'content': {
     label: 'Content',
     color: '#16a34a',
     initial: { x: 0, y: 80, w: CONTENT_DEFAULT_WIDTH, h: 400 },
-    cssOutput: (pos) => [
+    cssOutput: pos => [
       `margin-top: ${pos.y}px`,
       `margin-left: ${pos.x}px`,
       `width: ${pos.w}px`,
       `min-height: ${pos.h}px`,
     ].map(l => `  ${l};`).join('\n'),
   },
-  image: {
+  'image': {
     label: 'Image',
     color: '#9333ea',
     initial: { x: 438, y: 80, w: 400, h: 300 },
-    cssOutput: (pos) => [
+    cssOutput: pos => [
       'position: absolute',
       `top: ${pos.y}px`,
       `left: ${pos.x}px`,
@@ -155,7 +155,8 @@ export function useEditor() {
 
   function toggle() {
     editing.value = !editing.value
-    if (!editing.value) selected.value = null
+    if (!editing.value)
+      selected.value = null
   }
 
   const undoStack = _sharedUndoStack
@@ -172,21 +173,24 @@ export function useEditor() {
       // only push if something actually changed
       const c = undoCheckpoint.value
       const positionsChanged = Object.keys(c.positions).some(key =>
-        c.positions[key].x !== positions[key].x || c.positions[key].y !== positions[key].y ||
-        c.positions[key].w !== positions[key].w || c.positions[key].h !== positions[key].h
+        c.positions[key].x !== positions[key].x || c.positions[key].y !== positions[key].y
+        || c.positions[key].w !== positions[key].w || c.positions[key].h !== positions[key].h,
       )
       const hiddenChanged = Object.keys(c.hidden).some(key => c.hidden[key] !== hidden[key])
       const aspectLockedChanged = Object.keys(c.aspectLocked).some(key => c.aspectLocked[key] !== aspectLocked[key])
-      if (positionsChanged || hiddenChanged || aspectLockedChanged) undoStack.value.push(undoCheckpoint.value)
+      if (positionsChanged || hiddenChanged || aspectLockedChanged)
+        undoStack.value.push(undoCheckpoint.value)
       undoCheckpoint.value = null
     }
   }
 
   function undo() {
     const prev = undoStack.value.pop()
-    if (!prev) return
+    if (!prev)
+      return
     for (const key of Object.keys(prev.positions)) {
-      if (prev.positions[key]) Object.assign(positions[key], prev.positions[key])
+      if (prev.positions[key])
+        Object.assign(positions[key], prev.positions[key])
     }
     for (const key of Object.keys(prev.hidden)) {
       hidden[key] = prev.hidden[key]
@@ -208,21 +212,27 @@ export function useEditor() {
 
   function getContainerScale(): number {
     const container = document.querySelector('.slidev-layout.default')
-    if (!container) return 1
+    if (!container)
+      return 1
     return container.getBoundingClientRect().width / container.scrollWidth
   }
 
   function startDrag(e: MouseEvent, name: string) {
-    if (!editing.value) return
+    if (!editing.value)
+      return
     e.preventDefault()
     selected.value = name
     const p = positions[name]
-    if (!p) return
+    if (!p)
+      return
     pushUndoCheckpoint()
     const elCfg = ELEMENTS[name]
     dragState.value = {
-      el: name, startX: e.clientX, startY: e.clientY,
-      origX: p.x, origY: p.y,
+      el: name,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: p.x,
+      origY: p.y,
       scale: getContainerScale(),
       invertX: elCfg?.invertX ?? false,
     }
@@ -231,9 +241,11 @@ export function useEditor() {
   }
 
   function onDrag(e: MouseEvent) {
-    if (!dragState.value) return
+    if (!dragState.value)
+      return
     const p = positions[dragState.value.el]
-    if (!p) return
+    if (!p)
+      return
     const dx = (e.clientX - dragState.value.startX) / dragState.value.scale
     const dy = (e.clientY - dragState.value.startY) / dragState.value.scale
     const xMul = dragState.value.invertX ? -1 : 1
@@ -249,17 +261,22 @@ export function useEditor() {
   }
 
   function startResize(e: MouseEvent, name: string) {
-    if (!editing.value) return
+    if (!editing.value)
+      return
     e.preventDefault()
     e.stopPropagation()
     selected.value = name
     const p = positions[name]
-    if (!p) return
+    if (!p)
+      return
     pushUndoCheckpoint()
     const elCfg = ELEMENTS[name]
     resizeState.value = {
-      el: name, startX: e.clientX, startY: e.clientY,
-      origW: p.w, origH: p.h,
+      el: name,
+      startX: e.clientX,
+      startY: e.clientY,
+      origW: p.w,
+      origH: p.h,
       scale: getContainerScale(),
       invertX: elCfg?.invertX ?? false,
       ratio: aspectLocked[name] ? p.w / p.h : null,
@@ -269,9 +286,11 @@ export function useEditor() {
   }
 
   function onResize(e: MouseEvent) {
-    if (!resizeState.value) return
+    if (!resizeState.value)
+      return
     const p = positions[resizeState.value.el]
-    if (!p) return
+    if (!p)
+      return
     const dx = (e.clientX - resizeState.value.startX) / resizeState.value.scale
     const dy = (e.clientY - resizeState.value.startY) / resizeState.value.scale
     const xMul = resizeState.value.invertX ? -1 : 1
@@ -282,11 +301,13 @@ export function useEditor() {
       if (Math.abs(dx) >= Math.abs(dy)) {
         p.w = Math.round(Math.max(20, rawW))
         p.h = Math.round(Math.max(10, p.w / ratio))
-      } else {
+      }
+      else {
         p.h = Math.round(Math.max(10, rawH))
         p.w = Math.round(Math.max(20, p.h * ratio))
       }
-    } else {
+    }
+    else {
       p.w = Math.round(Math.max(20, rawW))
       p.h = Math.round(Math.max(10, rawH))
     }
@@ -300,7 +321,8 @@ export function useEditor() {
   }
 
   const rootStyle = computed((): Record<string, string> => {
-    if (!editing.value) return {}
+    if (!editing.value)
+      return {}
     const t = positions.title
     const c = positions.content
     const l = positions.logo
@@ -336,7 +358,8 @@ export function useEditor() {
   function exportCss(): string {
     return Object.entries(ELEMENTS).map(([name, el]) => {
       const p = positions[name]
-      if (!p) return ''
+      if (!p)
+        return ''
       return `.${name} {\n${el.cssOutput(p)}\n}`
     }).join('\n\n')
   }
@@ -344,7 +367,8 @@ export function useEditor() {
   function removeElement(name: string) {
     pushUndoCheckpoint()
     _sharedHidden[name] = !_sharedHidden[name]
-    if (_sharedHidden[name] && selected.value === name) selected.value = null
+    if (_sharedHidden[name] && selected.value === name)
+      selected.value = null
     commitUndo()
   }
 
@@ -395,14 +419,18 @@ export function useEditor() {
     for (const key of Object.keys(positions)) {
       const p = positions[key]
       const s = snapshot.value.positions[key]
-      if (!p || !s) return false
-      if (p.x !== s.x || p.y !== s.y || p.w !== s.w || p.h !== s.h) return true
+      if (!p || !s)
+        return false
+      if (p.x !== s.x || p.y !== s.y || p.w !== s.w || p.h !== s.h)
+        return true
     }
     for (const key of Object.keys(hidden)) {
-      if (hidden[key] !== snapshot.value.hidden[key]) return true
+      if (hidden[key] !== snapshot.value.hidden[key])
+        return true
     }
     for (const key of Object.keys(aspectLocked)) {
-      if (aspectLocked[key] !== snapshot.value.aspectLocked[key]) return true
+      if (aspectLocked[key] !== snapshot.value.aspectLocked[key])
+        return true
     }
     return false
   })
@@ -410,7 +438,8 @@ export function useEditor() {
   function resetLayout() {
     for (const key of Object.keys(snapshot.value.positions)) {
       const s = snapshot.value.positions[key]
-      if (s) Object.assign(positions[key], s)
+      if (s)
+        Object.assign(positions[key], s)
     }
     for (const key of Object.keys(snapshot.value.hidden)) {
       hidden[key] = snapshot.value.hidden[key]
@@ -445,12 +474,16 @@ export function useEditor() {
         }
         snapshot.value = { positions: clonePositions(), hidden: cloneHidden(), aspectLocked: cloneAspectLocked() }
         saved.value = true
-        setTimeout(() => { saved.value = false }, 2000)
+        setTimeout(() => {
+          saved.value = false
+        }, 2000)
         return result
       }
-    } catch {
+    }
+    catch {
       saved.value = false
-    } finally {
+    }
+    finally {
       saving.value = false
     }
     return null
@@ -483,8 +516,10 @@ export function useEditor() {
   // source so their position data doesn't accumulate indefinitely.
   function pruneDynamicKeys(prefix: string, validSuffixes: Set<string>) {
     for (const key of Object.keys(_sharedPositions)) {
-      if (!key.startsWith(prefix)) continue
-      if (validSuffixes.has(key.slice(prefix.length))) continue
+      if (!key.startsWith(prefix))
+        continue
+      if (validSuffixes.has(key.slice(prefix.length)))
+        continue
       delete _sharedPositions[key]
       delete _sharedHidden[key]
       delete _sharedAspectLocked[key]

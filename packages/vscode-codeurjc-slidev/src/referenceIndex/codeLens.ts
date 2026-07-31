@@ -4,10 +4,10 @@
 // requested, mirroring the theme's own dev-server "always re-resolve"
 // rendering behavior instead of tracking line-shift deltas.
 
-import { resolveSnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
+import type { ReferenceIndex } from './indexBuilder'
 import { parseExternalHighlightAnchors } from 'codeurjc-slidev-theme/composables/useCodeHighlights'
+import { resolveSnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 import { computeSlideNumber } from '../documentScan'
-import type { ImportRecipe, ReferenceIndex } from './indexBuilder'
 
 export interface ReferenceMention {
   slideFile: string
@@ -31,7 +31,8 @@ export function computeCodeLensesForDocument(
   slideTextByFile: (slideFile: string) => string | null,
 ): CodeLensEntry[] {
   const recipes = index.get(targetAbsPath)
-  if (!recipes || recipes.length === 0) return []
+  if (!recipes || recipes.length === 0)
+    return []
 
   const byLine = new Map<number, ReferenceMention[]>()
 
@@ -48,7 +49,8 @@ export function computeCodeLensesForDocument(
         comment: h.comment,
       }
       const existing = byLine.get(absLine)
-      if (existing) existing.push(mention)
+      if (existing)
+        existing.push(mention)
       else byLine.set(absLine, [mention])
     }
   }

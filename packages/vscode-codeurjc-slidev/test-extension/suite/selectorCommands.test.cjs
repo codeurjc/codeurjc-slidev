@@ -8,7 +8,7 @@ function fixtureRoot() {
   return folder.uri.fsPath
 }
 
-describe('Copy/paste selector commands', () => {
+describe('copy/paste selector commands', () => {
   it('copies a content-anchor selector from a Foo.java selection, then pastes it into the slides.md import', async () => {
     const fooUri = vscode.Uri.file(path.join(fixtureRoot(), 'code', 'Foo.java'))
     const fooDoc = await vscode.workspace.openTextDocument(fooUri)

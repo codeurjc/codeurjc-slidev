@@ -1,6 +1,7 @@
-import { test, expect, type Page } from '@playwright/test'
-import { readFileSync, writeFileSync, readdirSync, rmSync, existsSync } from 'fs'
-import { resolve } from 'path'
+import type { Page } from '@playwright/test'
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { expect, test } from '@playwright/test'
 
 const e2eDir = resolve(import.meta.dirname, '../e2e')
 const slidesPath = resolve(e2eDir, 'slides.md')
@@ -17,13 +18,15 @@ const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 
 function removeGeneratedImages() {
   for (const file of readdirSync(imagesDir)) {
-    if (file.startsWith('paste-')) rmSync(resolve(imagesDir, file))
+    if (file.startsWith('paste-'))
+      rmSync(resolve(imagesDir, file))
   }
 }
 
 function removeForkedLayouts() {
   for (const file of readdirSync(layoutsDir)) {
-    if (file.startsWith('layout-')) rmSync(resolve(layoutsDir, file))
+    if (file.startsWith('layout-'))
+      rmSync(resolve(layoutsDir, file))
   }
 }
 
@@ -54,7 +57,8 @@ test.describe('Image Position E2E', () => {
     writeFileSync(slidesPath, originalSlides, 'utf-8')
     if (originalDefaultLayoutExisted) {
       writeFileSync(defaultLayoutPath, originalDefaultLayout!, 'utf-8')
-    } else if (existsSync(defaultLayoutPath)) {
+    }
+    else if (existsSync(defaultLayoutPath)) {
       rmSync(defaultLayoutPath)
     }
     // Give the dev server time to reparse the restored fixtures before
@@ -90,7 +94,8 @@ test.describe('Image Position E2E', () => {
     if (originalDefaultLayoutExisted) {
       const defaultContentAfter = readFileSync(defaultLayoutPath, 'utf-8')
       expect(defaultContentAfter).toBe(originalDefaultLayout)
-    } else {
+    }
+    else {
       expect(existsSync(defaultLayoutPath)).toBe(false)
     }
 
@@ -133,8 +138,10 @@ test.describe('Image Position E2E', () => {
       try {
         await expect(secondPopover).toBeVisible({ timeout: 3000 })
         break
-      } catch {
-        if (attempt === 4) throw new Error('second paste never produced a popover after retries')
+      }
+      catch {
+        if (attempt === 4)
+          throw new Error('second paste never produced a popover after retries')
       }
     }
     await expect(secondPopover).toBeVisible({ timeout: 10000 })

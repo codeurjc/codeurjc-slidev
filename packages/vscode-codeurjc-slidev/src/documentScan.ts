@@ -5,7 +5,8 @@
 // annotation logic and the reference-index builder so both agree on exactly
 // the same document positions.
 
-import { parseSnippetImportLine, isAnchorDeclarationLine, isSourceDirectiveLine, type ParsedSnippetImportLine } from 'codeurjc-slidev-theme/composables/useSnippetImport'
+import type { ParsedSnippetImportLine } from 'codeurjc-slidev-theme/composables/useSnippetImport'
+import { isAnchorDeclarationLine, isSourceDirectiveLine, parseSnippetImportLine } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 
 export interface FencedBlock {
   lang: string
@@ -18,7 +19,7 @@ export interface FencedBlock {
   code: string
 }
 
-const FENCE_OPEN_RE = /^(\s*)(`{3,}|~{3,})\s*([^\s{[]*)/
+const FENCE_OPEN_RE = /^\s*(`{3,}|~{3,})\s*([^\s{[]*)/
 
 /** Finds every top-level fenced code block in `text` (manual ``` fences, not `<<<` imports). */
 export function findFencedBlocks(text: string): FencedBlock[] {
@@ -31,13 +32,14 @@ export function findFencedBlocks(text: string): FencedBlock[] {
       i++
       continue
     }
-    const fenceChar = open[2][0]
-    const fenceLen = open[2].length
-    const lang = open[3] ?? ''
+    const fenceChar = open[1][0]
+    const fenceLen = open[1].length
+    const lang = open[2] ?? ''
     const closeRe = new RegExp(`^\\s*${fenceChar}{${fenceLen},}\\s*$`)
     let j = i + 1
     while (j < lines.length && !closeRe.test(lines[j])) j++
-    if (j >= lines.length) break // unterminated fence: ignore
+    if (j >= lines.length)
+      break // unterminated fence: ignore
     blocks.push({
       lang,
       fenceStartLine: i,
@@ -72,9 +74,11 @@ export function findImportBlocks(text: string): ImportBlock[] {
 
   const blocks: ImportBlock[] = []
   for (let i = 0; i < lines.length; i++) {
-    if (isInsideFence(i)) continue
+    if (isInsideFence(i))
+      continue
     const parsed = parseSnippetImportLine(lines[i])
-    if (!parsed) continue
+    if (!parsed)
+      continue
 
     const directives: DirectiveLine[] = []
     let j = i + 1
@@ -111,7 +115,8 @@ export function computeSlideNumber(text: string, docLine: number): number {
   let sawFrontmatterOpen = false
   let sawFrontmatterClose = false
   for (let i = 0; i < docLine && i < lines.length; i++) {
-    if (!SLIDE_SEPARATOR_RE.test(lines[i])) continue
+    if (!SLIDE_SEPARATOR_RE.test(lines[i]))
+      continue
     if (!sawFrontmatterOpen) {
       sawFrontmatterOpen = true
       continue

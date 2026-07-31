@@ -13,3 +13,4 @@ packages/codeurjc-slidev-theme/layouts/layout-*.vue
 .opencode/
 target/
 packages/vscode-codeurjc-slidev/.vscode-test/
+.eslintcache

@@ -1,8 +1,8 @@
-import { test, expect } from '@playwright/test'
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'fs'
-import { tmpdir } from 'os'
-import { resolve, join } from 'path'
 import type { ViteDevServer } from 'vite'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { expect, test } from '@playwright/test'
 
 // Proves the fix for the "consumer-root vs. package-root" path-resolution
 // bug: `vite.config.ts`'s save-layout / save-code-highlight-position

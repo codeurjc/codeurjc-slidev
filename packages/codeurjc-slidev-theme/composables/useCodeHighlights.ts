@@ -14,6 +14,8 @@
 // Runs in both a Node/Vite context (setup/transformers.ts) and in unit tests;
 // deliberately has no Vue or DOM dependency.
 
+import { Buffer } from 'node:buffer'
+
 export interface CodeHighlight {
   id: string
   kind: 'line' | 'range' | 'substring'
@@ -45,13 +47,15 @@ interface ParsedMarkerLine {
  */
 export function findMarkerSpan(line: string): { start: number, end: number } | null {
   const m = line.match(MARKER_RE)
-  if (!m) return null
+  if (!m)
+    return null
   return { start: m[1].length, end: line.length }
 }
 
 function parseMarkerLine(line: string): ParsedMarkerLine | null {
   const m = line.match(MARKER_RE)
-  if (!m) return null
+  if (!m)
+    return null
   const [, codePrefix, role, rangeStart, rangeEnd, ox, oy, comment] = m
   return {
     codePrefix: codePrefix.replace(/\s+$/, ''),
@@ -83,7 +87,8 @@ export function parseCodeHighlights(code: string): { code: string, highlights: C
     }
     if (parsed.role === 'end') {
       const start = pendingStarts.pop()
-      if (!start) return // malformed: end with no matching start, ignore
+      if (!start)
+        return // malformed: end with no matching start, ignore
       highlights.push({
         id: String(nextId++),
         kind: 'range',
@@ -118,8 +123,10 @@ const ANCHOR_LINE_RE = /^\[!mark:/
 function findTopLevelCloseBracket(line: string): number {
   let inQuotes = false
   for (let i = 0; i < line.length; i++) {
-    if (line[i] === '"' && line[i - 1] !== '\\') inQuotes = !inQuotes
-    else if (line[i] === ']' && !inQuotes) return i
+    if (line[i] === '"' && line[i - 1] !== '\\')
+      inQuotes = !inQuotes
+    else if (line[i] === ']' && !inQuotes)
+      return i
   }
   return -1
 }
@@ -140,7 +147,8 @@ export function serializeMarkerOverride(sourceLine: string, x: number, y: number
     // top-level `]` is found with quote-awareness since a content anchor's
     // text may itself contain `]` (e.g. array-indexing code).
     const closeIdx = findTopLevelCloseBracket(sourceLine)
-    if (closeIdx === -1) return sourceLine
+    if (closeIdx === -1)
+      return sourceLine
     const before = sourceLine.slice(0, closeIdx).replace(/@-?\d+,-?\d+$/, '')
     return `${before}@${rounded.x},${rounded.y}${sourceLine.slice(closeIdx)}`
   }
@@ -158,8 +166,10 @@ function toBase64(s: string): string {
 
 function highlightAttrs(h: CodeHighlight): string {
   let attrs = ` data-highlight-id="${escapeAttr(h.id)}" data-source-line="${toBase64(h.sourceLine)}"`
-  if (h.comment) attrs += ` data-comment="${escapeAttr(h.comment)}"`
-  if (h.override) attrs += ` data-override-x="${h.override.x}" data-override-y="${h.override.y}"`
+  if (h.comment)
+    attrs += ` data-comment="${escapeAttr(h.comment)}"`
+  if (h.override)
+    attrs += ` data-override-x="${h.override.x}" data-override-y="${h.override.y}"`
   return attrs
 }
 
@@ -181,7 +191,8 @@ function buildTextMap(lineHtml: string): { plain: string, starts: number[], ends
   while (i < lineHtml.length) {
     if (lineHtml[i] === '<') {
       const close = lineHtml.indexOf('>', i)
-      if (close === -1) break
+      if (close === -1)
+        break
       i = close + 1
       continue
     }
@@ -207,7 +218,8 @@ function buildTextMap(lineHtml: string): { plain: string, starts: number[], ends
 export function wrapSubstringInLineHtml(lineHtml: string, h: CodeHighlight): string {
   const { starts, ends } = buildTextMap(lineHtml)
   const { start, end } = h.substringRange!
-  if (start >= starts.length || end <= start) return lineHtml
+  if (start >= starts.length || end <= start)
+    return lineHtml
   const clampedEnd = Math.min(end, starts.length)
 
   // A substring can span multiple sibling Shiki syntax-token spans (e.g.
@@ -229,7 +241,8 @@ export function wrapSubstringInLineHtml(lineHtml: string, h: CodeHighlight): str
       segStart = i + 1
     }
   }
-  if (segments.length === 0) return lineHtml
+  if (segments.length === 0)
+    return lineHtml
 
   let result = lineHtml.slice(0, segments[0].htmlStart)
   segments.forEach((seg, idx) => {
@@ -240,8 +253,10 @@ export function wrapSubstringInLineHtml(lineHtml: string, h: CodeHighlight): str
     // disconnected box instead of one continuous highlight.
     let cls = 'code-hl-mark'
     if (segments.length > 1) {
-      if (idx === 0) cls += ' code-hl-mark-start'
-      else if (idx === segments.length - 1) cls += ' code-hl-mark-end'
+      if (idx === 0)
+        cls += ' code-hl-mark-start'
+      else if (idx === segments.length - 1)
+        cls += ' code-hl-mark-end'
       else cls += ' code-hl-mark-mid'
     }
     result += `<span class="${cls}"${highlightAttrs(h)}>${lineHtml.slice(seg.htmlStart, seg.htmlEnd)}</span>`
@@ -269,14 +284,16 @@ function mapShikiLines(inner: string, fn: (lineHtml: string, index: number) => s
     let tagMatch: RegExpExecArray | null
     // eslint-disable-next-line no-cond-assign
     while ((tagMatch = tagRe.exec(inner))) {
-      if (tagMatch[0] === '</span>') depth--
+      if (tagMatch[0] === '</span>')
+        depth--
       else depth++
       if (depth === 0) {
         closeIdx = tagMatch.index
         break
       }
     }
-    if (closeIdx === -1) break
+    if (closeIdx === -1)
+      break
     result += inner.slice(cursor, openEnd)
     const lineHtml = inner.slice(openEnd, closeIdx)
     result += fn(lineHtml, lineIndex)
@@ -320,31 +337,36 @@ interface ExternalAnchorSpec {
 
 /** Parses one `[!mark:...]` anchor-declaration line. Returns null if malformed. */
 function parseAnchorLine(line: string): ExternalAnchorSpec | null {
-  if (!line.startsWith('[!mark:')) return null
+  if (!line.startsWith('[!mark:'))
+    return null
   const n = line.length
   let i = '[!mark:'.length
 
   function parseQuoted(): string | null {
-    if (line[i] !== '"') return null
+    if (line[i] !== '"')
+      return null
     i++
     let out = ''
     while (i < n && line[i] !== '"') {
       if (line[i] === '\\' && i + 1 < n) {
         out += line[i + 1]
         i += 2
-      } else {
+      }
+      else {
         out += line[i]
         i++
       }
     }
-    if (line[i] !== '"') return null // unterminated
+    if (line[i] !== '"')
+      return null // unterminated
     i++
     return out
   }
 
   function parseUInt(): number | null {
     const m = /^\d+/.exec(line.slice(i))
-    if (!m) return null
+    if (!m)
+      return null
     i += m[0].length
     return Number(m[0])
   }
@@ -353,61 +375,74 @@ function parseAnchorLine(line: string): ExternalAnchorSpec | null {
 
   if (line[i] === '"') {
     const text = parseQuoted()
-    if (text === null) return null
+    if (text === null)
+      return null
     spec.text = text
 
     if (line[i] === '.' && line[i + 1] === '.') {
       i += 2
       const endText = parseQuoted()
-      if (endText === null) return null
+      if (endText === null)
+        return null
       spec.endText = endText
       spec.kind = 'contentRange'
-    } else if (line[i] === '+') {
+    }
+    else if (line[i] === '+') {
       i++
       const offset = parseUInt()
-      if (offset === null) return null
+      if (offset === null)
+        return null
       spec.offset = offset
       spec.kind = 'contentRange'
-    } else {
+    }
+    else {
       spec.kind = 'content'
     }
 
     if (line[i] === '(') {
       const m = /^\((\d+)-(\d+)\)/.exec(line.slice(i))
-      if (!m) return null
+      if (!m)
+        return null
       spec.substringRange = { start: Number(m[1]), end: Number(m[2]) }
       i += m[0].length
     }
 
     if (line[i] === '#') {
       const m = /^#(\d+|\*)/.exec(line.slice(i))
-      if (!m) return null
+      if (!m)
+        return null
       spec.occurrence = m[1] === '*' ? 'all' : Number(m[1])
       i += m[0].length
     }
-  } else {
+  }
+  else {
     const line1 = parseUInt()
-    if (line1 === null) return null
+    if (line1 === null)
+      return null
     spec.line = line1
     if (line[i] === '.' && line[i + 1] === '.') {
       i += 2
       const line2 = parseUInt()
-      if (line2 === null) return null
+      if (line2 === null)
+        return null
       spec.endLine = line2
       spec.kind = 'lineRange'
-    } else {
+    }
+    else {
       spec.kind = 'line'
     }
   }
 
   if (line[i] === '@') {
     const m = /^@(-?\d+),(-?\d+)/.exec(line.slice(i))
-    if (!m) return null
+    if (!m)
+      return null
     spec.override = { x: Number(m[1]), y: Number(m[2]) }
     i += m[0].length
   }
 
-  if (line[i] !== ']') return null
+  if (line[i] !== ']')
+    return null
   i++
 
   return { ...spec, comment: line.slice(i).trim(), sourceLine: line } as ExternalAnchorSpec
@@ -439,7 +474,8 @@ export function parseExternalHighlightAnchors(
   const findOccurrences = (text: string): TextMatch[] =>
     lines.reduce<TextMatch[]>((acc, l, idx) => {
       const start = l.indexOf(text)
-      if (start !== -1) acc.push({ line: idx, start, end: start + text.length })
+      if (start !== -1)
+        acc.push({ line: idx, start, end: start + text.length })
       return acc
     }, [])
 
@@ -448,7 +484,8 @@ export function parseExternalHighlightAnchors(
       onWarn(`[code-highlight] anchor text not found: "${text}"`)
       return []
     }
-    if (occurrence === 'all') return occurrences
+    if (occurrence === 'all')
+      return occurrences
     if (typeof occurrence === 'number') {
       if (occurrence < 1 || occurrence > occurrences.length) {
         onError(`[code-highlight] anchor "${text}"#${occurrence} is out of range (${occurrences.length} match(es) found)`)
@@ -463,9 +500,11 @@ export function parseExternalHighlightAnchors(
   }
 
   for (const anchorLine of anchorLines) {
-    if (!anchorLine.trim()) continue
+    if (!anchorLine.trim())
+      continue
     const spec = parseAnchorLine(anchorLine.trim())
-    if (!spec) continue // malformed anchor declaration: ignore
+    if (!spec)
+      continue // malformed anchor declaration: ignore
 
     if (spec.kind === 'line') {
       const idx = spec.line! - 1
@@ -512,7 +551,8 @@ export function parseExternalHighlightAnchors(
 
     if (spec.kind === 'contentRange') {
       const startPicked = pickOccurrences(spec.text!, findOccurrences(spec.text!), spec.occurrence)
-      if (startPicked.length === 0) continue
+      if (startPicked.length === 0)
+        continue
       const startIdx = startPicked[0].line
       let endIdx: number
       if (spec.endText !== undefined) {
@@ -525,7 +565,8 @@ export function parseExternalHighlightAnchors(
           onWarn(`[code-highlight] anchor range end text "${spec.endText}" matches multiple times; using the first at or after the start`)
         }
         endIdx = endOccurrences[0].line
-      } else {
+      }
+      else {
         endIdx = Math.min(startIdx + spec.offset!, lines.length - 1)
       }
       highlights.push({ id: String(nextId++), kind: 'range', startLine: startIdx, endLine: endIdx, comment: spec.comment, override: spec.override, sourceLine: spec.sourceLine })
@@ -560,7 +601,8 @@ export function extractInlineSourceLink(code: string): { code: string, url: stri
   let url: string | null = null
   const lines = code.split('\n').filter((line) => {
     const m = INLINE_SOURCE_MARKER_RE.exec(line)
-    if (!m) return true
+    if (!m)
+      return true
     url = m[1]
     return false
   })
@@ -569,15 +611,18 @@ export function extractInlineSourceLink(code: string): { code: string, url: stri
 
 /** Injects `data-highlight-id`/`data-comment` spans into Shiki-rendered HTML for the given highlights. */
 export function injectHighlightSpans(html: string, highlights: CodeHighlight[]): string {
-  if (highlights.length === 0) return html
+  if (highlights.length === 0)
+    return html
   return html.replace(/(<code[^>]*>)([\s\S]*)(<\/code>)/, (_full, openTag, inner, closeTag) => {
     const newInner = mapShikiLines(inner, (lineHtml, index) => {
       let out = lineHtml
       for (const h of highlights) {
-        if (index < h.startLine || index > h.endLine) continue
+        if (index < h.startLine || index > h.endLine)
+          continue
         if (h.kind === 'substring' && h.substringRange && index === h.startLine) {
           out = wrapSubstringInLineHtml(out, h)
-        } else {
+        }
+        else {
           out = `<span class="code-hl-mark"${highlightAttrs(h)}>${out}</span>`
         }
       }

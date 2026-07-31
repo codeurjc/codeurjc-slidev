@@ -1,15 +1,15 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
-  parseSnippetImportLine,
-  parseSnippetSelector,
-  resolveSnippetSelector,
-  isWithinCodeRoot,
   combineCodeAndAnchors,
-  splitCodeAndAnchors,
   isAnchorDeclarationLine,
   isSourceDirectiveLine,
+  isWithinCodeRoot,
+  parseSnippetImportLine,
+  parseSnippetSelector,
   parseSourceDirective,
+  resolveSnippetSelector,
   serializeSnippetSelector,
+  splitCodeAndAnchors,
 } from '../useSnippetImport'
 
 describe('parseSnippetImportLine', () => {

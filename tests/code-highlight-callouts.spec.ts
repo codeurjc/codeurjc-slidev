@@ -1,6 +1,6 @@
-import { test, expect } from '@playwright/test'
-import { readFileSync, writeFileSync } from 'fs'
-import { resolve } from 'path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { expect, test } from '@playwright/test'
 
 // Follows the same temporary-fixture-swap convention as
 // tests/autofit-text.spec.ts: this suite needs its own code block content,
@@ -50,8 +50,10 @@ async function waitForFixture(page: import('@playwright/test').Page) {
   const deadline = Date.now() + 100000
   for (;;) {
     const ready = await page.locator('.slidev-page-1 [data-highlight-id]').count().then(c => c > 0).catch(() => false)
-    if (ready) return
-    if (Date.now() > deadline) throw new Error('code-highlight fixture never appeared to compile on the dev server')
+    if (ready)
+      return
+    if (Date.now() > deadline)
+      throw new Error('code-highlight fixture never appeared to compile on the dev server')
     await page.reload().catch(() => {})
     await page.waitForTimeout(1000)
   }
@@ -121,7 +123,8 @@ test.describe('Code Highlight Callouts E2E', () => {
       }),
     )
     const codeTextBox = lineBoxes.reduce((acc, r) => {
-      if (!acc) return r
+      if (!acc)
+        return r
       const right = Math.max(acc.x + acc.width, r.x + r.width)
       const bottom = Math.max(acc.y + acc.height, r.y + r.height)
       const x = Math.min(acc.x, r.x)
@@ -140,11 +143,13 @@ test.describe('Code Highlight Callouts E2E', () => {
     }
     for (const box of boxes) {
       expect(box).toBeTruthy()
-      if (box && codeTextBox) expect(overlaps(box, codeTextBox)).toBe(false)
+      if (box && codeTextBox)
+        expect(overlaps(box, codeTextBox)).toBe(false)
     }
     for (let i = 0; i < boxes.length; i++) {
       for (let j = i + 1; j < boxes.length; j++) {
-        if (boxes[i] && boxes[j]) expect(overlaps(boxes[i]!, boxes[j]!)).toBe(false)
+        if (boxes[i] && boxes[j])
+          expect(overlaps(boxes[i]!, boxes[j]!)).toBe(false)
       }
     }
   })
@@ -159,7 +164,8 @@ test.describe('Code Highlight Callouts E2E', () => {
     const callout = page.locator('.slidev-page-1 .code-callout:visible', { hasText: 'Injects the DB dependency' })
     const box = await callout.boundingBox()
     expect(box).toBeTruthy()
-    if (!box) return
+    if (!box)
+      return
 
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await page.mouse.down()

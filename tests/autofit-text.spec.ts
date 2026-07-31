@@ -1,8 +1,8 @@
-import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
-import { readFileSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { AUTOFIT_MAX_PT } from '../packages/codeurjc-slidev-theme/composables/useAutoFitText'
+import { expect, test } from './fixtures'
 
 // 1pt = 4/3px at 96dpi (the ratio getComputedStyle reports fonts in).
 const CEILING_PX = AUTOFIT_MAX_PT * 4 / 3
@@ -77,8 +77,8 @@ Averyveryveryveryverylongunbrokentokenwithoutanyspacesatallthatmustwraptothenext
 const BOX_HEIGHT_PX = 424 // default.vue's static --ed-content-h default
 
 async function contentFontSizePx(page: Page): Promise<number> {
-  const value = await page.locator('.content:visible').evaluate((el) => getComputedStyle(el).fontSize)
-  return parseFloat(value)
+  const value = await page.locator('.content:visible').evaluate(el => getComputedStyle(el).fontSize)
+  return Number.parseFloat(value)
 }
 
 async function contentInnerHeightPx(page: Page): Promise<number> {
@@ -87,10 +87,10 @@ async function contentInnerHeightPx(page: Page): Promise<number> {
   // pre-transform logical value -- getBoundingClientRect would return the
   // post-transform (viewport) size and scale the comparison incorrectly
   // depending on the current viewport/window size.
-  return page.locator('.content-inner:visible').evaluate((el) => (el as HTMLElement).offsetHeight)
+  return page.locator('.content-inner:visible').evaluate(el => (el as HTMLElement).offsetHeight)
 }
 
-async function contentBoxVars(page: Page): Promise<{ x: string; y: string; w: string; h: string }> {
+async function contentBoxVars(page: Page): Promise<{ x: string, y: string, w: string, h: string }> {
   return page.locator('.slidev-layout.default:visible').evaluate((el) => {
     const style = getComputedStyle(el)
     return {
@@ -142,7 +142,7 @@ test.describe('Content text auto-fit', () => {
 
     // Not clipped: .content has no overflow:hidden, so the overflowing
     // content's bottom edge extends past the configured box height.
-    const overflowStyle = await page.locator('.content:visible').evaluate((el) => getComputedStyle(el).overflow)
+    const overflowStyle = await page.locator('.content:visible').evaluate(el => getComputedStyle(el).overflow)
     expect(overflowStyle).not.toBe('hidden')
   })
 

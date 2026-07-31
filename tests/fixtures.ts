@@ -1,8 +1,9 @@
-import { test as base, type Page } from '@playwright/test'
-import { mkdirSync, rmSync, symlinkSync, existsSync, cpSync } from 'fs'
-import { resolve, join } from 'path'
-import { resolveOptions, createServer, parser } from '@slidev/cli'
+import type { Page } from '@playwright/test'
 import type { ViteDevServer } from 'vite'
+import { cpSync, existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { test as base } from '@playwright/test'
+import { createServer, parser, resolveOptions } from '@slidev/cli'
 
 // Gives each Playwright worker its own Slidev dev server + its own copy of
 // the e2e/ fixture directory, so worker-isolated spec files never race on
@@ -24,7 +25,8 @@ interface WorkerDeck {
 
 function relink(target: string, dir: string, name: string) {
   const linkPath = join(dir, name)
-  if (existsSync(linkPath)) return
+  if (existsSync(linkPath))
+    return
   symlinkSync(target, linkPath, 'dir')
 }
 

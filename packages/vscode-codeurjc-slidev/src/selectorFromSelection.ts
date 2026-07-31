@@ -36,7 +36,8 @@ function escapeForQuotedSelector(text: string): string {
  */
 export function computeSelectorForSelection(fileLines: string[], selection: SelectionLineRange): string {
   const { startLine, endLine } = selection
-  if (startLine === endLine) return `${startLine}-${startLine}`
+  if (startLine === endLine)
+    return `${startLine}-${startLine}`
 
   const firstText = (fileLines[startLine - 1] ?? '').trim()
   const lastText = (fileLines[endLine - 1] ?? '').trim()

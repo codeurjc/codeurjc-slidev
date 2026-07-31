@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import type { GitRunner, SourceLinkSelection } from 'codeurjc-slidev-theme/composables/useSourceLink'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { clearRepoLinkInfoCache, type GitRunner, type SourceLinkSelection } from 'codeurjc-slidev-theme/composables/useSourceLink'
+import { clearRepoLinkInfoCache } from 'codeurjc-slidev-theme/composables/useSourceLink'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { makeResolveSourceLink } from '../sourceLinkDiagnostics'
 
 describe('makeResolveSourceLink', () => {
@@ -24,9 +25,12 @@ describe('makeResolveSourceLink', () => {
 
   function fakeGit(remote: string | null, symbolicRef: string | null, lsRemote: string | null = null): GitRunner {
     return (args) => {
-      if (args[0] === 'remote') return remote
-      if (args[0] === 'symbolic-ref') return symbolicRef
-      if (args[0] === 'ls-remote') return lsRemote
+      if (args[0] === 'remote')
+        return remote
+      if (args[0] === 'symbolic-ref')
+        return symbolicRef
+      if (args[0] === 'ls-remote')
+        return lsRemote
       return null
     }
   }

@@ -7,9 +7,9 @@
 // without a real git repo, and so the real implementation can be swapped for
 // a stub in tests that exercise the caching layer.
 
-import { existsSync, realpathSync } from 'fs'
-import { dirname, relative, sep } from 'path'
-import { execFileSync } from 'child_process'
+import { execFileSync } from 'node:child_process'
+import { existsSync, realpathSync } from 'node:fs'
+import { dirname, relative, sep } from 'node:path'
 
 /** Runs `git <args>` in `cwd`, returning trimmed stdout, or `null` on any failure (not a git repo, no such remote/ref, git not installed). */
 export type GitRunner = (args: string[], cwd: string) => string | null
@@ -27,9 +27,11 @@ export const realGitRunner: GitRunner = (args, cwd) => {
 export function findGitRoot(startDir: string): string | null {
   let dir = startDir
   while (true) {
-    if (existsSync(`${dir}${sep}.git`)) return dir
+    if (existsSync(`${dir}${sep}.git`))
+      return dir
     const parent = dirname(dir)
-    if (parent === dir) return null
+    if (parent === dir)
+      return null
     dir = parent
   }
 }
@@ -44,22 +46,26 @@ const HTTPS_REMOTE_RE = /^https:\/\/github\.com\/([^/]+)\/(.+?)(?:\.git)?$/
 
 /** Parses a git remote URL into a GitHub `{ owner, repo }`, or null for a missing/non-GitHub remote. */
 export function parseGitHubRemote(remoteUrl: string | null): GitHubRepo | null {
-  if (!remoteUrl) return null
+  if (!remoteUrl)
+    return null
   const m = SSH_REMOTE_RE.exec(remoteUrl) ?? HTTPS_REMOTE_RE.exec(remoteUrl)
-  if (!m) return null
+  if (!m)
+    return null
   return { owner: m[1], repo: m[2] }
 }
 
 /** Strips a `refs/remotes/origin/`, bare `origin/`, or `refs/heads/` prefix off a resolved ref target, leaving just the branch name. The first two come from a local `symbolic-ref`; `refs/heads/` comes from the remote's own `ls-remote --symref` report (see `extractSymrefTarget`). */
 export function parseDefaultBranch(refTarget: string | null): string | null {
-  if (!refTarget) return null
+  if (!refTarget)
+    return null
   const m = /^(?:refs\/remotes\/origin\/|refs\/heads\/|origin\/)(.+)$/.exec(refTarget)
   return m ? m[1] : refTarget
 }
 
 /** Extracts the `ref: refs/heads/<branch>` target line out of `git ls-remote --symref origin HEAD`'s output. */
 export function extractSymrefTarget(lsRemoteOutput: string | null): string | null {
-  if (!lsRemoteOutput) return null
+  if (!lsRemoteOutput)
+    return null
   const m = /^ref:\s+(\S+)/m.exec(lsRemoteOutput)
   return m ? m[1] : null
 }
@@ -86,7 +92,8 @@ export interface RepoLinkInfo {
  */
 export function resolveRepoLinkInfo(absFilePath: string, git: GitRunner = realGitRunner): RepoLinkInfo | null {
   const repoRoot = findGitRoot(dirname(absFilePath))
-  if (!repoRoot) return null
+  if (!repoRoot)
+    return null
   const github = parseGitHubRemote(git(['remote', 'get-url', 'origin'], repoRoot))
   const localSymref = parseDefaultBranch(git(['symbolic-ref', 'refs/remotes/origin/HEAD'], repoRoot))
   const defaultBranch = localSymref ?? parseDefaultBranch(extractSymrefTarget(git(['ls-remote', '--symref', 'origin', 'HEAD'], repoRoot)))
@@ -98,7 +105,8 @@ const repoLinkInfoCache = new Map<string, RepoLinkInfo | null>()
 /** Same as `resolveRepoLinkInfo`, cached per resolved repo root for the lifetime of the process (a repo's remote/default-branch doesn't change mid dev-server-session). */
 export function resolveRepoLinkInfoCached(absFilePath: string, git: GitRunner = realGitRunner): RepoLinkInfo | null {
   const repoRoot = findGitRoot(dirname(absFilePath))
-  if (!repoRoot) return null
+  if (!repoRoot)
+    return null
   if (!repoLinkInfoCache.has(repoRoot)) {
     repoLinkInfoCache.set(repoRoot, resolveRepoLinkInfo(absFilePath, git))
   }
@@ -136,15 +144,18 @@ export function buildGithubSourceLink(
   let realAbsFilePath = absFilePath
   try {
     realAbsFilePath = realpathSync(absFilePath)
-  } catch {
+  }
+  catch {
     // File doesn't exist on disk (shouldn't happen -- the import already
     // read it successfully by this point) -- fall back to the given path.
   }
 
   const info = resolveRepoLinkInfoCached(realAbsFilePath, git)
-  if (!info?.github) return null
+  if (!info?.github)
+    return null
   const branch = configuredBranch ?? info.defaultBranch
-  if (!branch) return null
+  if (!branch)
+    return null
 
   const relPath = relative(info.repoRoot, realAbsFilePath).split(sep).join('/')
   const fragment = selection.isWholeFile ? '' : `#L${selection.startLine}-L${selection.endLine}`

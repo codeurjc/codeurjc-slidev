@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { parseCodeHighlights, injectHighlightSpans, serializeMarkerOverride, isInlineSourceMarkerLine, extractInlineSourceLink, findMarkerSpan } from '../useCodeHighlights'
+import { describe, expect, it } from 'vitest'
+import { extractInlineSourceLink, findMarkerSpan, injectHighlightSpans, isInlineSourceMarkerLine, parseCodeHighlights, serializeMarkerOverride } from '../useCodeHighlights'
 
 describe('parseCodeHighlights', () => {
   it('parses a single-line marker with a comment and strips it from the code', () => {

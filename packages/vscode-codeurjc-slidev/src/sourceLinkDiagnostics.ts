@@ -7,7 +7,8 @@
 // states the theme already degrades silently for, see design.md) and, when it
 // does resolve, the actual URL (for hovers and the "Open source" CodeLens).
 
-import { resolveRepoLinkInfoCached, buildGithubSourceLink, type GitRunner, type SourceLinkSelection } from 'codeurjc-slidev-theme/composables/useSourceLink'
+import type { GitRunner, SourceLinkSelection } from 'codeurjc-slidev-theme/composables/useSourceLink'
+import { buildGithubSourceLink, resolveRepoLinkInfoCached } from 'codeurjc-slidev-theme/composables/useSourceLink'
 
 export type SourceLinkStatus = 'ok' | 'no-repo' | 'no-remote' | 'no-branch'
 
@@ -23,9 +24,12 @@ export type ResolveSourceLink = (absFilePath: string, selection: SourceLinkSelec
 export function makeResolveSourceLink(git?: GitRunner): ResolveSourceLink {
   return (absFilePath, selection, configuredBranch) => {
     const info = resolveRepoLinkInfoCached(absFilePath, git)
-    if (!info) return { status: 'no-repo', url: null }
-    if (!info.github) return { status: 'no-remote', url: null }
-    if (!(configuredBranch ?? info.defaultBranch)) return { status: 'no-branch', url: null }
+    if (!info)
+      return { status: 'no-repo', url: null }
+    if (!info.github)
+      return { status: 'no-remote', url: null }
+    if (!(configuredBranch ?? info.defaultBranch))
+      return { status: 'no-branch', url: null }
     // Re-resolves via `resolveRepoLinkInfoCached` internally, but that's a
     // process-lifetime cache hit per repo root, not a second real git call.
     return { status: 'ok', url: buildGithubSourceLink(absFilePath, selection, configuredBranch, git) }

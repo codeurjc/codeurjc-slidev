@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { buildReferenceIndex, updateReferenceIndexForFile } from '../indexBuilder'
 
 const resolvePath = (mdPath: string, importFilePath: string) => `/repo/${importFilePath.replace(/^@\//, '')}`

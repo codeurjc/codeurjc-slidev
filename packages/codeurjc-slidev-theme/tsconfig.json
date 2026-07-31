@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "types": ["vite/client", "node"],
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "composables/**/*.ts",
+    "layouts/**/*.vue",
+    "setup/**/*.ts",
+    "global-top.vue",
+    "vite.config.ts",
+    "uno.config.ts",
+    "slidev-env.d.ts"
+  ],
+  "exclude": ["composables/__tests__/**"]
+}

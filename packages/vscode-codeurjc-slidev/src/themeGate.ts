@@ -9,10 +9,12 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/
 export function parseFrontmatterField(text: string, field: string): string | null {
   const withoutBom = text.startsWith(BOM) ? text.slice(BOM.length) : text
   const frontmatterMatch = FRONTMATTER_RE.exec(withoutBom)
-  if (!frontmatterMatch) return null
+  if (!frontmatterMatch)
+    return null
   const fieldRe = new RegExp(`^${field}:\\s*(\\S+)\\s*$`, 'm')
   const fieldMatch = fieldRe.exec(frontmatterMatch[1])
-  if (!fieldMatch) return null
+  if (!fieldMatch)
+    return null
   return fieldMatch[1].replace(/^['"]|['"]$/g, '')
 }
 

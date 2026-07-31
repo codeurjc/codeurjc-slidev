@@ -1,13 +1,12 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { useEditor } from '../useEditor'
-import { ref } from 'vue'
 
 // Mock global fetch
-global.fetch = vi.fn()
+globalThis.fetch = vi.fn()
 
 describe('useEditor', () => {
   it('initializes with correct defaults', () => {
-    const { saveAs, saveLayoutName, positions, editing, selected, elementNames } = useEditor()
+    const { saveAs, saveLayoutName, positions } = useEditor()
     expect(saveAs.value).toBe(true)
     expect(saveLayoutName.value).toBe('')
     expect(positions.title).toBeDefined()
@@ -209,7 +208,7 @@ describe('useEditor', () => {
 
   it('saveLayout updates saveLayoutName on success', async () => {
     const { saveLayout, saveLayoutName } = useEditor()
-    
+
     // Mock successful response
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
@@ -236,7 +235,8 @@ describe('useEditor', () => {
   it('all elements except image start with aspectLocked false', () => {
     const { aspectLocked, elementNames } = useEditor()
     for (const name of elementNames.value) {
-      if (name === 'image') continue
+      if (name === 'image')
+        continue
       expect(aspectLocked[name]).toBe(false)
     }
   })

@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
-import { showEditor } from '@slidev/client/state/storage.ts'
 import { useNav } from '@slidev/client/composables/useNav.ts'
 import { useDynamicSlideInfo } from '@slidev/client/composables/useSlideInfo.ts'
-import { useEditor, CONTENT_DEFAULT_WIDTH } from './composables/useEditor'
+import { showEditor } from '@slidev/client/state/storage.ts'
+import { onMounted, onUnmounted, ref } from 'vue'
+import { CONTENT_DEFAULT_WIDTH, useEditor } from './composables/useEditor'
+import { appendImageMarkdown, buildImageMarkdown, findPastedImage, insertAtCursor, uploadImage } from './composables/useImagePaste'
 import { computeBelowPreset, computeRightPreset } from './composables/useImagePosition'
-import { findPastedImage, buildImageMarkdown, uploadImage, insertAtCursor, appendImageMarkdown } from './composables/useImagePaste'
 import { resolveBlockRange } from './composables/useTextClickToEdit'
 
 const { currentSlideNo } = useNav()
@@ -17,7 +17,8 @@ const popoverStyle = ref<Record<string, string>>({})
 
 async function onPaste(e: ClipboardEvent) {
   const file = findPastedImage(e.clipboardData)
-  if (!file) return
+  if (!file)
+    return
   e.preventDefault()
 
   const { path } = await uploadImage(file)
@@ -76,7 +77,8 @@ function showPopover(img: HTMLImageElement) {
 
 function imageAspectRatio(): number {
   const img = document.querySelector<HTMLImageElement>('.tracked-image')
-  if (img && img.naturalWidth && img.naturalHeight) return img.naturalWidth / img.naturalHeight
+  if (img && img.naturalWidth && img.naturalHeight)
+    return img.naturalWidth / img.naturalHeight
   return 1
 }
 
@@ -122,9 +124,11 @@ async function saveAsPerSlideLayoutFork() {
       currentLayout,
     }),
   })
-  if (!resp.ok) return
+  if (!resp.ok)
+    return
   const result: { layoutName?: string } = await resp.json()
-  if (!result.layoutName) return
+  if (!result.layoutName)
+    return
 
   if (result.layoutName !== currentLayout) {
     // Mirrors SideEditor.vue's onSaveLayout: skipHmr avoids a premature
@@ -151,8 +155,12 @@ function waitForContentTextarea(): Promise<HTMLTextAreaElement | null> {
     const deadline = Date.now() + 2000
     function check() {
       const el = document.querySelector<HTMLTextAreaElement>('[data-editor="content"] textarea')
-      if (el) { resolve(el); return }
-      if (Date.now() < deadline) setTimeout(check, 30)
+      if (el) {
+        resolve(el)
+        return
+      }
+      if (Date.now() < deadline)
+        setTimeout(check, 30)
       else resolve(null)
     }
     check()
@@ -164,18 +172,23 @@ function waitForContentTextarea(): Promise<HTMLTextAreaElement | null> {
 // equivalent in an exported/presented build, so gating on import.meta.env.DEV
 // mirrors that reachability rather than adding a separate mode check.
 async function onDblClick(e: MouseEvent) {
-  if (!import.meta.env.DEV) return
-  if (editor.editing.value) return // Layout tab already repurposes clicks/drags
+  if (!import.meta.env.DEV)
+    return
+  if (editor.editing.value)
+    return // Layout tab already repurposes clicks/drags
   const target = e.target as Element | null
-  if (!target) return
+  if (!target)
+    return
   const container = document.querySelector('.content-inner')
-  if (!container || !container.contains(target)) return
+  if (!container || !container.contains(target))
+    return
 
   showEditor.value = true
   editor.activeTab.value = 'content'
 
   const textarea = await waitForContentTextarea()
-  if (!textarea) return
+  if (!textarea)
+    return
 
   // Read fresh from the server rather than trusting useDynamicSlideInfo's
   // reactive `info` (same rationale as onPaste above): it may not have
@@ -186,10 +199,12 @@ async function onDblClick(e: MouseEvent) {
   // If it doesn't end with `source` -- e.g. there are unsaved in-flight
   // edits -- there's no confident way to locate the body's offset within it,
   // so leave the existing selection alone rather than guessing wrong.
-  if (!source || !textarea.value.endsWith(source)) return
+  if (!source || !textarea.value.endsWith(source))
+    return
 
   const range = resolveBlockRange(container, target, source)
-  if (!range) return
+  if (!range)
+    return
 
   const bodyStart = textarea.value.length - source.length
   textarea.focus()
@@ -212,9 +227,15 @@ onUnmounted(() => {
     class="image-position-popover"
     :style="popoverStyle"
   >
-    <button type="button" title="Below" @click="choosePreset('below')">↓ Below</button>
-    <button type="button" title="Right" @click="choosePreset('right')">→ Right</button>
-    <button type="button" class="dismiss" title="Dismiss" @click="dismissPopover">✕</button>
+    <button type="button" title="Below" @click="choosePreset('below')">
+      ↓ Below
+    </button>
+    <button type="button" title="Right" @click="choosePreset('right')">
+      → Right
+    </button>
+    <button type="button" class="dismiss" title="Dismiss" @click="dismissPopover">
+      ✕
+    </button>
   </div>
 </template>
 

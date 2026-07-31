@@ -1,13 +1,14 @@
-import { describe, it, expect, afterEach } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, dirname } from 'node:path'
-import { findMarkdownFiles, readThemeTaggedMarkdownFiles, makeResolveImportPath, findProjectRoot, resolveImportAbsPath, resolveImportTarget, listCodeRootDirectory } from '../scanner'
+import { dirname, join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { findMarkdownFiles, findProjectRoot, listCodeRootDirectory, makeResolveImportPath, readThemeTaggedMarkdownFiles, resolveImportAbsPath, resolveImportTarget } from '../scanner'
 
 let dir: string
 
 afterEach(() => {
-  if (dir) rmSync(dir, { recursive: true, force: true })
+  if (dir)
+    rmSync(dir, { recursive: true, force: true })
 })
 
 function makeFixture(): string {
@@ -49,7 +50,7 @@ describe('makeResolveImportPath', () => {
   it('warns and returns null for a path escaping the code root', () => {
     const root = makeFixture()
     const warnings: string[] = []
-    const resolve = makeResolveImportPath(root, 'code', (m) => warnings.push(m))
+    const resolve = makeResolveImportPath(root, 'code', m => warnings.push(m))
     expect(resolve('slides.md', '@/../outside.java')).toBeNull()
     expect(warnings).toHaveLength(1)
   })

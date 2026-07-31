@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { buildReferenceIndex } from '../indexBuilder'
+import { describe, expect, it } from 'vitest'
 import { computeCodeLensesForDocument } from '../codeLens'
+import { buildReferenceIndex } from '../indexBuilder'
 
 const resolvePath = (_mdPath: string, importFilePath: string) => `/repo/${importFilePath.replace(/^@\//, '')}`
 
@@ -32,7 +32,7 @@ describe('computeCodeLensesForDocument', () => {
     }
     const index = buildReferenceIndex(slideTexts, resolvePath)
 
-    const lenses = computeCodeLensesForDocument(index, '/repo/code/Foo.java', TARGET_TEXT, (f) => slideTexts[f] ?? null)
+    const lenses = computeCodeLensesForDocument(index, '/repo/code/Foo.java', TARGET_TEXT, f => slideTexts[f] ?? null)
 
     expect(lenses).toHaveLength(1)
     expect(lenses[0].references).toHaveLength(2)

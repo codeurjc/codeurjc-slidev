@@ -14,7 +14,7 @@ async function settle() {
   await new Promise(resolve => setTimeout(resolve, 500))
 }
 
-describe('Active-buffer marker annotations', () => {
+describe('active-buffer marker annotations', () => {
   it('shows a hover on the anchor line following a <<< import', async () => {
     const slidesUri = vscode.Uri.file(path.join(fixtureRoot(), 'slides.md'))
     const document = await vscode.workspace.openTextDocument(slidesUri)
@@ -33,7 +33,7 @@ describe('Active-buffer marker annotations', () => {
   })
 })
 
-describe('Reference-index CodeLens', () => {
+describe('reference-index CodeLens', () => {
   it('shows a CodeLens on the line referenced from slides.md', async () => {
     // Ensure slides.md (which contributes the reference) has been read at least once.
     const slidesUri = vscode.Uri.file(path.join(fixtureRoot(), 'slides.md'))

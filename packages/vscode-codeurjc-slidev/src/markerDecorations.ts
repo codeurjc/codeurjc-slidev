@@ -3,7 +3,7 @@
 // `vscode` module -- callers convert these plain shapes into real
 // vscode.Range/DecorationOptions at the extension-host boundary.
 
-import { parseCodeHighlights, findMarkerSpan } from 'codeurjc-slidev-theme/composables/useCodeHighlights'
+import { findMarkerSpan, parseCodeHighlights } from 'codeurjc-slidev-theme/composables/useCodeHighlights'
 import { findFencedBlocks } from './documentScan'
 
 export interface DimSpan {
@@ -36,7 +36,8 @@ export function computeMarkerDecorations(text: string): ComputedMarkerDecoration
     const codeLines = fence.code.split('\n')
     codeLines.forEach((line, idx) => {
       const span = findMarkerSpan(line)
-      if (span) dims.push({ line: fence.codeStartLine + idx, startChar: span.start, endChar: span.end })
+      if (span)
+        dims.push({ line: fence.codeStartLine + idx, startChar: span.start, endChar: span.end })
     })
 
     const { highlights: fenceHighlights } = parseCodeHighlights(fence.code)

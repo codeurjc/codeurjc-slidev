@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest'
-import { analyzeImports, type ResolveImport } from '../importAnalysis'
-import type { ResolveSourceLink, ResolvedSourceLink } from '../sourceLinkDiagnostics'
+import type { ResolveImport } from '../importAnalysis'
+import type { ResolvedSourceLink, ResolveSourceLink } from '../sourceLinkDiagnostics'
+import { describe, expect, it } from 'vitest'
+import { analyzeImports } from '../importAnalysis'
 
 const FILE_TEXT = [
   'public class GestorNotas {',
@@ -16,7 +17,8 @@ const FILE_TEXT = [
 function fakeResolver(files: Record<string, string>, escapesCodeRoot = false): ResolveImport {
   return (importFilePath) => {
     const key = importFilePath.replace(/^@\//, '')
-    if (!(key in files)) return null
+    if (!(key in files))
+      return null
     return { targetAbsPath: `/repo/${key}`, fileText: files[key], escapesCodeRoot }
   }
 }
@@ -202,7 +204,10 @@ describe('analyzeImports', () => {
     it('uses the explicit URL override with no need for resolveSourceLink', () => {
       const text = ['<<< @/code/Foo.java java', '[!source https://example.com/Foo.java]'].join('\n')
       let called = false
-      analyzeImports(text, fakeResolver({ 'code/Foo.java': FILE_TEXT }), () => { called = true; return { status: 'ok', url: null } })
+      analyzeImports(text, fakeResolver({ 'code/Foo.java': FILE_TEXT }), () => {
+        called = true
+        return { status: 'ok', url: null }
+      })
       expect(called).toBe(false)
       const { codeLensActions } = analyzeImports(text, fakeResolver({ 'code/Foo.java': FILE_TEXT }))
       expect(codeLensActions[0].openSourceUrl).toBe('https://example.com/Foo.java')

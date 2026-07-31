@@ -204,6 +204,9 @@ Adding a small new marker/anchor form to the theme's grammar should not require 
 - **Styling:** UnoCSS
 - **Unit tests:** Vitest 4 + jsdom + `@testing-library/vue`
 - **E2e tests:** Playwright 1.61 (`@playwright/test`), Chromium
+- **Lint/format:** ESLint (`@antfu/eslint-config`, flat config in `eslint.config.js`) — one tool for both linting and formatting, no separate Prettier, mirroring upstream Slidev's own tooling choice
+- **Typecheck:** `vue-tsc`/`tsc --noEmit`, one `tsconfig.json` per package (`packages/codeurjc-slidev-theme/tsconfig.json`, `packages/vscode-codeurjc-slidev/tsconfig.json`)
+- **Pre-commit hooks:** `simple-git-hooks` + `lint-staged` (installed by `pnpm install`'s `prepare` script; runs `eslint --fix` on staged files before each commit)
 - **Package manager:** pnpm (workspace — root + `packages/*`)
 
 ## Commands
@@ -213,10 +216,19 @@ pnpm install
 pnpm dev                    # start slidev dev server on this repo's own slides.md (port 3030)
 pnpm build                  # build static slides
 pnpm export                 # export to PDF
+pnpm lint                   # eslint . --cache
+pnpm lint:fix               # eslint . --cache --fix
+pnpm typecheck              # vue-tsc/tsc --noEmit across the theme + vscode extension packages
 pnpm test                   # run the theme package's + vscode extension's unit tests (vitest)
 pnpm test:e2e               # run e2e tests (playwright, auto-starts server)
 pnpm test:extension         # run the vscode extension's extension-host smoke tests (@vscode/test-electron)
 ```
+
+## CI
+
+`.github/workflows/test.yml` runs on every push/PR to `main`, as independent parallel jobs: `lint` (`pnpm lint`), `typecheck` (`pnpm typecheck`), `unit-test` (`pnpm test`), `e2e` (`pnpm test:e2e`, after `npx playwright install --with-deps chromium`), and `build` (`pnpm build`, this repo's own `slides.md` as a regression smoke test). `.github/workflows/extension-test.yml` runs the slower, Electron-based `test:extension` smoke suite via `xvfb-run` on push to `main` only, path-filtered to `packages/vscode-codeurjc-slidev/**` — deliberately not a PR-blocking check, since it downloads a full VS Code build.
+
+Getting the theme package to typecheck cleanly against `@slidev/client`'s raw (unbuilt, no shipped `.d.ts`) source required `packages/codeurjc-slidev-theme/slidev-env.d.ts`: an ambient shim that (a) side-effect-imports `@slidev/client/shim-vue.d.ts`/`shim.d.ts` so their `vue-router` `RouteMeta`/`vue` module augmentation (slide frontmatter typing, etc.) is actually in the program — nothing in the theme's own `include` glob pulls those in otherwise — and (b) `declare global`s the handful of Vite `define`-time constants (`__DEV__`, `__SLIDEV_FEATURE_EDITOR__`, etc.) that `@slidev/client`'s composables reference as bare globals, satisfying static analysis only (no runtime effect; Slidev's own build still injects the real values). `regexp/no-super-linear-backtracking` is intentionally disabled for the three marker/anchor-grammar composables (`useCodeHighlights.ts`, `useSlideTitleCarryover.ts`, `useSnippetImport.ts`) in `eslint.config.js` — their regexes run only against the presentation author's own local `slides.md`/source files, not attacker-controlled input, so the ReDoS risk the rule flags isn't reachable here.
 
 ## Tests
 
@@ -232,7 +244,8 @@ Most spec files still share the single `legacy`-project dev server above (hence 
 
 1. Implement feature (edit theme files under `packages/codeurjc-slidev-theme/composables/`, `layouts/`, `setup/`, or `_override/`)
 2. Write/update tests (`packages/codeurjc-slidev-theme/composables/__tests__/` for unit, `tests/` for e2e)
-3. `pnpm test && pnpm test:e2e`
-4. `git add -A && git commit -m "message"`
-5. To publish a new version of the theme or CLI package: bump `version` in `packages/<name>/package.json`, then `cd packages/<name> && npm publish --access public` (requires npm 2FA — the browser-based OTP-approval flow, not the classic `--otp=<code>` flag, worked reliably here). Must be run from the package's own directory, not the repo root (the root `package.json` is `private: true` with no `version` field and will crash `npm publish`'s prerelease check if run from there).
-6. To publish a new version of the VSCode extension: bump `version` in `packages/vscode-codeurjc-slidev/package.json`, then from that directory `pnpm run package` (production esbuild bundle to `dist/extension.cjs`) followed by `npx vsce publish` — a separate credential/2FA flow from npm's (a VSCode Marketplace publisher access token, not an npm OTP).
+3. `pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e`
+4. `git add -A && git commit -m "message"` — the `simple-git-hooks` pre-commit hook re-runs `eslint --fix` on staged files automatically
+5. CI (see "CI" above) re-runs lint/typecheck/test/e2e/build on the pushed branch/PR — release/publish automation is explicitly out of scope for that workflow; the steps below stay manual
+6. To publish a new version of the theme or CLI package: bump `version` in `packages/<name>/package.json`, then `cd packages/<name> && npm publish --access public` (requires npm 2FA — the browser-based OTP-approval flow, not the classic `--otp=<code>` flag, worked reliably here). Must be run from the package's own directory, not the repo root (the root `package.json` is `private: true` with no `version` field and will crash `npm publish`'s prerelease check if run from there).
+7. To publish a new version of the VSCode extension: bump `version` in `packages/vscode-codeurjc-slidev/package.json`, then from that directory `pnpm run package` (production esbuild bundle to `dist/extension.cjs`) followed by `npx vsce publish` — a separate credential/2FA flow from npm's (a VSCode Marketplace publisher access token, not an npm OTP).

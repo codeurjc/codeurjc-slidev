@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { throttledWatch, useEventListener } from '@vueuse/core'
+import { useEditor } from '__USE_EDITOR_PATH__'
 import { computed, ref, watch } from 'vue'
 import { useNav } from '../composables/useNav'
 import { useDynamicSlideInfo } from '../composables/useSlideInfo'
@@ -7,7 +8,6 @@ import { parseSideEditorContent } from '../logic/sideEditor'
 import { activeElement, editorHeight, editorWidth, isInputting, showEditor, isEditorVertical as vertical } from '../state'
 import IconButton from './IconButton.vue'
 import ShikiEditor from './ShikiEditor.vue'
-import { useEditor } from '__USE_EDITOR_PATH__'
 
 const props = defineProps<{
   resize?: boolean
@@ -27,25 +27,31 @@ const visibleElementNames = computed(() => editor.elementNames.value.filter(name
 
 const dimRatio = ref<number | null>(null)
 
-function onDimFocus(dim: 'w' | 'h') {
+function onDimFocus(_dim: 'w' | 'h') {
   const name = editor.selected.value
-  if (!name) return
+  if (!name)
+    return
   const p = editor.positions[name]
   dimRatio.value = editor.aspectLocked[name] ? p.w / p.h : null
 }
 
 function onDimInput(dim: 'w' | 'h', e: Event) {
   const name = editor.selected.value
-  if (!name) return
+  if (!name)
+    return
   const p = editor.positions[name]
   const raw = Number((e.target as HTMLInputElement).value)
-  if (!Number.isFinite(raw)) return
+  if (!Number.isFinite(raw))
+    return
   if (dim === 'w') {
     p.w = raw
-    if (dimRatio.value) p.h = Math.round(raw / dimRatio.value)
-  } else {
+    if (dimRatio.value)
+      p.h = Math.round(raw / dimRatio.value)
+  }
+  else {
     p.h = raw
-    if (dimRatio.value) p.w = Math.round(raw * dimRatio.value)
+    if (dimRatio.value)
+      p.w = Math.round(raw * dimRatio.value)
   }
 }
 
@@ -55,7 +61,8 @@ function onDimInput(dim: 'w' | 'h', e: Event) {
 // forces a full reparse, so reconcile the displayed "layout:" line against
 // the authoritative resolved frontmatter.layout value.
 function reconcileLayoutLine(frontmatterRaw: string, layout: unknown): string {
-  if (typeof layout !== 'string') return frontmatterRaw
+  if (typeof layout !== 'string')
+    return frontmatterRaw
   if (/^layout:.*$/m.test(frontmatterRaw)) {
     return frontmatterRaw.replace(/^layout:.*$/m, `layout: ${layout}`)
   }
@@ -80,7 +87,8 @@ watch(
 
 watch(tab, (t) => {
   editor.editing.value = t === 'layout'
-  if (t !== 'layout') editor.selected.value = null
+  if (t !== 'layout')
+    editor.selected.value = null
 })
 
 watch(showEditor, (v) => {
@@ -106,12 +114,12 @@ async function onSaveLayout() {
   const hiddenStr = layoutEl?.getAttribute('data-hidden') || ''
   const hiddenList = hiddenStr ? hiddenStr.split(',') : []
   const hidden = Object.fromEntries(
-    Object.keys(editor.positions).map(k => [k, hiddenList.includes(k)])
+    Object.keys(editor.positions).map(k => [k, hiddenList.includes(k)]),
   )
   const lockedStr = layoutEl?.getAttribute('data-aspect-locked') || ''
   const lockedList = lockedStr ? lockedStr.split(',') : []
   const aspectLocked = Object.fromEntries(
-    Object.keys(editor.positions).map(k => [k, lockedList.includes(k)])
+    Object.keys(editor.positions).map(k => [k, lockedList.includes(k)]),
   )
 
   const currentLayout = info.value?.frontmatter?.layout || 'default'
@@ -144,10 +152,13 @@ async function onSaveLayout() {
         window.location.reload()
       }
     }
-  } finally {
+  }
+  finally {
     editor.saving.value = false
     editor.saved.value = true
-    setTimeout(() => { editor.saved.value = false }, 2000)
+    setTimeout(() => {
+      editor.saved.value = false
+    }, 2000)
   }
 }
 
@@ -279,10 +290,12 @@ throttledWatch(
       </IconButton>
     </div>
     <div class="relative overflow-hidden rounded" style="background-color: var(--slidev-code-background)">
-      <ShikiEditor v-show="tab === 'content'" data-editor="content" v-model="contentRef" placeholder="Create slide content..." />
+      <ShikiEditor v-show="tab === 'content'" v-model="contentRef" data-editor="content" placeholder="Create slide content..." />
       <ShikiEditor v-show="tab === 'note'" v-model="noteRef" placeholder="Write some notes..." />
       <div v-show="tab === 'layout'" class="layout-editor-panel">
-        <div class="lep-section-label">Elements</div>
+        <div class="lep-section-label">
+          Elements
+        </div>
         <div class="lep-elements">
           <div
             v-for="name in visibleElementNames"
@@ -294,18 +307,22 @@ throttledWatch(
             @click="editor.selected.value = name"
             @keydown.enter="editor.selected.value = name"
           >
-            <span class="lep-dot" :style="{ background: { 'red-bar': '#cb0017', logo: '#e8792b', title: '#2563eb', content: '#16a34a', image: '#9333ea' }[name] }" />
-            <span class="lep-el-label">{{ { 'red-bar': 'Red Bar', logo: 'Logo', title: 'Title', content: 'Content', image: 'Image' }[name] }}</span>
+            <span class="lep-dot" :style="{ background: { 'red-bar': '#cb0017', 'logo': '#e8792b', 'title': '#2563eb', 'content': '#16a34a', 'image': '#9333ea' }[name] }" />
+            <span class="lep-el-label">{{ { 'red-bar': 'Red Bar', "logo": 'Logo', "title": 'Title', "content": 'Content', "image": 'Image' }[name] }}</span>
             <button
               type="button"
               class="lep-lock-btn"
               :title="editor.aspectLocked[name] ? 'Unlock aspect ratio' : 'Lock aspect ratio'"
               @click.stop="editor.toggleAspectLock(name)"
-            >{{ editor.aspectLocked[name] ? '🔒' : '🔓' }}</button>
+            >
+              {{ editor.aspectLocked[name] ? '🔒' : '🔓' }}
+            </button>
           </div>
         </div>
         <div v-if="editor.selected.value" class="lep-props-section">
-          <div class="lep-section-label">Properties</div>
+          <div class="lep-section-label">
+            Properties
+          </div>
           <div class="lep-props">
             <label>X: <input v-model.number="editor.positions[editor.selected.value].x" type="number" class="lep-input"></label>
             <label>Y: <input v-model.number="editor.positions[editor.selected.value].y" type="number" class="lep-input"></label>
@@ -315,7 +332,7 @@ throttledWatch(
         </div>
         <div class="lep-save-section">
           <label class="lep-checkbox">
-            <input type="checkbox" v-model="editor.saveAs.value">
+            <input v-model="editor.saveAs.value" type="checkbox">
             <span>Save as new layout</span>
           </label>
           <div v-if="editor.saveAs.value" class="lep-name-row">
@@ -331,13 +348,17 @@ throttledWatch(
             :class="{ disabled: !editor.canUndo.value }"
             :disabled="!editor.canUndo.value"
             @click="editor.undo()"
-          >Undo</button>
+          >
+            Undo
+          </button>
           <button
             class="lep-btn"
             :class="{ disabled: !editor.dirty.value }"
             :disabled="!editor.dirty.value"
             @click="editor.resetLayout()"
-          >Reset</button>
+          >
+            Reset
+          </button>
           <button class="lep-btn lep-btn-primary" @click="onSaveLayout()">
             {{ editor.saving.value ? '...' : editor.saved.value ? 'Done' : 'Save' }}
           </button>
@@ -526,5 +547,4 @@ throttledWatch(
 .lep-btn-primary:hover {
   background: #1d4ed8;
 }
-
 </style>

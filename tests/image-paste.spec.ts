@@ -1,6 +1,7 @@
-import { test, expect, type Page } from '@playwright/test'
-import { readFileSync, writeFileSync, readdirSync, rmSync } from 'fs'
-import { resolve } from 'path'
+import type { Page } from '@playwright/test'
+import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { expect, test } from '@playwright/test'
 
 const e2eDir = resolve(import.meta.dirname, '../e2e')
 const slidesPath = resolve(e2eDir, 'slides.md')
@@ -13,7 +14,8 @@ const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 
 function removeGeneratedImages() {
   for (const file of readdirSync(imagesDir)) {
-    if (file.startsWith('paste-')) rmSync(resolve(imagesDir, file))
+    if (file.startsWith('paste-'))
+      rmSync(resolve(imagesDir, file))
   }
 }
 
@@ -80,7 +82,8 @@ test.describe('Image Paste E2E', () => {
     // A fresh browser context defaults to the editor being closed; only close
     // it explicitly if a previous run in this context left it open.
     const hideBtn = page.locator('button:has-text("Hide editor")')
-    if (await hideBtn.count()) await hideBtn.click()
+    if (await hideBtn.count())
+      await hideBtn.click()
 
     await pasteImage(page)
 

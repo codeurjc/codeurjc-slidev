@@ -1,12 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import type { SlideForHeadingResolve } from '../useSlideTitleCarryover'
+import { describe, expect, it } from 'vitest'
 import {
-  parseLeadingHeadings,
-  isDefaultLayout,
   hasResetHeadingsFlag,
-  resolveSlideHeadings,
   injectCarriedHeadings,
+  isDefaultLayout,
+  parseLeadingHeadings,
   RESET_HEADINGS_FRONTMATTER_KEY,
-  type SlideForHeadingResolve,
+  resolveSlideHeadings,
+
 } from '../useSlideTitleCarryover'
 
 describe('parseLeadingHeadings', () => {

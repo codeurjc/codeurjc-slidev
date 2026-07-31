@@ -1,6 +1,6 @@
-import { test, expect } from '@playwright/test'
-import { readFileSync, writeFileSync } from 'fs'
-import { resolve } from 'path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { expect, test } from '@playwright/test'
 
 // Follows the same temporary-fixture-swap convention as
 // tests/code-snippet-import.spec.ts: this suite needs its own multi-slide
@@ -89,8 +89,10 @@ test.describe('Slide Title Carryover E2E', () => {
     for (;;) {
       await warmupPage.goto('/9')
       const text = await warmupPage.locator('.slidev-page-9 h1').innerText().catch(() => null)
-      if (text === 'Casos de uso') break
-      if (Date.now() > deadline) throw new Error('slide-title-carryover fixture never appeared to compile')
+      if (text === 'Casos de uso')
+        break
+      if (Date.now() > deadline)
+        throw new Error('slide-title-carryover fixture never appeared to compile')
       await warmupPage.waitForTimeout(500)
     }
     await warmupPage.close()

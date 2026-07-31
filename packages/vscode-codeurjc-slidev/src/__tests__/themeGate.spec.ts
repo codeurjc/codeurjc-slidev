@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { usesCodeurjcSlidevTheme } from '../themeGate'
 
 describe('usesCodeurjcSlidevTheme', () => {
@@ -22,6 +22,7 @@ describe('usesCodeurjcSlidevTheme', () => {
   })
 
   it('handles a leading BOM before the frontmatter delimiter', () => {
+    // eslint-disable-next-line no-irregular-whitespace -- intentional leading BOM under test
     const text = `﻿${['---', 'theme: codeurjc-slidev-theme', '---', ''].join('\n')}`
     expect(usesCodeurjcSlidevTheme(text)).toBe(true)
   })

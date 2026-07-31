@@ -1,21 +1,24 @@
 {
+  "publisher": "codeurjc",
   "name": "vscode-codeurjc-slidev",
   "displayName": "CodeURJC Slidev Theme Support",
-  "description": "Editor support for codeurjc-slidev-theme's custom slides.md grammar: marker/anchor decorations, hovers, diagnostics, and reverse code references.",
-  "version": "0.1.0",
-  "publisher": "codeurjc",
   "type": "module",
+  "version": "0.1.0",
+  "description": "Editor support for codeurjc-slidev-theme's custom slides.md grammar: marker/anchor decorations, hovers, diagnostics, and reverse code references.",
   "license": "MIT",
-  "engines": {
-    "vscode": "^1.85.0"
-  },
   "categories": [
     "Other"
   ],
+  "main": "./dist/extension.cjs",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
   "activationEvents": [
     "onStartupFinished"
   ],
-  "main": "./dist/extension.cjs",
   "contributes": {
     "commands": [
       {
@@ -40,15 +43,13 @@
       }
     ]
   },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "package": "node esbuild.js --production",
     "test": "vitest",
-    "test:extension": "node esbuild.js && node ./test-extension/runTest.mjs"
+    "test:extension": "node esbuild.js && node ./test-extension/runTest.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "codeurjc-slidev-theme": "workspace:*"

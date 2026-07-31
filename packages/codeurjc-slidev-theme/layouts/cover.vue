@@ -11,13 +11,19 @@ defineProps<{
   <div class="slidev-layout cover relative h-full w-full bg-white text-black flex flex-col">
     <div class="cover-red-bar" />
 
-    <div v-if="date" class="cover-date">{{ date }}</div>
+    <div v-if="date" class="cover-date">
+      {{ date }}
+    </div>
 
     <div class="cover-main">
       <img class="cover-logo" src="/images/logo.png" alt="Logo">
       <div class="cover-text-group" :class="{ 'cover-text-group-tight': lesson }">
-        <div v-if="subject" class="cover-subject">{{ subject }}</div>
-        <div v-if="lesson" class="cover-lesson">{{ lesson }}</div>
+        <div v-if="subject" class="cover-subject">
+          {{ subject }}
+        </div>
+        <div v-if="lesson" class="cover-lesson">
+          {{ lesson }}
+        </div>
         <div class="cover-title">
           <slot />
         </div>
@@ -26,7 +32,9 @@ defineProps<{
 
     <div class="cover-bottom-bar">
       <img class="cover-urjc-logo" src="/images/URJC.jpg" alt="URJC">
-      <div v-if="authors" class="cover-authors">{{ authors }}</div>
+      <div v-if="authors" class="cover-authors">
+        {{ authors }}
+      </div>
     </div>
   </div>
 </template>

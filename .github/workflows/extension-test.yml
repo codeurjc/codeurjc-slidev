@@ -1,0 +1,22 @@
+name: Extension Test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/vscode-codeurjc-slidev/**'
+
+jobs:
+  test-extension:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: xvfb-run -a pnpm test:extension

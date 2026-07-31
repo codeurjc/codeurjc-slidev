@@ -1,7 +1,7 @@
 const assert = require('node:assert')
 const vscode = require('vscode')
 
-describe('Extension activation', () => {
+describe('extension activation', () => {
   it('activates and registers the reference-navigation command', async () => {
     const ext = vscode.extensions.getExtension('codeurjc.vscode-codeurjc-slidev')
     assert.ok(ext, 'extension not found -- check the publisher.name in package.json matches')

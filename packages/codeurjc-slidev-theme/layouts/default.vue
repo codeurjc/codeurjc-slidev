@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { useEditor, CONTENT_DEFAULT_WIDTH } from '../composables/useEditor'
+import type { Rect, Side } from '../composables/useHighlightLayout'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAutoFitText } from '../composables/useAutoFitText'
+import { CONTENT_DEFAULT_WIDTH, useEditor } from '../composables/useEditor'
+import { elbowPath, estimateCalloutSize, placeCallout, pointsToSvgPath } from '../composables/useHighlightLayout'
 import { computeBelowPreset } from '../composables/useImagePosition'
-import { placeCallout, elbowPath, pointsToSvgPath, estimateCalloutSize, type Rect, type Side } from '../composables/useHighlightLayout'
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 
 const VAR_MAP: Record<string, Record<string, string>> = {
   'red-bar': { y: '--ed-red-y', x: '--ed-red-x', w: '--ed-red-w', h: '--ed-red-h' },
-  logo: { y: '--ed-logo-y', x: '--ed-logo-rx', w: '--ed-logo-w', h: '--ed-logo-h' },
-  title: { y: '--ed-title-y', x: '--ed-title-x', w: '--ed-title-w', h: '--ed-title-h' },
-  content: { y: '--ed-content-y', x: '--ed-content-x', w: '--ed-content-w', h: '--ed-content-h' },
-  image: { y: '--ed-image-y', x: '--ed-image-x', w: '--ed-image-w', h: '--ed-image-h' },
+  'logo': { y: '--ed-logo-y', x: '--ed-logo-rx', w: '--ed-logo-w', h: '--ed-logo-h' },
+  'title': { y: '--ed-title-y', x: '--ed-title-x', w: '--ed-title-w', h: '--ed-title-h' },
+  'content': { y: '--ed-content-y', x: '--ed-content-x', w: '--ed-content-w', h: '--ed-content-h' },
+  'image': { y: '--ed-image-y', x: '--ed-image-x', w: '--ed-image-w', h: '--ed-image-h' },
 }
 
 const editor = useEditor()
@@ -31,7 +32,8 @@ let imageEverSaved = false
 
 onMounted(() => {
   const el = rootEl.value
-  if (!el) return
+  if (!el)
+    return
   // Use data-styles (never overridden by :style) so saved positions survive editor re-open
   const style = el.getAttribute('data-styles') || el.getAttribute('style') || ''
   const hiddenStr = el.getAttribute('data-hidden') || ''
@@ -58,7 +60,8 @@ onMounted(() => {
     // exclusion from data-hidden in the save middleware).
     const h: Record<string, boolean> = {}
     for (const key of Object.keys(editor.positions)) {
-      if (key === 'image') continue
+      if (key === 'image')
+        continue
       h[key] = hiddenStr.split(',').includes(key)
     }
     editor.setHidden(h)
@@ -131,7 +134,8 @@ interface CalloutItem {
 const calloutItems = ref<CalloutItem[]>([])
 const calloutEls = new Map<string, HTMLElement>()
 function setCalloutRef(id: string, el: Element | null) {
-  if (el) calloutEls.set(id, el as HTMLElement)
+  if (el)
+    calloutEls.set(id, el as HTMLElement)
   else calloutEls.delete(id)
 }
 
@@ -184,14 +188,16 @@ function decodeBase64(s: string): string {
   try {
     return decodeURIComponent(Array.prototype.map.call(atob(s), (c: string) =>
       `%${(`00${c.charCodeAt(0).toString(16)}`).slice(-2)}`).join(''))
-  } catch {
+  }
+  catch {
     return ''
   }
 }
 
 function getScale(): number {
   const el = rootEl.value
-  if (!el || !el.scrollWidth) return 1
+  if (!el || !el.scrollWidth)
+    return 1
   return el.getBoundingClientRect().width / el.scrollWidth
 }
 
@@ -217,18 +223,24 @@ function unionRects(rects: Rect[]): Rect {
 // right/left placement.
 function tightCodeRect(pre: Element, originRect: DOMRect, scale: number): Rect {
   const lineEls = Array.from(pre.querySelectorAll(':scope > code > .line'))
-  if (lineEls.length === 0) return rectOf(pre, originRect, scale)
+  if (lineEls.length === 0)
+    return rectOf(pre, originRect, scale)
   return unionRects(lineEls.map(el => rectOf(el, originRect, scale)))
 }
 
 function deriveSide(rect: Rect, codeRect: Rect): Side {
-  if (rect.x >= codeRect.x + codeRect.w) return 'right'
-  if (rect.x + rect.w <= codeRect.x) return 'left'
-  if (rect.y >= codeRect.y + codeRect.h) return 'below'
-  if (rect.y + rect.h <= codeRect.y) return 'above'
+  if (rect.x >= codeRect.x + codeRect.w)
+    return 'right'
+  if (rect.x + rect.w <= codeRect.x)
+    return 'left'
+  if (rect.y >= codeRect.y + codeRect.h)
+    return 'below'
+  if (rect.y + rect.h <= codeRect.y)
+    return 'above'
   const dx = (rect.x + rect.w / 2) - (codeRect.x + codeRect.w / 2)
   const dy = (rect.y + rect.h / 2) - (codeRect.y + codeRect.h / 2)
-  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left'
+  if (Math.abs(dx) > Math.abs(dy))
+    return dx > 0 ? 'right' : 'left'
   return dy > 0 ? 'below' : 'above'
 }
 
@@ -250,14 +262,17 @@ function computeCallouts() {
   // collapses to the top-left corner. Bail out and let the next trigger
   // (ResizeObserver below, MutationObserver, fonts.ready, window resize)
   // recompute once the slide actually has real dimensions.
-  if (originRect.width === 0 || originRect.height === 0) return
+  if (originRect.width === 0 || originRect.height === 0)
+    return
   const slideRect: Rect = { x: 0, y: 0, w: originRect.width / scale, h: originRect.height / scale }
 
   const groups = new Map<string, Element[]>()
   for (const el of Array.from(container.querySelectorAll('[data-highlight-id]'))) {
     const id = el.getAttribute('data-highlight-id')
-    if (!id) continue
-    if (!groups.has(id)) groups.set(id, [])
+    if (!id)
+      continue
+    if (!groups.has(id))
+      groups.set(id, [])
     groups.get(id)!.push(el)
   }
 
@@ -276,7 +291,8 @@ function computeCallouts() {
   for (const [id, els] of groups) {
     const first = els[0]
     const comment = first.getAttribute('data-comment')
-    if (!comment) continue // highlight without a comment: no callout, style-only
+    if (!comment)
+      continue // highlight without a comment: no callout, style-only
 
     const sourceLineB64 = first.getAttribute('data-source-line')
     const sourceLine = sourceLineB64 ? decodeBase64(sourceLineB64) : ''
@@ -300,7 +316,8 @@ function computeCallouts() {
       const p = editor.positions[overrideKey]
       rect = { x: p.x, y: p.y, w: calloutSize.w, h: calloutSize.h }
       side = deriveSide(rect, codeRect)
-    } else {
+    }
+    else {
       const placement = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed })
       rect = placement.rect
       side = placement.side
@@ -323,14 +340,17 @@ function computeCallouts() {
 // box's true edge -- cheap, and avoids re-running placement/collision.
 function remeasureCallouts() {
   const root = rootEl.value
-  if (!root) return
+  if (!root)
+    return
   const scale = getScale()
   const originRect = root.getBoundingClientRect()
   for (const item of calloutItems.value) {
     const el = calloutEls.get(item.id)
-    if (!el) continue
+    if (!el)
+      continue
     const real = rectOf(el, originRect, scale)
-    if (Math.abs(real.w - item.rect.w) < 1 && Math.abs(real.h - item.rect.h) < 1) continue
+    if (Math.abs(real.w - item.rect.w) < 1 && Math.abs(real.h - item.rect.h) < 1)
+      continue
     item.rect.w = real.w
     item.rect.h = real.h
     item.path = pointsToSvgPath(elbowPath(item.highlightRect, item.rect, item.side))
@@ -338,7 +358,8 @@ function remeasureCallouts() {
 }
 
 function startCalloutDrag(e: MouseEvent, item: CalloutItem) {
-  if (!editor.editing.value) return
+  if (!editor.editing.value)
+    return
   manualIds.value.add(item.overrideKey)
   editor.startDrag(e, item.overrideKey)
   const onUp = () => {
@@ -350,14 +371,16 @@ function startCalloutDrag(e: MouseEvent, item: CalloutItem) {
 
 async function saveCalloutPosition(overrideKey: string, sourceLine: string) {
   const pos = editor.positions[overrideKey]
-  if (!pos || !sourceLine) return
+  if (!pos || !sourceLine)
+    return
   try {
     await fetch('/api/save-code-highlight-position', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sourceLine, x: pos.x, y: pos.y }),
     })
-  } catch {
+  }
+  catch {
     // best-effort: a failed save just means the drag stays session-only
   }
 }
@@ -369,7 +392,8 @@ async function saveCalloutPosition(overrideKey: string, sourceLine: string) {
 // (when none was ever explicitly saved for this layout).
 function updateTrackedImage() {
   const container = contentInnerEl.value
-  if (!container) return
+  if (!container)
+    return
   const imgs = Array.from(container.querySelectorAll('img'))
   for (const img of imgs) img.classList.remove('tracked-image')
   const last = imgs[imgs.length - 1] as HTMLImageElement | undefined
@@ -387,7 +411,8 @@ function updateTrackedImage() {
   }
 
   const applyLiveDefault = () => {
-    if (!last.naturalWidth || !last.naturalHeight) return
+    if (!last.naturalWidth || !last.naturalHeight)
+      return
     const ratio = last.naturalWidth / last.naturalHeight
     const content = editor.positions.content
     const slideWidth = rootEl.value?.getBoundingClientRect().width || 980
@@ -396,46 +421,51 @@ function updateTrackedImage() {
     Object.assign(editor.positions.image, image)
     editor.hidden.image = false
   }
-  if (last.complete) applyLiveDefault()
+  if (last.complete)
+    applyLiveDefault()
   else last.addEventListener('load', applyLiveDefault, { once: true })
 }
 
 watch(editor.hidden, (v) => {
   const el = rootEl.value
-  if (!el) return
+  if (!el)
+    return
   const hiddenNames = Object.entries(v)
     .filter(([_, isHidden]) => isHidden)
     .map(([k]) => k)
   if (hiddenNames.length > 0) {
     el.setAttribute('data-hidden', hiddenNames.join(','))
-  } else {
+  }
+  else {
     el.removeAttribute('data-hidden')
   }
 })
 
 watch(editor.aspectLocked, (v) => {
   const el = rootEl.value
-  if (!el) return
+  if (!el)
+    return
   const lockedNames = Object.entries(v)
     .filter(([_, locked]) => locked)
     .map(([k]) => k)
   if (lockedNames.length > 0) {
     el.setAttribute('data-aspect-locked', lockedNames.join(','))
-  } else {
+  }
+  else {
     el.removeAttribute('data-aspect-locked')
   }
 })
 </script>
 
 <template>
-    <div
-      ref="rootEl"
-      class="slidev-layout default relative h-full w-full bg-white text-black"
-      :class="{ editing: editor.editing.value }"
-      style="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 98px; --ed-content-x: 31px; --ed-content-w: 901px; --ed-content-h: 424px; --ed-image-y: 80px; --ed-image-x: 438px; --ed-image-w: 400px; --ed-image-h: 300px"
-      data-styles="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 98px; --ed-content-x: 31px; --ed-content-w: 901px; --ed-content-h: 424px; --ed-image-y: 80px; --ed-image-x: 438px; --ed-image-w: 400px; --ed-image-h: 300px"
-      :style="editor.editing.value ? editor.rootStyle.value : {}"
-    >
+  <div
+    ref="rootEl"
+    class="slidev-layout default relative h-full w-full bg-white text-black"
+    :class="{ editing: editor.editing.value }"
+    style="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 98px; --ed-content-x: 31px; --ed-content-w: 901px; --ed-content-h: 424px; --ed-image-y: 80px; --ed-image-x: 438px; --ed-image-w: 400px; --ed-image-h: 300px"
+    data-styles="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 98px; --ed-content-x: 31px; --ed-content-w: 901px; --ed-content-h: 424px; --ed-image-y: 80px; --ed-image-x: 438px; --ed-image-w: 400px; --ed-image-h: 300px"
+    :style="editor.editing.value ? editor.rootStyle.value : {}"
+  >
     <!-- ed:red-bar:start -->
     <div
       v-if="!editor.hidden['red-bar']"
@@ -452,13 +482,15 @@ watch(editor.aspectLocked, (v) => {
         v-if="editor.editing.value && editor.selected.value === 'red-bar'"
         class="delete-btn"
         @mousedown.stop="editor.removeElement('red-bar')"
-      >✕</div>
+      >
+        ✕
+      </div>
     </div>
     <!-- ed:red-bar:end -->
 
     <!-- ed:logo:start -->
     <div
-      v-if="!editor.hidden['logo']"
+      v-if="!editor.hidden.logo"
       class="logo"
       :class="{ 'el-active': editor.editing.value && editor.selected.value === 'logo' }"
       @mousedown.stop="editor.startDrag($event, 'logo')"
@@ -473,7 +505,9 @@ watch(editor.aspectLocked, (v) => {
         v-if="editor.editing.value && editor.selected.value === 'logo'"
         class="delete-btn"
         @mousedown.stop="editor.removeElement('logo')"
-      >✕</div>
+      >
+        ✕
+      </div>
     </div>
     <!-- ed:logo:end -->
 
@@ -488,7 +522,7 @@ watch(editor.aspectLocked, (v) => {
     </div>
 
     <div
-      v-if="editor.editing.value && !editor.hidden['content']"
+      v-if="editor.editing.value && !editor.hidden.content"
       class="content-overlay"
       :class="{ 'el-active': editor.selected.value === 'content' }"
       @mousedown.stop="editor.startDrag($event, 'content')"
@@ -503,13 +537,15 @@ watch(editor.aspectLocked, (v) => {
         v-if="editor.selected.value === 'content'"
         class="delete-btn"
         @mousedown.stop="editor.removeElement('content')"
-      >✕</div>
+      >
+        ✕
+      </div>
     </div>
 
     <div
-      v-if="editor.editing.value && !editor.hidden['title']"
+      v-if="editor.editing.value && !editor.hidden.title"
       class="title-overlay"
-      :style="{ top: editor.positions.title.y + 'px', left: editor.positions.title.x + 'px' }"
+      :style="{ top: `${editor.positions.title.y}px`, left: `${editor.positions.title.x}px` }"
       :class="{ 'el-active': editor.selected.value === 'title' }"
       @mousedown.stop="editor.startDrag($event, 'title')"
     >
@@ -523,13 +559,15 @@ watch(editor.aspectLocked, (v) => {
         v-if="editor.selected.value === 'title'"
         class="delete-btn"
         @mousedown.stop="editor.removeElement('title')"
-      >✕</div>
+      >
+        ✕
+      </div>
     </div>
 
     <div
-      v-if="editor.editing.value && !editor.hidden['image']"
+      v-if="editor.editing.value && !editor.hidden.image"
       class="image-overlay"
-      :style="{ top: editor.positions.image.y + 'px', left: editor.positions.image.x + 'px', width: editor.positions.image.w + 'px', height: editor.positions.image.h + 'px' }"
+      :style="{ top: `${editor.positions.image.y}px`, left: `${editor.positions.image.x}px`, width: `${editor.positions.image.w}px`, height: `${editor.positions.image.h}px` }"
       :class="{ 'el-active': editor.selected.value === 'image' }"
       @mousedown.stop="editor.startDrag($event, 'image')"
     >
@@ -543,7 +581,9 @@ watch(editor.aspectLocked, (v) => {
         v-if="editor.selected.value === 'image'"
         class="delete-btn"
         @mousedown.stop="editor.removeElement('image')"
-      >✕</div>
+      >
+        ✕
+      </div>
     </div>
 
     <svg class="code-callout-svg" xmlns="http://www.w3.org/2000/svg">
@@ -560,9 +600,11 @@ watch(editor.aspectLocked, (v) => {
       :ref="(el) => setCalloutRef(item.id, el as Element | null)"
       class="code-callout"
       :class="{ 'el-active': editor.editing.value && editor.selected.value === item.overrideKey }"
-      :style="{ left: item.rect.x + 'px', top: item.rect.y + 'px' }"
+      :style="{ left: `${item.rect.x}px`, top: `${item.rect.y}px` }"
       @mousedown.stop="startCalloutDrag($event, item)"
-    >{{ item.comment }}</div>
+    >
+      {{ item.comment }}
+    </div>
 
     <div v-if="bottomSourceLinks.length > 0" class="source-link-bottom-row">
       <a
@@ -575,7 +617,6 @@ watch(editor.aspectLocked, (v) => {
         rel="noopener noreferrer"
       ><span class="i-carbon-logo-github" /></a>
     </div>
-
   </div>
 </template>
 

@@ -21,15 +21,23 @@ export function parseMarkdownBlocks(source: string): MarkdownBlock[] {
   const tokens = md.parse(source, {})
   const blocks: MarkdownBlock[] = []
   for (const token of tokens) {
-    if (!token.map || token.hidden) continue
+    if (!token.map || token.hidden)
+      continue
     let type: string | null = null
-    if (token.type === 'paragraph_open') type = 'p'
-    else if (token.type === 'heading_open') type = token.tag
-    else if (token.type === 'list_item_open') type = 'li'
-    else if (token.type === 'blockquote_open') type = 'blockquote'
-    else if (token.type === 'fence' || token.type === 'code_block') type = 'pre'
-    else if (token.type === 'tr_open') type = 'tr'
-    if (!type) continue
+    if (token.type === 'paragraph_open')
+      type = 'p'
+    else if (token.type === 'heading_open')
+      type = token.tag
+    else if (token.type === 'list_item_open')
+      type = 'li'
+    else if (token.type === 'blockquote_open')
+      type = 'blockquote'
+    else if (token.type === 'fence' || token.type === 'code_block')
+      type = 'pre'
+    else if (token.type === 'tr_open')
+      type = 'tr'
+    if (!type)
+      continue
     blocks.push({ type, startLine: token.map[0], endLine: token.map[1] })
   }
   return blocks
@@ -72,17 +80,21 @@ export function blockTypeForElement(el: Element): string {
 // existing selection alone", never as "guess".
 export function resolveBlockRange(container: Element, target: Element, source: string): CharRange | null {
   const matched = target.closest(BLOCK_SELECTOR)
-  if (!matched || !container.contains(matched)) return null
+  if (!matched || !container.contains(matched))
+    return null
 
   const domBlocks = collectDomBlocks(container)
   const index = domBlocks.indexOf(matched)
-  if (index === -1) return null
+  if (index === -1)
+    return null
 
   const mdBlocks = parseMarkdownBlocks(source)
-  if (mdBlocks.length !== domBlocks.length) return null
+  if (mdBlocks.length !== domBlocks.length)
+    return null
 
   const block = mdBlocks[index]
-  if (!block || block.type !== blockTypeForElement(matched)) return null
+  if (!block || block.type !== blockTypeForElement(matched))
+    return null
 
   return lineRangeToCharRange(source, block.startLine, block.endLine)
 }

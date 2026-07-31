@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { findFencedBlocks, findImportBlocks, computeSlideNumber } from '../documentScan'
+import { describe, expect, it } from 'vitest'
+import { computeSlideNumber, findFencedBlocks, findImportBlocks } from '../documentScan'
 
 describe('findFencedBlocks', () => {
   it('finds a single fenced block with its code lines', () => {

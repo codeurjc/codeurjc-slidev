@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { findFitFontSize, AUTOFIT_MIN_PT, AUTOFIT_MAX_PT } from '../useAutoFitText'
+import { describe, expect, it, vi } from 'vitest'
+import { AUTOFIT_MAX_PT, AUTOFIT_MIN_PT, findFitFontSize } from '../useAutoFitText'
 
 describe('findFitFontSize', () => {
   it('returns the max size when content never overflows', () => {

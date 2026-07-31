@@ -1,16 +1,13 @@
 {
   "name": "codeurjc-slidev-theme",
+  "type": "module",
   "version": "0.1.0",
   "description": "Slidev theme: draggable layout editor, code-highlight callouts, code-snippet import, and slide title carry-over for CodeURJC presentations",
+  "license": "MIT",
   "keywords": [
     "slidev-theme",
     "slidev"
   ],
-  "type": "module",
-  "license": "MIT",
-  "engines": {
-    "slidev": ">=52.0.0"
-  },
   "slidev": {
     "colorSchema": "light",
     "defaults": {
@@ -22,35 +19,45 @@
     }
   },
   "files": [
-    "layouts",
-    "composables",
     "!composables/__tests__",
+    "_override",
+    "composables",
+    "global-top.vue",
+    "layouts",
     "setup",
     "styles",
-    "_override",
-    "global-top.vue",
-    "vite.config.ts",
-    "uno.config.ts"
+    "uno.config.ts",
+    "vite.config.ts"
   ],
-  "scripts": {
-    "test": "vitest"
+  "engines": {
+    "slidev": ">=52.0.0"
   },
-  "dependencies": {
-    "@vueuse/core": "^14.3.0",
-    "markdown-it": "^14.2.0",
-    "unocss": "^66.7.3"
+  "scripts": {
+    "test": "vitest",
+    "typecheck": "vue-tsc --noEmit"
   },
   "peerDependencies": {
     "@slidev/cli": "^52.15.0",
     "@slidev/client": "^52.15.0",
     "vue": "^3.5.39"
   },
+  "dependencies": {
+    "@vueuse/core": "^14.3.0",
+    "markdown-it": "^14.2.0",
+    "unocss": "^66.7.3"
+  },
   "devDependencies": {
+    "@slidev/types": "^52.18.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/vue": "^8.1.0",
+    "@types/file-saver": "^2.0.7",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.20.1",
     "@vitejs/plugin-vue": "^6.0.7",
     "jsdom": "^29.1.1",
+    "typescript": "^5.9.3",
     "vitest": "^4.1.9",
-    "vue": "^3.5.39"
+    "vue": "^3.5.39",
+    "vue-tsc": "^3.3.9"
   }
 }

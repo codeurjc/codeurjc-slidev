@@ -5,7 +5,8 @@
 // target file's *live* editor content on demand, so the index never goes
 // stale when only the target file (not the markdown) changes.
 
-import { parseSnippetSelector, type SnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
+import type { SnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
+import { parseSnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 import { findImportBlocks } from '../documentScan'
 
 export interface ImportRecipe {
@@ -28,15 +29,19 @@ export function buildReferenceIndex(files: Record<string, string>, resolveImport
   for (const [mdPath, text] of Object.entries(files)) {
     for (const block of findImportBlocks(text)) {
       const targetAbsPath = resolveImportPath(mdPath, block.parsed.filePath)
-      if (!targetAbsPath) continue
+      if (!targetAbsPath)
+        continue
       const selector = block.parsed.selectorRaw ? parseSnippetSelector(block.parsed.selectorRaw) : null
-      if (block.parsed.selectorRaw && !selector) continue // malformed selector: skip, diagnostics already cover this
+      if (block.parsed.selectorRaw && !selector)
+        continue // malformed selector: skip, diagnostics already cover this
 
       for (const directive of block.directives) {
-        if (directive.kind !== 'anchor') continue
+        if (directive.kind !== 'anchor')
+          continue
         const recipe: ImportRecipe = { slideFile: mdPath, slideLine: directive.line, selector, anchorLineText: directive.text }
         const existing = index.get(targetAbsPath)
-        if (existing) existing.push(recipe)
+        if (existing)
+          existing.push(recipe)
         else index.set(targetAbsPath, [recipe])
       }
     }
@@ -49,14 +54,16 @@ export function buildReferenceIndex(files: Record<string, string>, resolveImport
 export function updateReferenceIndexForFile(index: ReferenceIndex, mdPath: string, text: string, resolveImportPath: ResolveImportPath): ReferenceIndex {
   for (const [targetAbsPath, recipes] of index) {
     const filtered = recipes.filter(r => r.slideFile !== mdPath)
-    if (filtered.length === 0) index.delete(targetAbsPath)
+    if (filtered.length === 0)
+      index.delete(targetAbsPath)
     else index.set(targetAbsPath, filtered)
   }
 
   const additions = buildReferenceIndex({ [mdPath]: text }, resolveImportPath)
   for (const [targetAbsPath, recipes] of additions) {
     const existing = index.get(targetAbsPath)
-    if (existing) existing.push(...recipes)
+    if (existing)
+      existing.push(...recipes)
     else index.set(targetAbsPath, recipes)
   }
 

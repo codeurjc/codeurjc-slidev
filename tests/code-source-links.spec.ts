@@ -1,6 +1,6 @@
-import { test, expect } from './fixtures'
-import { readFileSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { expect, test } from './fixtures'
 
 // Runs against this repo's own real git checkout (a genuine GitHub `origin`
 // remote), so the auto-detected links exercised here are real end-to-end
@@ -52,10 +52,11 @@ layout: default
 async function waitForFixture(page: import('@playwright/test').Page, slide: number, wrapperCount: number) {
   const deadline = Date.now() + 100000
   for (;;) {
-    const ready = await page.locator(`.slidev-page-${slide} .slidev-code-wrapper, .slidev-page-${slide} pre`).count()
-      .then(c => c >= wrapperCount).catch(() => false)
-    if (ready) return
-    if (Date.now() > deadline) throw new Error('code-source-links fixture never appeared to compile on the dev server')
+    const ready = await page.locator(`.slidev-page-${slide} .slidev-code-wrapper, .slidev-page-${slide} pre`).count().then(c => c >= wrapperCount).catch(() => false)
+    if (ready)
+      return
+    if (Date.now() > deadline)
+      throw new Error('code-source-links fixture never appeared to compile on the dev server')
     await page.reload().catch(() => {})
     await page.waitForTimeout(1000)
   }

@@ -1,14 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, mkdirSync, rmSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
+import type { GitRunner } from '../useSourceLink'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
-  parseGitHubRemote,
-  parseDefaultBranch,
-  extractSymrefTarget,
   buildGithubSourceLink,
   clearRepoLinkInfoCache,
-  type GitRunner,
+  extractSymrefTarget,
+
+  parseDefaultBranch,
+  parseGitHubRemote,
 } from '../useSourceLink'
 
 describe('parseGitHubRemote', () => {
@@ -84,9 +85,12 @@ describe('buildGithubSourceLink', () => {
 
   function fakeGit(remote: string | null, symbolicRef: string | null, lsRemote: string | null = null): GitRunner {
     return (args) => {
-      if (args[0] === 'remote') return remote
-      if (args[0] === 'symbolic-ref') return symbolicRef
-      if (args[0] === 'ls-remote') return lsRemote
+      if (args[0] === 'remote')
+        return remote
+      if (args[0] === 'symbolic-ref')
+        return symbolicRef
+      if (args[0] === 'ls-remote')
+        return lsRemote
       return null
     }
   }

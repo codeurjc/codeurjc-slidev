@@ -8,7 +8,7 @@ function fixtureRoot() {
   return folder.uri.fsPath
 }
 
-describe('Snippet-import path completion', () => {
+describe('snippet-import path completion', () => {
   it('offers a completion for the code root\'s Foo.java on a bare "<<< @/" line', async () => {
     const slidesUri = vscode.Uri.file(path.join(fixtureRoot(), 'slides.md'))
     const document = await vscode.workspace.openTextDocument(slidesUri)

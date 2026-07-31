@@ -1,13 +1,16 @@
-import { resolve } from 'path'
-import { readFileSync, existsSync } from 'fs'
+import { Buffer } from 'node:buffer'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import process from 'node:process'
+import { defineConfig } from 'vite'
 import { serializeMarkerOverride } from './composables/useCodeHighlights'
 
 const VAR_MAP: Record<string, Record<string, string>> = {
   'red-bar': { y: '--ed-red-y', x: '--ed-red-x', w: '--ed-red-w', h: '--ed-red-h' },
-  logo: { y: '--ed-logo-y', x: '--ed-logo-rx', w: '--ed-logo-w', h: '--ed-logo-h' },
-  title: { y: '--ed-title-y', x: '--ed-title-x', w: '--ed-title-w', h: '--ed-title-h' },
-  content: { y: '--ed-content-y', x: '--ed-content-x', w: '--ed-content-w', h: '--ed-content-h' },
-  image: { y: '--ed-image-y', x: '--ed-image-x', w: '--ed-image-w', h: '--ed-image-h' },
+  'logo': { y: '--ed-logo-y', x: '--ed-logo-rx', w: '--ed-logo-w', h: '--ed-logo-h' },
+  'title': { y: '--ed-title-y', x: '--ed-title-x', w: '--ed-title-w', h: '--ed-title-h' },
+  'content': { y: '--ed-content-y', x: '--ed-content-x', w: '--ed-content-w', h: '--ed-content-h' },
+  'image': { y: '--ed-image-y', x: '--ed-image-x', w: '--ed-image-w', h: '--ed-image-h' },
 }
 
 const customSideEditorPath = resolve(import.meta.dirname, '_override/SideEditor.vue')
@@ -27,7 +30,7 @@ const IMAGE_MIME_EXT: Record<string, string> = {
 // `server.config.root` the way `configureServer` handlers do.
 let projectRoot = process.cwd()
 
-export default {
+export default defineConfig({
   plugins: [
     {
       // Slidev's markdown-image-to-import transform rejects absolute
@@ -47,8 +50,10 @@ export default {
         projectRoot = config.root
       },
       resolveId(id, importer) {
-        if (!id.startsWith('/images/')) return null
-        if (!importer || !/__slidev_\d+\.(md|frontmatter)/.test(importer)) return null
+        if (!id.startsWith('/images/'))
+          return null
+        if (!importer || !/__slidev_\d+\.(?:md|frontmatter)/.test(importer))
+          return null
         return resolve(projectRoot, `public${id}`)
       },
     },
@@ -56,7 +61,8 @@ export default {
       name: 'slidev-side-editor-override',
       enforce: 'pre',
       transform(code, id) {
-        if (!id.includes('SideEditor.vue') || id.includes('?vue')) return null
+        if (!id.includes('SideEditor.vue') || id.includes('?vue'))
+          return null
         let content = readFileSync(customSideEditorPath, 'utf-8')
         content = content.replace('__USE_EDITOR_PATH__', useEditorAbsPath)
         return content
@@ -74,8 +80,8 @@ export default {
           const chunks: Buffer[] = []
           for await (const chunk of req) chunks.push(chunk)
           const body = JSON.parse(Buffer.concat(chunks).toString())
-          const { readFileSync, writeFileSync, realpathSync } = await import('fs')
-          const { resolve: resolvePath } = await import('path')
+          const { readFileSync, writeFileSync, realpathSync } = await import('node:fs')
+          const { resolve: resolvePath } = await import('node:path')
           // `layouts/` is consumer content, not part of this package -- must
           // resolve against the consuming project's root (Vite's resolved
           // `config.root`, i.e. Slidev's `userRoot`), not against wherever
@@ -114,9 +120,11 @@ export default {
           const hidden = body.hidden || {}
           const styleParts: string[] = []
           for (const [name, map] of Object.entries(VAR_MAP)) {
-            if (hidden[name]) continue
+            if (hidden[name])
+              continue
             const pos = body.positions[name]
-            if (!pos) continue
+            if (!pos)
+              continue
             for (const [prop, cssVar] of Object.entries(map)) {
               const val = pos[prop]
               if (val !== undefined) {
@@ -157,7 +165,7 @@ export default {
           if (hiddenNames.length > 0) {
             content = content.replace(
               /(class="slidev-layout default[^"]*"\s*)/,
-              `$1data-hidden="${hiddenNames.join(',')}" `
+              `$1data-hidden="${hiddenNames.join(',')}" `,
             )
           }
 
@@ -169,7 +177,7 @@ export default {
           if (lockedNames.length > 0) {
             content = content.replace(
               /(class="slidev-layout default[^"]*"\s*)/,
-              `$1data-aspect-locked="${lockedNames.join(',')}" `
+              `$1data-aspect-locked="${lockedNames.join(',')}" `,
             )
           }
 
@@ -177,7 +185,8 @@ export default {
           // hidden), so they can't be restored after a reload -- only Undo
           // during the same editing session can bring them back.
           for (const name of ['red-bar', 'logo']) {
-            if (!hidden[name]) continue
+            if (!hidden[name])
+              continue
             const markerRe = new RegExp(`\\n?\\s*<!-- ed:${name}:start -->[\\s\\S]*?<!-- ed:${name}:end -->\\n?`)
             content = content.replace(markerRe, '\n')
           }
@@ -187,15 +196,17 @@ export default {
           let writtenPath: string | null = null
           let isNewFile = false
 
-          const { mkdirSync } = await import('fs')
+          const { mkdirSync } = await import('node:fs')
           mkdirSync(layoutDir, { recursive: true })
 
           if (saveAs) {
             let name: string
             if (body.layoutName && body.layoutName.trim()) {
               name = body.layoutName.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
-              if (!name) name = `layout-${Date.now()}`
-            } else {
+              if (!name)
+                name = `layout-${Date.now()}`
+            }
+            else {
               name = `layout-${Date.now()}`
             }
             if (existsSync(resolvePath(layoutDir, `${name}.vue`))) {
@@ -205,7 +216,8 @@ export default {
             isNewFile = true
             writeFileSync(writtenPath, content, 'utf-8')
             layoutName = name
-          } else {
+          }
+          else {
             // Overwriting always targets the consumer's own `layouts/`, even
             // when the content was read from the theme's bundled fallback --
             // this is what creates the consumer-local override from the
@@ -278,7 +290,7 @@ export default {
           }
           const newLine = serializeMarkerOverride(sourceLine, x, y)
           const newContent = content.slice(0, idx) + newLine + content.slice(idx + sourceLine.length)
-          const { writeFileSync } = await import('fs')
+          const { writeFileSync } = await import('node:fs')
           writeFileSync(slidesPath, newContent, 'utf-8')
           res.statusCode = 200
           res.setHeader('Content-Type', 'application/json')
@@ -305,12 +317,13 @@ export default {
           const chunks: Buffer[] = []
           for await (const chunk of req) chunks.push(chunk)
           const buffer = Buffer.concat(chunks)
-          const { writeFileSync, mkdirSync, existsSync } = await import('fs')
-          const { resolve: resolvePath } = await import('path')
+          const { writeFileSync, mkdirSync, existsSync } = await import('node:fs')
+          const { resolve: resolvePath } = await import('node:path')
           // Consumer content, resolved against the consuming project's root
           // -- same rationale as `layoutDir`/`slidesPath` above.
           const imagesDir = resolvePath(server.config.root, 'public/images')
-          if (!existsSync(imagesDir)) mkdirSync(imagesDir, { recursive: true })
+          if (!existsSync(imagesDir))
+            mkdirSync(imagesDir, { recursive: true })
           const filename = `paste-${Date.now()}.${ext}`
           const writtenPath = resolvePath(imagesDir, filename)
           writeFileSync(writtenPath, buffer)
@@ -376,13 +389,14 @@ export default {
       // around (the cache lives server-side, keyed by module id).
       name: 'slidev-force-invalidate-slide-modules',
       handleHotUpdate({ file, server }) {
-        if (!file.endsWith('slides.md')) return
+        if (!file.endsWith('slides.md'))
+          return
         for (const mod of server.moduleGraph.idToModuleMap.values()) {
-          if (mod.id && /__slidev_\d+\.(md|frontmatter)$/.test(mod.id)) {
+          if (mod.id && /__slidev_\d+\.(?:md|frontmatter)$/.test(mod.id)) {
             server.moduleGraph.invalidateModule(mod)
           }
         }
       },
     },
   ],
-}
+})

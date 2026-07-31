@@ -1,7 +1,7 @@
 const assert = require('node:assert')
-const path = require('node:path')
 const { execFileSync } = require('node:child_process')
 const { rmSync } = require('node:fs')
+const path = require('node:path')
 const vscode = require('vscode')
 
 function fixtureRoot() {
@@ -35,7 +35,7 @@ after(() => {
   rmSync(path.join(fixturePath, '.git'), { recursive: true, force: true })
 })
 
-describe('Import CodeLens ("Open imported file" / "Open source")', () => {
+describe('import CodeLens ("Open imported file" / "Open source")', () => {
   it('shows both "Open imported file" and "Open source" lenses on the <<< import line', async () => {
     const slidesUri = vscode.Uri.file(path.join(fixtureRoot(), 'slides.md'))
     const document = await vscode.workspace.openTextDocument(slidesUri)

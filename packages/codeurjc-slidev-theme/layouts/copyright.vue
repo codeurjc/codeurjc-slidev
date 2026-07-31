@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useNav } from '@slidev/client'
+import { computed } from 'vue'
 
 const props = defineProps<{
   date?: string
@@ -23,7 +23,9 @@ const year = computed(() => resolvedDate.value?.split('-')[1] ?? resolvedDate.va
   <div class="slidev-layout copyright relative h-full w-full bg-white flex flex-col">
     <div class="cover-red-bar" />
 
-    <div v-if="resolvedDate" class="cover-date">{{ resolvedDate }}</div>
+    <div v-if="resolvedDate" class="cover-date">
+      {{ resolvedDate }}
+    </div>
 
     <div class="cover-main">
       <img class="cover-logo" src="/images/logo.png" alt="Logo">

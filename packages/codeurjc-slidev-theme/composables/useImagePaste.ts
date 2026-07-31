@@ -1,11 +1,13 @@
 const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 
 export function findPastedImage(clipboardData: DataTransfer | null): File | null {
-  if (!clipboardData) return null
+  if (!clipboardData)
+    return null
   for (const item of clipboardData.items) {
     if (item.kind === 'file' && SUPPORTED_IMAGE_TYPES.has(item.type)) {
       const file = item.getAsFile()
-      if (file) return file
+      if (file)
+        return file
     }
   }
   return null
@@ -21,7 +23,8 @@ export async function uploadImage(file: File | Blob): Promise<{ filename: string
     headers: { 'Content-Type': file.type },
     body: file,
   })
-  if (!resp.ok) throw new Error(`Failed to upload image: ${resp.status}`)
+  if (!resp.ok)
+    throw new Error(`Failed to upload image: ${resp.status}`)
   return resp.json()
 }
 

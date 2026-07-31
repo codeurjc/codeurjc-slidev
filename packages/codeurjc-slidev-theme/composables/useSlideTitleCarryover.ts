@@ -8,10 +8,10 @@
 // Runs in a Node context (setup/preparser.ts) and in unit tests; deliberately
 // has no Vue or DOM dependency.
 
-export type HeadingState =
-  | { kind: 'own', text: string }
-  | { kind: 'empty' }
-  | { kind: 'absent' }
+export type HeadingState
+  = | { kind: 'own', text: string }
+    | { kind: 'empty' }
+    | { kind: 'absent' }
 
 export interface LeadingHeadings {
   title: HeadingState
@@ -34,7 +34,8 @@ export const RESET_HEADINGS_FRONTMATTER_KEY = 'resetTitle'
 function matchHeadingLine(line: string, level: 1 | 2): { text: string } | null {
   const re = level === 1 ? /^#(?!#)[ \t]*(.*)$/ : /^##(?!#)[ \t]*(.*)$/
   const m = re.exec(line)
-  if (!m) return null
+  if (!m)
+    return null
   return { text: m[1].trim() }
 }
 
@@ -79,8 +80,10 @@ export function hasResetHeadingsFlag(frontmatter: Record<string, unknown> | unde
 
 /** Advances one level's carry state given this slide's own heading state for that level. */
 function nextLevelState(own: HeadingState, carried: string | undefined, reset: boolean): string | undefined {
-  if (own.kind === 'own') return own.text
-  if (own.kind === 'empty' || reset) return undefined
+  if (own.kind === 'own')
+    return own.text
+  if (own.kind === 'empty' || reset)
+    return undefined
   return carried
 }
 
@@ -95,7 +98,8 @@ function nextLevelState(own: HeadingState, carried: string | undefined, reset: b
  * design.md's note on the two hooks never being able to drift).
  */
 export function advanceCarryState(state: ResolvedHeadings, slide: SlideForHeadingResolve): ResolvedHeadings {
-  if (!isDefaultLayout(slide.frontmatter)) return state
+  if (!isDefaultLayout(slide.frontmatter))
+    return state
   const own = parseLeadingHeadings(slide.content)
   const reset = hasResetHeadingsFlag(slide.frontmatter)
   return {
@@ -133,19 +137,28 @@ export function injectCarriedHeadings(content: string, own: LeadingHeadings, res
   let i = 0
   while (i < lines.length && lines[i].trim() === '') i++
   const leadingBlank = lines.slice(0, i)
-  if (own.title.kind !== 'absent') i++
-  if (own.subtitle.kind !== 'absent') i++
+  if (own.title.kind !== 'absent')
+    i++
+  if (own.subtitle.kind !== 'absent')
+    i++
   const rest = lines.slice(i)
 
   const out: string[] = [...leadingBlank]
-  if (own.title.kind === 'own') out.push(`# ${own.title.text}`)
-  else if (own.title.kind === 'empty') out.push('#')
-  else if (resolved.title !== undefined) out.push(`# ${resolved.title}`)
+  if (own.title.kind === 'own')
+    out.push(`# ${own.title.text}`)
+  else if (own.title.kind === 'empty')
+    out.push('#')
+  else if (resolved.title !== undefined)
+    out.push(`# ${resolved.title}`)
 
-  if (own.subtitle.kind === 'own') out.push(`## ${own.subtitle.text}`)
-  else if (own.subtitle.kind === 'empty') out.push('##')
-  else if (resolved.subtitle !== undefined) out.push(`## ${resolved.subtitle}`)
+  if (own.subtitle.kind === 'own')
+    out.push(`## ${own.subtitle.text}`)
+  else if (own.subtitle.kind === 'empty')
+    out.push('##')
+  else if (resolved.subtitle !== undefined)
+    out.push(`## ${resolved.subtitle}`)
 
-  if (out.length === leadingBlank.length) return content
+  if (out.length === leadingBlank.length)
+    return content
   return [...out, ...rest].join('\n')
 }

@@ -89,11 +89,14 @@ function candidatesForSide(side: Side, input: PlacementInput): Rect[] {
   const offsets = new Set<number>([baseline])
   for (const p of placed) {
     if (horizontal) {
-      if (Math.abs(p.x - base.x) > 1) continue
+      if (Math.abs(p.x - base.x) > 1)
+        continue
       offsets.add(p.y + p.h + GAP)
       offsets.add(p.y - GAP - calloutSize.h)
-    } else {
-      if (Math.abs(p.y - base.y) > 1) continue
+    }
+    else {
+      if (Math.abs(p.y - base.y) > 1)
+        continue
       offsets.add(p.x + p.w + GAP)
       offsets.add(p.x - GAP - calloutSize.w)
     }
@@ -117,9 +120,12 @@ function candidatesForSide(side: Side, input: PlacementInput): Rect[] {
 export function placeCallout(input: PlacementInput): PlacementResult {
   for (const side of SIDES) {
     for (const rect of candidatesForSide(side, input)) {
-      if (!within(rect, input.slideRect)) continue
-      if (rectsOverlap(rect, input.codeRect)) continue
-      if (input.placed.some(p => rectsOverlap(rect, p))) continue
+      if (!within(rect, input.slideRect))
+        continue
+      if (rectsOverlap(rect, input.codeRect))
+        continue
+      if (input.placed.some(p => rectsOverlap(rect, p)))
+        continue
       return { rect, side, stacked: false }
     }
   }
@@ -157,7 +163,8 @@ export function elbowPath(highlightRect: Rect, calloutRect: Rect, side: Side): P
 }
 
 export function pointsToSvgPath(points: Point[]): string {
-  if (points.length === 0) return ''
+  if (points.length === 0)
+    return ''
   return `M ${points.map(p => `${p.x} ${p.y}`).join(' L ')}`
 }
 

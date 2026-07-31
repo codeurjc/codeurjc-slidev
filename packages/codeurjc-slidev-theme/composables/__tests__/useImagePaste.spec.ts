@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { findPastedImage, buildImageMarkdown, insertAtCursor, uploadImage, appendImageMarkdown } from '../useImagePaste'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { appendImageMarkdown, buildImageMarkdown, findPastedImage, insertAtCursor, uploadImage } from '../useImagePaste'
 
 function fakeClipboardData(items: Array<{ kind: string, type: string, file?: File }>): DataTransfer {
   return {
@@ -117,19 +117,19 @@ describe('insertAtCursor', () => {
 
 describe('uploadImage', () => {
   beforeEach(() => {
-    global.fetch = vi.fn()
+    globalThis.fetch = vi.fn()
   })
 
   it('posts the file with its mime type and returns the parsed JSON', async () => {
     const file = new File(['x'], 'a.png', { type: 'image/png' })
-    ;(global.fetch as any).mockResolvedValue({
+    ;(globalThis.fetch as any).mockResolvedValue({
       ok: true,
       json: async () => ({ filename: 'paste-1.png', path: '/images/paste-1.png' }),
     })
 
     const result = await uploadImage(file)
 
-    expect(global.fetch).toHaveBeenCalledWith('/api/save-image', expect.objectContaining({
+    expect(globalThis.fetch).toHaveBeenCalledWith('/api/save-image', expect.objectContaining({
       method: 'POST',
       headers: { 'Content-Type': 'image/png' },
       body: file,
@@ -139,7 +139,7 @@ describe('uploadImage', () => {
 
   it('throws when the response is not ok', async () => {
     const file = new File(['x'], 'a.png', { type: 'image/png' })
-    ;(global.fetch as any).mockResolvedValue({ ok: false, status: 400 })
+    ;(globalThis.fetch as any).mockResolvedValue({ ok: false, status: 400 })
 
     await expect(uploadImage(file)).rejects.toThrow('400')
   })

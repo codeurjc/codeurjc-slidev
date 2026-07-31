@@ -1,10 +1,11 @@
+import type { ResolvedHeadings } from '../composables/useSlideTitleCarryover'
 import { definePreparserSetup } from '@slidev/types'
 import {
   advanceCarryState,
   injectCarriedHeadings,
   isDefaultLayout,
   parseLeadingHeadings,
-  type ResolvedHeadings,
+
 } from '../composables/useSlideTitleCarryover'
 
 // `@slidev/parser`'s `parse()` slices the whole file into slides strictly in
@@ -27,7 +28,8 @@ export default definePreparserSetup(() => {
     {
       name: 'slide-title-carryover',
       async transformSlide(content, frontmatter) {
-        if (!isDefaultLayout(frontmatter)) return undefined
+        if (!isDefaultLayout(frontmatter))
+          return undefined
 
         const own = parseLeadingHeadings(content)
         state = advanceCarryState(state, { content, frontmatter })
@@ -36,7 +38,8 @@ export default definePreparserSetup(() => {
         // `title` on it here feeds back into the parser's own `slide.title`
         // (used by the presenter overview / table of contents / tab title),
         // matching what's rendered below.
-        if (typeof state.title === 'string') frontmatter.title = state.title
+        if (typeof state.title === 'string')
+          frontmatter.title = state.title
 
         return injectCarriedHeadings(content, own, state)
       },

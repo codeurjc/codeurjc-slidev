@@ -18,7 +18,8 @@ exports.run = function run() {
   return new Promise((resolve, reject) => {
     try {
       mocha.run((failures) => {
-        if (failures > 0) reject(new Error(`${failures} test(s) failed.`))
+        if (failures > 0)
+          reject(new Error(`${failures} test(s) failed.`))
         else resolve()
       })
     }

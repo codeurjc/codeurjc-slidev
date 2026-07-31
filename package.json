@@ -1,14 +1,22 @@
 {
   "name": "codeurjc-slidev",
-  "private": true,
   "type": "module",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=20.12.0"
+  },
   "scripts": {
     "dev": "slidev --open --remote",
     "build": "slidev build",
     "export": "slidev export",
+    "lint": "eslint . --cache",
+    "lint:fix": "eslint . --cache --fix",
+    "typecheck": "pnpm --filter codeurjc-slidev-theme --filter vscode-codeurjc-slidev run typecheck",
     "test": "pnpm --filter codeurjc-slidev-theme --filter vscode-codeurjc-slidev test",
     "test:e2e": "playwright test",
-    "test:extension": "pnpm --filter vscode-codeurjc-slidev test:extension"
+    "test:extension": "pnpm --filter vscode-codeurjc-slidev test:extension",
+    "prepare": "simple-git-hooks"
   },
   "dependencies": {
     "@slidev/cli": "^52.15.0",
@@ -16,7 +24,19 @@
     "codeurjc-slidev-theme": "workspace:*"
   },
   "devDependencies": {
+    "@antfu/eslint-config": "^9.2.0",
     "@playwright/test": "^1.61.1",
+    "eslint": "^10.8.0",
+    "lint-staged": "^17.2.0",
+    "simple-git-hooks": "^2.13.1",
     "vite": "^8.1.0"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "npx lint-staged"
+  },
+  "lint-staged": {
+    "**/*.{js,ts,vue,json,md}": [
+      "eslint --fix --cache"
+    ]
   }
 }

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { rectsOverlap, placeCallout, elbowPath, pointsToSvgPath, estimateCalloutSize, type Rect } from '../useHighlightLayout'
+import type { Rect } from '../useHighlightLayout'
+import { describe, expect, it } from 'vitest'
+import { elbowPath, estimateCalloutSize, placeCallout, pointsToSvgPath, rectsOverlap } from '../useHighlightLayout'
 
 const slideRect: Rect = { x: 0, y: 0, w: 980, h: 552 }
 

@@ -1,8 +1,21 @@
+minimumReleaseAgeExclude:
+  - '@vue/language-core@3.3.9'
+  - vue-tsc@3.3.9
+shellEmulator: true
+
+trustPolicy: no-downgrade
+
 packages:
   - .
   - packages/*
+overrides:
+  semver: ^7.8.5
+  undici-types: ^8.9.0
+
 allowBuilds:
   esbuild: true
   playwright-chromium: false
+  simple-git-hooks: true
 onlyBuiltDependencies:
   - esbuild
+  - simple-git-hooks

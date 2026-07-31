@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { computeBelowPreset, computeRightPreset } from '../useImagePosition'
 
 const CONTENT = { x: 0, y: 80, w: 876, h: 400 }

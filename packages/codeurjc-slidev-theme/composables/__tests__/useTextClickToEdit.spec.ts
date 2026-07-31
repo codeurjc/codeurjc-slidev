@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
-  parseMarkdownBlocks,
-  lineRangeToCharRange,
-  resolveBlockRange,
-  collectDomBlocks,
   blockTypeForElement,
+  collectDomBlocks,
+  lineRangeToCharRange,
+  parseMarkdownBlocks,
+  resolveBlockRange,
 } from '../useTextClickToEdit'
 
 describe('parseMarkdownBlocks', () => {
@@ -77,7 +77,7 @@ describe('lineRangeToCharRange', () => {
   })
 })
 
-describe('DOM block collection', () => {
+describe('dOM block collection', () => {
   it('collects block-level elements in document order, skipping non-block wrappers', () => {
     const container = document.createElement('div')
     container.innerHTML = `

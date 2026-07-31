@@ -1,5 +1,7 @@
-import { basename, dirname, resolve } from 'path'
-import { readFileSync } from 'fs'
+import type { SlideForHeadingResolve } from '../composables/useSlideTitleCarryover'
+import type { CombinedSourceLink } from '../composables/useSnippetImport'
+import { readFileSync } from 'node:fs'
+import { basename, dirname, resolve } from 'node:path'
 import { defineTransformersSetup } from '@slidev/types'
 import {
   extractInlineSourceLink,
@@ -7,8 +9,10 @@ import {
   parseCodeHighlights,
   parseExternalHighlightAnchors,
 } from '../composables/useCodeHighlights'
+import { injectCarriedHeadings, isDefaultLayout, parseLeadingHeadings, resolveSlideHeadings } from '../composables/useSlideTitleCarryover'
 import {
   combineCodeAndAnchors,
+
   combineWithSourceLink,
   DEFAULT_CODE_ROOT,
   isAnchorDeclarationLine,
@@ -20,13 +24,12 @@ import {
   resolveSnippetSelector,
   splitCodeAndAnchors,
   splitSourceLink,
-  type CombinedSourceLink,
 } from '../composables/useSnippetImport'
-import { injectCarriedHeadings, isDefaultLayout, parseLeadingHeadings, resolveSlideHeadings, type SlideForHeadingResolve } from '../composables/useSlideTitleCarryover'
 import { buildGithubSourceLink } from '../composables/useSourceLink'
 
 function resolveImportPath(filePath: string, slideDir: string, userRoot: string): string {
-  if (filePath.startsWith('@/')) return resolve(userRoot, filePath.slice(2))
+  if (filePath.startsWith('@/'))
+    return resolve(userRoot, filePath.slice(2))
   return resolve(slideDir, filePath)
 }
 
@@ -54,7 +57,8 @@ function sourceLinkIconHtml(url: string): string {
 function wrapCodeBlock(info: string, html: string, sourceLink: CombinedSourceLink | null): string {
   const title = /\[([^\]]*)\]/.exec(info)?.[1] ?? ''
   const escaped = html.replace(/\{\{/g, '&lbrace;&lbrace;')
-  if (!sourceLink) return `<CodeBlockWrapper title=${JSON.stringify(title)}>${escaped}</CodeBlockWrapper>`
+  if (!sourceLink)
+    return `<CodeBlockWrapper title=${JSON.stringify(title)}>${escaped}</CodeBlockWrapper>`
 
   const placedAtTitle = !sourceLink.bottom && title !== ''
   const linkAttrs = ` data-source-link-url="${escapeAttr(sourceLink.url)}" data-source-link-placement="${placedAtTitle ? 'title' : 'bottom'}"`
@@ -83,16 +87,18 @@ export default defineTransformersSetup(() => ({
     // common-suffix diff below) can't collide with the snippet-import
     // transformer below, which only ever touches later lines.
     (ctx) => {
-      if (!isDefaultLayout(ctx.slide.frontmatter)) return
+      if (!isDefaultLayout(ctx.slide.frontmatter))
+        return
       const content = ctx.s.original
       const own = parseLeadingHeadings(content)
-      const allSlides: SlideForHeadingResolve[] = ctx.options.data.slides.map((s) => ({
+      const allSlides: SlideForHeadingResolve[] = ctx.options.data.slides.map(s => ({
         content: s.content,
         frontmatter: s.frontmatter,
       }))
       const resolved = resolveSlideHeadings(allSlides, ctx.slide.index)
       const newContent = injectCarriedHeadings(content, own, resolved)
-      if (newContent === content) return
+      if (newContent === content)
+        return
 
       // Diffed down to a common-suffix overwrite (rather than replacing the
       // whole slide) so this can never collide with the snippet-import
@@ -100,9 +106,11 @@ export default defineTransformersSetup(() => ({
       let suffixLen = 0
       const maxSuffix = Math.min(content.length, newContent.length)
       while (
-        suffixLen < maxSuffix &&
-        content[content.length - 1 - suffixLen] === newContent[newContent.length - 1 - suffixLen]
-      ) suffixLen++
+        suffixLen < maxSuffix
+        && content[content.length - 1 - suffixLen] === newContent[newContent.length - 1 - suffixLen]
+      ) {
+        suffixLen++
+      }
 
       const overwriteEnd = content.length - suffixLen
       const newPrefix = newContent.slice(0, newContent.length - suffixLen)
@@ -110,7 +118,8 @@ export default defineTransformersSetup(() => ({
       // title/subtitle purely prepended, nothing of the original consumed)
       // diffs down to a zero-length range, which MagicString's `overwrite`
       // rejects -- insert instead.
-      if (overwriteEnd === 0) ctx.s.appendLeft(0, newPrefix)
+      if (overwriteEnd === 0)
+        ctx.s.appendLeft(0, newPrefix)
       else ctx.s.overwrite(0, overwriteEnd, newPrefix)
     },
     // Rewrites `<<< @/path[selector] lang` lines into a literal fenced code
@@ -140,7 +149,7 @@ export default defineTransformersSetup(() => ({
       let inFence = false
       let i = 0
       while (i < lines.length) {
-        if (/^\s*(```+|~~~+)/.test(lines[i])) {
+        if (/^\s*(?:`{3,}|~{3,})/.test(lines[i])) {
           inFence = !inFence
           i++
           continue
@@ -160,7 +169,8 @@ export default defineTransformersSetup(() => ({
         let fileText: string
         try {
           fileText = readFileSync(absPath, 'utf-8')
-        } catch {
+        }
+        catch {
           warn(`could not read file, leaving line as-is: ${absPath}`)
           i++
           continue
@@ -169,7 +179,8 @@ export default defineTransformersSetup(() => ({
         let selector = null
         if (parsed.selectorRaw !== null) {
           selector = parseSnippetSelector(parsed.selectorRaw)
-          if (selector === null) warn(`malformed selector "[${parsed.selectorRaw}]"; showing the whole file`)
+          if (selector === null)
+            warn(`malformed selector "[${parsed.selectorRaw}]"; showing the whole file`)
         }
         const { text: slicedCode, startLine, endLine } = resolveSnippetSelector(fileText, selector, warn)
 
@@ -187,7 +198,8 @@ export default defineTransformersSetup(() => ({
           }
           if (isSourceDirectiveLine(trimmed)) {
             const parsedDirective = parseSourceDirective(trimmed)
-            if (parsedDirective) directive = parsedDirective
+            if (parsedDirective)
+              directive = parsedDirective
             else warn(`malformed "[!source ...]" directive: "${trimmed}"`)
             j++
             continue
@@ -203,7 +215,8 @@ export default defineTransformersSetup(() => ({
           const url = directive?.mode === 'url'
             ? directive.url!
             : buildGithubSourceLink(absPath, { startLine, endLine, isWholeFile: selector === null }, configuredBranch)
-          if (url) sourceLink = { url, bottom: directive?.bottom ?? false }
+          if (url)
+            sourceLink = { url, bottom: directive?.bottom ?? false }
         }
 
         const combined = combineWithSourceLink(combineCodeAndAnchors(slicedCode, anchorLines), sourceLink)
@@ -244,7 +257,8 @@ export default defineTransformersSetup(() => ({
 
       if (anchorLines.length > 0) {
         highlights = parseExternalHighlightAnchors(code, anchorLines)
-      } else {
+      }
+      else {
         // Only hand-typed (non-`<<<`-imported) fences can carry an inline
         // `// [!source ...]` marker -- an import's link travels via the
         // sentinel above instead, resolved/overridden back in the `pre`
@@ -262,7 +276,8 @@ export default defineTransformersSetup(() => ({
         highlights = parsed.highlights
       }
 
-      if (highlights.length === 0 && !sourceLink) return undefined
+      if (highlights.length === 0 && !sourceLink)
+        return undefined
       const html = await ctx.renderHighlighted({ code })
       const highlighted = highlights.length > 0 ? injectHighlightSpans(html, highlights) : html
       return wrapCodeBlock(ctx.info, highlighted, sourceLink)

@@ -32,7 +32,8 @@ const SNIPPET_IMPORT_RE = /^<<<\s*([^\s[]+)/
  */
 function scanSnippetImportLine(line: string): { filePath: string, fileEndIndex: number, bracketStart: number, bracketEnd: number } | null {
   const m = SNIPPET_IMPORT_RE.exec(line)
-  if (!m) return null
+  if (!m)
+    return null
   const filePath = m[1]
   const fileEndIndex = m[0].length
   let bracketStart = -1
@@ -41,11 +42,14 @@ function scanSnippetImportLine(line: string): { filePath: string, fileEndIndex: 
     let j = fileEndIndex + 1
     let inQuotes = false
     while (j < line.length) {
-      if (line[j] === '"' && line[j - 1] !== '\\') inQuotes = !inQuotes
-      else if (line[j] === ']' && !inQuotes) break
+      if (line[j] === '"' && line[j - 1] !== '\\')
+        inQuotes = !inQuotes
+      else if (line[j] === ']' && !inQuotes)
+        break
       j++
     }
-    if (j >= line.length) return null // unterminated selector
+    if (j >= line.length)
+      return null // unterminated selector
     bracketStart = fileEndIndex
     bracketEnd = j + 1 // exclusive, past the closing ]
   }
@@ -55,7 +59,8 @@ function scanSnippetImportLine(line: string): { filePath: string, fileEndIndex: 
 /** Parses a `<<< @/path[selector] lang` line; returns null if the line isn't a snippet import. */
 export function parseSnippetImportLine(line: string): ParsedSnippetImportLine | null {
   const scanned = scanSnippetImportLine(line)
-  if (!scanned) return null
+  if (!scanned)
+    return null
   const { filePath, fileEndIndex, bracketStart, bracketEnd } = scanned
   const selectorRaw = bracketStart === -1 ? null : line.slice(bracketStart + 1, bracketEnd - 1)
   const tail = line.slice(bracketStart === -1 ? fileEndIndex : bracketEnd).trim().split(/\s+/)
@@ -74,7 +79,8 @@ export function parseSnippetImportLine(line: string): ParsedSnippetImportLine | 
  */
 export function serializeSnippetSelector(line: string, newSelectorRaw: string): string | null {
   const scanned = scanSnippetImportLine(line)
-  if (!scanned) return null
+  if (!scanned)
+    return null
   const { fileEndIndex, bracketStart, bracketEnd } = scanned
   if (bracketStart === -1) {
     return `${line.slice(0, fileEndIndex)}[${newSelectorRaw}]${line.slice(fileEndIndex)}`
@@ -82,9 +88,9 @@ export function serializeSnippetSelector(line: string, newSelectorRaw: string): 
   return `${line.slice(0, bracketStart)}[${newSelectorRaw}]${line.slice(bracketEnd)}`
 }
 
-export type SnippetSelector =
-  | { kind: 'lineRange', start: number, end: number }
-  | { kind: 'contentRange', startText: string, endText: string }
+export type SnippetSelector
+  = | { kind: 'lineRange', start: number, end: number }
+    | { kind: 'contentRange', startText: string, endText: string }
 
 function unescapeQuoted(s: string): string {
   return s.replace(/\\(.)/g, '$1')
@@ -125,11 +131,12 @@ export interface ResolvedSnippet {
 export function resolveSnippetSelector(
   fileText: string,
   selector: SnippetSelector | null,
-  warn: (message: string) => void = (m) => console.warn(m),
+  warn: (message: string) => void = m => console.warn(m),
 ): ResolvedSnippet {
   const lines = fileText.split(/\r?\n/)
 
-  if (!selector) return { text: fileText, startLine: 1, endLine: lines.length }
+  if (!selector)
+    return { text: fileText, startLine: 1, endLine: lines.length }
 
   if (selector.kind === 'lineRange') {
     const start = selector.start - 1
@@ -174,14 +181,16 @@ export function isWithinCodeRoot(absPath: string, projectRoot: string, codeRoot:
 export const ANCHOR_BLOCK_SENTINEL = '§§§ SLIDEV_ANCHOR_DECLARATIONS §§§'
 
 export function combineCodeAndAnchors(code: string, anchorLines: string[]): string {
-  if (anchorLines.length === 0) return code
+  if (anchorLines.length === 0)
+    return code
   return `${code}\n${ANCHOR_BLOCK_SENTINEL}\n${anchorLines.join('\n')}`
 }
 
 /** Splits a combined snippet back into its real code and anchor-declaration lines. */
 export function splitCodeAndAnchors(combined: string): { code: string, anchorLines: string[] } {
   const idx = combined.indexOf(`\n${ANCHOR_BLOCK_SENTINEL}\n`)
-  if (idx === -1) return { code: combined, anchorLines: [] }
+  if (idx === -1)
+    return { code: combined, anchorLines: [] }
   const code = combined.slice(0, idx)
   const anchorLines = combined.slice(idx + ANCHOR_BLOCK_SENTINEL.length + 2).split('\n').filter(l => l.trim() !== '')
   return { code, anchorLines }
@@ -219,12 +228,15 @@ const SOURCE_DIRECTIVE_RE = /^\[!source(?:\s+([^\]]*))?\]\s*$/
 /** Parses a `[!source ...]` directive line. Returns null if malformed. */
 export function parseSourceDirective(line: string): SourceDirective | null {
   const m = SOURCE_DIRECTIVE_RE.exec(line.trim())
-  if (!m) return null
+  if (!m)
+    return null
   const tokens = (m[1] ?? '').trim().split(/\s+/).filter(Boolean)
-  if (tokens.includes('none')) return { mode: 'none', bottom: false }
+  if (tokens.includes('none'))
+    return { mode: 'none', bottom: false }
   const bottom = tokens.includes('bottom')
   const url = tokens.find(t => t !== 'bottom')
-  if (url) return { mode: 'url', url, bottom }
+  if (url)
+    return { mode: 'url', url, bottom }
   return { mode: 'auto', bottom }
 }
 
@@ -244,19 +256,22 @@ export interface CombinedSourceLink {
 }
 
 export function combineWithSourceLink(payload: string, link: CombinedSourceLink | null): string {
-  if (!link) return payload
+  if (!link)
+    return payload
   return `${payload}\n${SOURCE_LINK_SENTINEL}\n${JSON.stringify(link)}`
 }
 
 /** Splits a source-link-combined payload back into the inner payload and the resolved link (if any). */
 export function splitSourceLink(combined: string): { payload: string, link: CombinedSourceLink | null } {
   const idx = combined.indexOf(`\n${SOURCE_LINK_SENTINEL}\n`)
-  if (idx === -1) return { payload: combined, link: null }
+  if (idx === -1)
+    return { payload: combined, link: null }
   const payload = combined.slice(0, idx)
   const jsonStr = combined.slice(idx + SOURCE_LINK_SENTINEL.length + 2)
   try {
     return { payload, link: JSON.parse(jsonStr) }
-  } catch {
+  }
+  catch {
     return { payload, link: null }
   }
 }

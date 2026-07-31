@@ -16,10 +16,12 @@ const IMPORT_PATH_RE = /^<<<\s*@\/([^\s[\]]*)$/
 /** Determines whether `linePrefix` (the import line's text up to the cursor) sits inside a `<<< @/...` file-path token, and if so which code-root-relative directory to list and what prefix to filter its entries by. */
 export function computeImportPathContext(linePrefix: string): ImportPathContext | null {
   const m = IMPORT_PATH_RE.exec(linePrefix)
-  if (!m) return null
+  if (!m)
+    return null
   const typed = m[1]
   const lastSlash = typed.lastIndexOf('/')
-  if (lastSlash === -1) return { dirRelPath: '', segmentPrefix: typed }
+  if (lastSlash === -1)
+    return { dirRelPath: '', segmentPrefix: typed }
   return { dirRelPath: typed.slice(0, lastSlash), segmentPrefix: typed.slice(lastSlash + 1) }
 }
 

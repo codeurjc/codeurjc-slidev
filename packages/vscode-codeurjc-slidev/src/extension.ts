@@ -4,18 +4,21 @@
 // thin -- the logic it calls into is unit tested; this file's own correctness
 // is covered by the extension-host smoke tests in test-extension/.
 
-import * as vscode from 'vscode'
+import type { ResolveImport } from './importAnalysis'
+import type { ReferenceMention } from './referenceIndex/codeLens'
+import type { ReferenceIndex } from './referenceIndex/indexBuilder'
 import { readFileSync } from 'node:fs'
-import { usesCodeurjcSlidevTheme } from './themeGate'
-import { computeMarkerDecorations } from './markerDecorations'
-import { analyzeImports, type ResolveImport } from './importAnalysis'
-import { buildReferenceIndex, updateReferenceIndexForFile, type ReferenceIndex } from './referenceIndex/indexBuilder'
-import { computeCodeLensesForDocument, type ReferenceMention } from './referenceIndex/codeLens'
-import { readThemeTaggedMarkdownFiles, makeResolveImportPath, findProjectRoot, resolveImportTarget, listCodeRootDirectory } from './referenceIndex/scanner'
-import { makeResolveSourceLink } from './sourceLinkDiagnostics'
-import { computeImportPathContext, filterPathEntries } from './pathCompletion'
-import { computeSelectorForSelection } from './selectorFromSelection'
 import { parseSnippetImportLine, parseSnippetSelector, serializeSnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
+import * as vscode from 'vscode'
+import { analyzeImports } from './importAnalysis'
+import { computeMarkerDecorations } from './markerDecorations'
+import { computeImportPathContext, filterPathEntries } from './pathCompletion'
+import { computeCodeLensesForDocument } from './referenceIndex/codeLens'
+import { buildReferenceIndex, updateReferenceIndexForFile } from './referenceIndex/indexBuilder'
+import { findProjectRoot, listCodeRootDirectory, makeResolveImportPath, readThemeTaggedMarkdownFiles, resolveImportTarget } from './referenceIndex/scanner'
+import { computeSelectorForSelection } from './selectorFromSelection'
+import { makeResolveSourceLink } from './sourceLinkDiagnostics'
+import { usesCodeurjcSlidevTheme } from './themeGate'
 
 const dimDecorationType = vscode.window.createTextEditorDecorationType({ opacity: '0.4' })
 const highlightDecorationType = vscode.window.createTextEditorDecorationType({
@@ -41,7 +44,8 @@ function updateDecorations(editor: vscode.TextEditor): void {
   const { dims, highlights } = computeMarkerDecorations(editor.document.getText())
   editor.setDecorations(dimDecorationType, dims.map(d => toRange(d.line, d.startChar, d.line, d.endChar)))
   editor.setDecorations(highlightDecorationType, highlights.map((h) => {
-    if (h.substringRange) return toRange(h.startLine, h.substringRange.start, h.startLine, h.substringRange.end)
+    if (h.substringRange)
+      return toRange(h.startLine, h.substringRange.start, h.startLine, h.substringRange.end)
     const endLineLength = editor.document.lineAt(h.endLine).text.length
     return toRange(h.startLine, 0, h.endLine, endLineLength)
   }))
@@ -84,21 +88,27 @@ export function activate(context: vscode.ExtensionContext): void {
   for (const document of vscode.workspace.textDocuments) refreshDocument(document)
 
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor((editor) => { if (editor) updateDecorations(editor) }),
-    vscode.workspace.onDidOpenTextDocument((document) => refreshDocument(document)),
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor)
+        updateDecorations(editor)
+    }),
+    vscode.workspace.onDidOpenTextDocument(document => refreshDocument(document)),
     vscode.workspace.onDidChangeTextDocument((event) => {
       const editor = vscode.window.visibleTextEditors.find(e => e.document === event.document)
-      if (editor) updateDecorations(editor)
+      if (editor)
+        updateDecorations(editor)
       refreshDocument(event.document)
     }),
   )
 
   const hoverProvider = vscode.languages.registerHoverProvider('markdown', {
     provideHover(document, position) {
-      if (!isRelevantDocument(document)) return undefined
+      if (!isRelevantDocument(document))
+        return undefined
       const { hovers } = analyzeImports(document.getText(), createFsResolveImport(document.uri.fsPath), resolveSourceLink)
       const hits = hovers.filter(h => h.line === position.line)
-      if (hits.length === 0) return undefined
+      if (hits.length === 0)
+        return undefined
       return new vscode.Hover(hits.map(h => h.contents).join('\n\n'))
     },
   })
@@ -106,7 +116,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const importCodeLensProvider = vscode.languages.registerCodeLensProvider('markdown', {
     provideCodeLenses(document) {
-      if (!isRelevantDocument(document)) return []
+      if (!isRelevantDocument(document))
+        return []
       const { codeLensActions } = analyzeImports(document.getText(), createFsResolveImport(document.uri.fsPath), resolveSourceLink)
       return codeLensActions.flatMap((action) => {
         const range = toRange(action.line, 0, action.line, 0)
@@ -144,10 +155,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const pathCompletionProvider = vscode.languages.registerCompletionItemProvider('markdown', {
     provideCompletionItems(document, position) {
-      if (!isRelevantDocument(document)) return undefined
+      if (!isRelevantDocument(document))
+        return undefined
       const linePrefix = document.lineAt(position.line).text.slice(0, position.character)
       const ctx = computeImportPathContext(linePrefix)
-      if (!ctx) return undefined
+      if (!ctx)
+        return undefined
       const projectRoot = findProjectRoot(document.uri.fsPath)
       const entries = filterPathEntries(listCodeRootDirectory(projectRoot, ctx.dirRelPath), ctx.segmentPrefix)
       const replaceRange = new vscode.Range(position.translate(0, -ctx.segmentPrefix.length), position)
@@ -155,7 +168,8 @@ export function activate(context: vscode.ExtensionContext): void {
         const item = new vscode.CompletionItem(entry.name, entry.isDirectory ? vscode.CompletionItemKind.Folder : vscode.CompletionItemKind.File)
         item.insertText = entry.isDirectory ? `${entry.name}/` : entry.name
         item.range = replaceRange
-        if (entry.isDirectory) item.command = { command: 'editor.action.triggerSuggest', title: '' }
+        if (entry.isDirectory)
+          item.command = { command: 'editor.action.triggerSuggest', title: '' }
         return item
       })
     },
@@ -188,7 +202,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   function slideTextByFile(slideFile: string): string | null {
     const open = vscode.workspace.textDocuments.find(d => d.uri.fsPath === slideFile)
-    if (open) return open.getText()
+    if (open)
+      return open.getText()
     try {
       return readFileSync(slideFile, 'utf-8')
     }
@@ -231,7 +246,8 @@ export function activate(context: vscode.ExtensionContext): void {
       })),
       { placeHolder: 'Multiple slides reference this line -- pick one to open' },
     )
-    if (picked) await openReference(picked.reference)
+    if (picked)
+      await openReference(picked.reference)
   }))
 
   context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
@@ -270,7 +286,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(vscode.commands.registerCommand('codeurjc-slidev.pasteSelectorIntoImport', async () => {
     const editor = vscode.window.activeTextEditor
-    if (!editor) return
+    if (!editor)
+      return
     const line = editor.document.lineAt(editor.selection.active.line)
     if (!parseSnippetImportLine(line.text)) {
       vscode.window.showErrorMessage('Place the cursor on a <<< import line first.')
@@ -290,7 +307,9 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showErrorMessage('Could not update the import line.')
       return
     }
-    await editor.edit((builder) => { builder.replace(line.range, newLineText) })
+    await editor.edit((builder) => {
+      builder.replace(line.range, newLineText)
+    })
   }))
 }
 

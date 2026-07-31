@@ -1,4 +1,5 @@
-import { onMounted, onUnmounted, watchEffect, type Ref } from 'vue'
+import type { Ref } from 'vue'
+import { onMounted, onUnmounted, watchEffect } from 'vue'
 
 export const AUTOFIT_MIN_PT = 9
 export const AUTOFIT_MAX_PT = 26
@@ -14,8 +15,10 @@ export function findFitFontSize(
   overflows: (size: number) => boolean,
   maxIterations = 8,
 ): number {
-  if (!overflows(max)) return max
-  if (overflows(min)) return min
+  if (!overflows(max))
+    return max
+  if (overflows(min))
+    return min
   let lo = min
   let hi = max
   let best = min
@@ -23,7 +26,8 @@ export function findFitFontSize(
     const mid = (lo + hi) / 2
     if (overflows(mid)) {
       hi = mid
-    } else {
+    }
+    else {
       best = mid
       lo = mid
     }
@@ -51,7 +55,8 @@ export function useAutoFitText(
   function overflowsAt(size: number): boolean {
     const o = outer.value
     const i = inner.value
-    if (!o || !i) return false
+    if (!o || !i)
+      return false
     o.style.setProperty('--content-font-size', `${size}pt`)
     // offsetHeight (not getBoundingClientRect) -- Slidev renders each slide
     // at a fixed logical resolution and scales the whole thing via a CSS
@@ -65,13 +70,15 @@ export function useAutoFitText(
   }
 
   function fit() {
-    if (!outer.value || !inner.value) return
+    if (!outer.value || !inner.value)
+      return
     const size = findFitFontSize(AUTOFIT_MIN_PT, AUTOFIT_MAX_PT, overflowsAt)
     outer.value.style.setProperty('--content-font-size', `${size}pt`)
   }
 
   function scheduleFit() {
-    if (rafId !== null) return
+    if (rafId !== null)
+      return
     rafId = requestAnimationFrame(() => {
       rafId = null
       fit()
@@ -123,7 +130,8 @@ export function useAutoFitText(
   onUnmounted(() => {
     observer?.disconnect()
     resizeObserver?.disconnect()
-    if (rafId !== null) cancelAnimationFrame(rafId)
+    if (rafId !== null)
+      cancelAnimationFrame(rafId)
   })
 
   return { fit }

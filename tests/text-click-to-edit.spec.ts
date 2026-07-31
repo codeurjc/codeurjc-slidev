@@ -1,9 +1,11 @@
-import { test, expect, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
 async function getTextareaSelection(page: Page) {
   return page.evaluate(() => {
     const el = document.querySelector<HTMLTextAreaElement>('[data-editor="content"] textarea')
-    if (!el) return null
+    if (!el)
+      return null
     return {
       value: el.value,
       selected: el.value.slice(el.selectionStart ?? 0, el.selectionEnd ?? 0),

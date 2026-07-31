@@ -4,11 +4,11 @@
 // in-memory fixtures -- the real extension supplies an fs-backed
 // implementation.
 
-import { parseSnippetSelector, resolveSnippetSelector, parseSourceDirective } from 'codeurjc-slidev-theme/composables/useSnippetImport'
+import type { ResolveSourceLink } from './sourceLinkDiagnostics'
 import { parseExternalHighlightAnchors } from 'codeurjc-slidev-theme/composables/useCodeHighlights'
+import { parseSnippetSelector, parseSourceDirective, resolveSnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 import { findImportBlocks } from './documentScan'
 import { parseFrontmatterField } from './themeGate'
-import type { ResolveSourceLink } from './sourceLinkDiagnostics'
 
 export interface ResolvedImport {
   targetAbsPath: string
@@ -72,8 +72,11 @@ export function analyzeImports(text: string, resolveImport: ResolveImport, resol
     }
 
     let sliceWarning: string | null = null
-    const slice = resolveSnippetSelector(resolved.fileText, selector, (m) => { sliceWarning = m })
-    if (sliceWarning) diagnostics.push({ line: block.importLine, message: sliceWarning, severity: 'warning' })
+    const slice = resolveSnippetSelector(resolved.fileText, selector, (m) => {
+      sliceWarning = m
+    })
+    if (sliceWarning)
+      diagnostics.push({ line: block.importLine, message: sliceWarning, severity: 'warning' })
 
     hovers.push({
       line: block.importLine,
@@ -126,13 +129,14 @@ export function analyzeImports(text: string, resolveImport: ResolveImport, resol
     })
 
     for (const directive of block.directives) {
-      if (directive.kind === 'source') continue // already handled above
+      if (directive.kind === 'source')
+        continue // already handled above
 
       // Anchor directive: resolve it in isolation (one anchor line per call)
       // so a warning/error can be attributed to exactly this document line.
       const highlights = parseExternalHighlightAnchors(slice.text, [directive.text], {
-        onWarn: (m) => diagnostics.push({ line: directive.line, message: m, severity: 'warning' }),
-        onError: (m) => diagnostics.push({ line: directive.line, message: m, severity: 'error' }),
+        onWarn: m => diagnostics.push({ line: directive.line, message: m, severity: 'warning' }),
+        onError: m => diagnostics.push({ line: directive.line, message: m, severity: 'error' }),
       })
       for (const h of highlights) {
         const absLine = slice.startLine + h.startLine
