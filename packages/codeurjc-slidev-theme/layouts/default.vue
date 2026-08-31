@@ -737,7 +737,7 @@ watch(editor.aspectLocked, (v) => {
    added specificity beyond .content itself, but still wins over the theme's
    bare-element selectors by source order/specificity. */
 .slidev-layout .content :where(p, li, ul, ol) {
-  line-height: 1.2;
+  line-height: 1.4;
 }
 
 /* Spacing between separate list items (as opposed to line-height, which only
