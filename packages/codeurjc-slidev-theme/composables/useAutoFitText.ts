@@ -4,6 +4,12 @@ import { onMounted, onUnmounted, watchEffect } from 'vue'
 export const AUTOFIT_MIN_PT = 9
 export const AUTOFIT_MAX_PT = 26
 
+// The title's own shrink-to-fit-one-line range (see fitTitleFontSize in
+// default.vue) -- a lower floor than content's, since a shrunk title is
+// still meant to read as a title, not shrink as far as body text can.
+export const TITLE_MAX_PT = 36
+export const TITLE_MIN_PT = 22
+
 /**
  * Binary-search the largest font size in [min, max] for which `overflows`
  * returns false. Pure aside from calling the injected `overflows` collaborator,

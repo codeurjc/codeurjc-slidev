@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Rect, Side } from '../composables/useHighlightLayout'
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useAutoFitText } from '../composables/useAutoFitText'
+import { findFitFontSize, TITLE_MAX_PT, TITLE_MIN_PT, useAutoFitText } from '../composables/useAutoFitText'
 import { CONTENT_DEFAULT_WIDTH, useEditor } from '../composables/useEditor'
 import { elbowPath, estimateCalloutSize, placeCallout, pointsToSvgPath } from '../composables/useHighlightLayout'
 import { computeBelowPreset } from '../composables/useImagePosition'
@@ -20,6 +20,34 @@ const contentEl = ref<HTMLElement | null>(null)
 const contentInnerEl = ref<HTMLElement | null>(null)
 
 useAutoFitText(contentEl, contentInnerEl, () => editor.positions.content?.h ?? 400)
+
+// --- Title shrink-to-fit-one-line ---------------------------------------
+// The title (h1:first-child) never wraps to a second line when the slide
+// also has a subtitle (rendered as h1:first-child + h2, see slide title
+// carry-over in useSlideTitleCarryover.ts) -- instead its font-size is
+// shrunk, the same way content shrinks to fit its box (useAutoFitText
+// above), just detecting a line-wrap rather than a height overflow. With
+// no subtitle, wrapping to a second line is left alone (title's box has
+// room to grow), so this only ever kicks in when a subtitle is present.
+function fitTitle() {
+  const title = contentInnerEl.value?.querySelector(':scope > h1:first-child') as HTMLElement | null
+  if (!title)
+    return
+  const hasSubtitle = title.nextElementSibling?.tagName === 'H2'
+  if (!hasSubtitle) {
+    title.style.removeProperty('--title-font-size')
+    return
+  }
+  function wrapsAt(size: number): boolean {
+    title!.style.setProperty('--title-font-size', `${size}pt`)
+    const lineHeightPx = Number.parseFloat(getComputedStyle(title!).lineHeight)
+    if (!Number.isFinite(lineHeightPx) || lineHeightPx <= 0)
+      return false
+    return title!.offsetHeight > lineHeightPx * 1.5
+  }
+  const size = findFitFontSize(TITLE_MIN_PT, TITLE_MAX_PT, wrapsAt)
+  title.style.setProperty('--title-font-size', `${size}pt`)
+}
 
 // Whether this layout has ever had an image explicitly positioned/saved
 // (distinct from the other four elements, which always exist): only trust
@@ -78,32 +106,45 @@ onMounted(() => {
 
   updateTrackedImage()
   nextTick(computeCallouts)
+  nextTick(fitTitle)
   // Callout placement measures real rendered rects (code line widths, in
   // particular), which shift once the presentation's web font finishes
   // loading -- a reflow that a MutationObserver never sees (no DOM change)
   // and that can land well after the first computeCallouts() pass. Without
   // this, callouts measured against the pre-fallback-font layout can get
-  // stuck wherever that first (wrong) measurement placed them.
-  document.fonts?.ready?.then(() => computeCallouts())
+  // stuck wherever that first (wrong) measurement placed them. The title's
+  // own fit is font-metric-sensitive the same way.
+  document.fonts?.ready?.then(() => {
+    computeCallouts()
+    fitTitle()
+  })
   const observer = new MutationObserver(() => {
     updateTrackedImage()
     computeCallouts()
+    fitTitle()
   })
   if (contentInnerEl.value) {
     observer.observe(contentInnerEl.value, { childList: true, subtree: true })
   }
   window.addEventListener('resize', computeCallouts)
+  window.addEventListener('resize', fitTitle)
   // Slidev can mount a slide's layout while it's still 0x0 (e.g. kept alive
   // off-screen ahead of a transition), which computeCallouts bails out of --
   // no DOM mutation or window resize follows once it's later revealed at
   // its real size, so nothing else would ever re-trigger placement. A
-  // ResizeObserver on the root catches exactly that size change.
-  const resizeObserver = new ResizeObserver(computeCallouts)
+  // ResizeObserver on the root catches exactly that size change, and the
+  // title's own width (e.g. dragged narrower in the editor) is just as
+  // dependent on it.
+  const resizeObserver = new ResizeObserver(() => {
+    computeCallouts()
+    fitTitle()
+  })
   resizeObserver.observe(el)
   onUnmounted(() => {
     observer.disconnect()
     resizeObserver.disconnect()
     window.removeEventListener('resize', computeCallouts)
+    window.removeEventListener('resize', fitTitle)
   })
 })
 
@@ -648,7 +689,7 @@ watch(editor.aspectLocked, (v) => {
   overflow-wrap: break-word;
   font-weight: 700;
   color: #cb0017;
-  font-size: 36pt;
+  font-size: var(--title-font-size, 36pt);
   line-height: 1.2;
 }
 
