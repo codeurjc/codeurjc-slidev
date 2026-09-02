@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import logoUrl from '../assets/logo.png'
+import urjcLogoUrl from '../assets/URJC.jpg'
+
 defineProps<{
   date?: string
   subject?: string
@@ -16,7 +19,7 @@ defineProps<{
     </div>
 
     <div class="cover-main">
-      <img class="cover-logo" src="/images/logo.png" alt="Logo">
+      <img class="cover-logo" :src="logoUrl" alt="Logo">
       <div class="cover-text-group" :class="{ 'cover-text-group-tight': lesson }">
         <div v-if="subject" class="cover-subject">
           {{ subject }}
@@ -31,7 +34,7 @@ defineProps<{
     </div>
 
     <div class="cover-bottom-bar">
-      <img class="cover-urjc-logo" src="/images/URJC.jpg" alt="URJC">
+      <img class="cover-urjc-logo" :src="urjcLogoUrl" alt="URJC">
       <div v-if="authors" class="cover-authors">
         {{ authors }}
       </div>

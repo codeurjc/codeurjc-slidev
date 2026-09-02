@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { relative, resolve } from 'node:path'
 import process from 'node:process'
 import { defineConfig } from 'vite'
 import { serializeMarkerOverride } from './composables/useCodeHighlights'
@@ -15,6 +15,27 @@ const VAR_MAP: Record<string, Record<string, string>> = {
 
 const customSideEditorPath = resolve(import.meta.dirname, '_override/SideEditor.vue')
 const useEditorAbsPath = `/@fs${resolve(import.meta.dirname, 'composables/useEditor.ts')}`
+
+/**
+ * Resolves the markdown file a dragged callout's slide came from, as reported
+ * by the client, to an absolute path inside the consuming project.
+ *
+ * Returns `undefined` for anything that isn't a markdown file within the
+ * project root. The client is the theme's own layout rather than untrusted
+ * input, but this middleware writes to disk on an unauthenticated local
+ * request, so it stays constrained to the tree the dev server was pointed at.
+ */
+function resolveSlideSourcePath(root: string, filepath: unknown): string | undefined {
+  if (typeof filepath !== 'string' || !filepath)
+    return undefined
+  const abs = resolve(root, filepath)
+  if (!abs.endsWith('.md'))
+    return undefined
+  const rel = relative(root, abs)
+  if (!rel || rel.startsWith('..'))
+    return undefined
+  return existsSync(abs) ? abs : undefined
+}
 
 const IMAGE_MIME_EXT: Record<string, string> = {
   'image/png': 'png',
@@ -100,17 +121,18 @@ export default defineConfig({
           const layoutPath = existsSync(consumerLayoutPath) ? consumerLayoutPath : packageLayoutPath
           let content = readFileSync(layoutPath, 'utf-8')
 
-          // The package's own layouts import shared code via paths relative
-          // to their location inside this package (e.g. `../composables/...`).
-          // When falling back to the package template, that relative import
-          // no longer resolves once the content is written into the
-          // consumer's own `layouts/` dir (which has no `composables/`
-          // sibling of its own) -- rewrite to the bare package specifier,
-          // which Node/Vite resolve through the consumer's `node_modules`
-          // regardless of where the file physically lives.
+          // The package's own layouts import siblings via paths relative to
+          // their location inside this package (`../composables/...` for
+          // shared code, `../assets/...` for the bundled brand images).
+          // When falling back to the package template, those relative
+          // imports no longer resolve once the content is written into the
+          // consumer's own `layouts/` dir (which has no `composables/` or
+          // `assets/` sibling of its own) -- rewrite to the bare package
+          // specifier, which Node/Vite resolve through the consumer's
+          // `node_modules` regardless of where the file physically lives.
           if (layoutPath === packageLayoutPath) {
             content = content.replace(
-              /from '\.\.\/(composables\/[^']+)'/g,
+              /from '\.\.\/([^']+)'/g,
               `from 'codeurjc-slidev-theme/$1'`,
             )
           }
@@ -256,8 +278,8 @@ export default defineConfig({
     },
     {
       // Persists a dragged code-highlight callout's position back into the
-      // `@x,y` suffix of its marker comment in slides.md. Identified by the
-      // marker's exact original source line (round-tripped via the
+      // `@x,y` suffix of its marker comment. Identified by the marker's
+      // exact original source line (round-tripped via the
       // highlight span's data-source-line attribute) rather than by slide
       // index/line number, since callouts are per-highlight-id, not tied to
       // a shared layout file the way the fixed elements are.
@@ -272,15 +294,27 @@ export default defineConfig({
           const chunks: Buffer[] = []
           for await (const chunk of req) chunks.push(chunk)
           const body = JSON.parse(Buffer.concat(chunks).toString())
-          const { sourceLine, x, y } = body
+          const { sourceLine, filepath, x, y } = body
           if (typeof sourceLine !== 'string' || typeof x !== 'number' || typeof y !== 'number') {
             res.statusCode = 400
             res.end()
             return
           }
-          // `slides.md` is consumer content -- same root-resolution rationale
-          // as `layoutDir` above.
-          const slidesPath = resolve(server.config.root, 'slides.md')
+          // The marker lives in whichever markdown file the dragged callout's
+          // own slide came from -- the deck entry can be any filename (a
+          // course is typically one deck per lecture, `tema1.md`, `tema2.md`,
+          // ...), and a single deck can pull further slides in from other
+          // files via `src:`. The client therefore reports its slide's own
+          // source path (`$route.meta.slide.filepath`) rather than this
+          // middleware assuming `slides.md`, which would splice the `@x,y`
+          // into an unrelated deck that merely happens to sit at the
+          // conventional path.
+          const slidesPath = resolveSlideSourcePath(server.config.root, filepath)
+          if (!slidesPath) {
+            res.statusCode = 400
+            res.end()
+            return
+          }
           const content = readFileSync(slidesPath, 'utf-8')
           const idx = content.indexOf(sourceLine)
           if (idx === -1) {
@@ -353,18 +387,31 @@ export default defineConfig({
       // edit triggers a reparse (which does use the fully-resolved roots) --
       // so on a cold `pnpm dev` start, preparser-driven features like slide
       // title/subtitle carry-over silently never apply to any slide, until
-      // the presenter happens to edit slides.md. Forcing one synthetic
+      // the presenter happens to edit the deck. Forcing one synthetic
       // change event right after the dev server starts listening triggers
       // that same reparse path immediately, so carry-over (and any other
       // preparser extension) is correct from the first load rather than
       // only after a first edit.
+      //
+      // Which file is the deck isn't knowable from here -- Slidev's resolved
+      // `options.entry` is never exposed to a theme's own Vite config, and
+      // the entry is only `slides.md` by convention (`slidev tema2.md` is
+      // just as valid). Nudging every top-level markdown file in the project
+      // root covers whichever one it is: Slidev's own `handleHotUpdate`
+      // looks the changed file up in its `data.watchFiles` map and returns
+      // immediately for anything that isn't part of the running deck, so the
+      // extra events for e.g. a README are no-ops. The entry is always
+      // directly in this root, since Slidev derives `userRoot` (Vite's
+      // `config.root`) as the entry's own directory.
       name: 'slidev-force-initial-reparse-for-preparser-extensions',
       configureServer(server) {
         server.httpServer?.once('listening', () => {
-          const entry = resolve(server.config.root, 'slides.md')
-          if (existsSync(entry)) {
-            setTimeout(() => server.watcher.emit('change', entry), 0)
-          }
+          const candidates = readdirSync(server.config.root, { withFileTypes: true })
+            .filter(e => e.isFile() && e.name.endsWith('.md'))
+            .map(e => resolve(server.config.root, e.name))
+          setTimeout(() => {
+            for (const entry of candidates) server.watcher.emit('change', entry)
+          }, 0)
         })
       },
     },
@@ -379,9 +426,9 @@ export default defineConfig({
       // server's lifetime, then not re-visited by any open page across a
       // later edit, can keep serving a stale cached transform to the next
       // *brand-new* page that requests it -- observed empirically running
-      // slides.md through many edits in one long-lived server (e.g. several
+      // a deck through many edits in one long-lived server (e.g. several
       // Playwright suites swapping a shared fixture file in sequence).
-      // Force-invalidating every slide virtual module on every slides.md
+      // Force-invalidating every slide virtual module on every markdown
       // edit is a blunt but reliable fix: decks here are small, so
       // re-transforming all of them is cheap, and it removes an entire
       // class of "stale content on a route no one currently has open"
@@ -389,7 +436,9 @@ export default defineConfig({
       // around (the cache lives server-side, keyed by module id).
       name: 'slidev-force-invalidate-slide-modules',
       handleHotUpdate({ file, server }) {
-        if (!file.endsWith('slides.md'))
+        // Any markdown file, not just `slides.md`: the deck entry can be
+        // named anything, and `src:`-included files are slide sources too.
+        if (!file.endsWith('.md'))
           return
         for (const mod of server.moduleGraph.idToModuleMap.values()) {
           if (mod.id && /__slidev_\d+\.(?:md|frontmatter)$/.test(mod.id)) {

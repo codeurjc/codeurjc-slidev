@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { Rect, Side } from '../composables/useHighlightLayout'
+import { useSlideContext } from '@slidev/client'
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import logoUrl from '../assets/logo.png'
 import { findFitFontSize, TITLE_MAX_PT, TITLE_MIN_PT, useAutoFitText } from '../composables/useAutoFitText'
 import { CONTENT_DEFAULT_WIDTH, useEditor } from '../composables/useEditor'
 import { elbowPath, estimateCalloutSize, placeCallout, pointsToSvgPath } from '../composables/useHighlightLayout'
@@ -15,6 +17,15 @@ const VAR_MAP: Record<string, Record<string, string>> = {
 }
 
 const editor = useEditor()
+
+// The markdown file *this* slide was parsed from -- not necessarily
+// `slides.md`, since the deck entry can be named anything and a deck can pull
+// slides in from other files via `src:`. Sent along when persisting a dragged
+// callout so the `@x,y` is written back into the right file. (Slidev flattens
+// `source.filepath` onto the slide itself in the client-side bundle.)
+const { $route } = useSlideContext()
+const slideSourcePath = $route?.meta?.slide?.filepath
+
 const rootEl = ref<HTMLElement | null>(null)
 const contentEl = ref<HTMLElement | null>(null)
 const contentInnerEl = ref<HTMLElement | null>(null)
@@ -412,13 +423,13 @@ function startCalloutDrag(e: MouseEvent, item: CalloutItem) {
 
 async function saveCalloutPosition(overrideKey: string, sourceLine: string) {
   const pos = editor.positions[overrideKey]
-  if (!pos || !sourceLine)
+  if (!pos || !sourceLine || !slideSourcePath)
     return
   try {
     await fetch('/api/save-code-highlight-position', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceLine, x: pos.x, y: pos.y }),
+      body: JSON.stringify({ sourceLine, filepath: slideSourcePath, x: pos.x, y: pos.y }),
     })
   }
   catch {
@@ -536,7 +547,7 @@ watch(editor.aspectLocked, (v) => {
       :class="{ 'el-active': editor.editing.value && editor.selected.value === 'logo' }"
       @mousedown.stop="editor.startDrag($event, 'logo')"
     >
-      <img src="/images/logo.png" alt="Logo">
+      <img :src="logoUrl" alt="Logo">
       <div
         v-if="editor.editing.value && editor.selected.value === 'logo'"
         class="resize-handle sw"

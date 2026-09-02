@@ -1,7 +1,7 @@
 {
   "name": "codeurjc-slidev-theme",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Slidev theme: draggable layout editor, code-highlight callouts, code-snippet import, and slide title carry-over for CodeURJC presentations",
   "license": "MIT",
   "keywords": [
@@ -21,6 +21,7 @@
   "files": [
     "!composables/__tests__",
     "_override",
+    "assets",
     "composables",
     "global-top.vue",
     "layouts",

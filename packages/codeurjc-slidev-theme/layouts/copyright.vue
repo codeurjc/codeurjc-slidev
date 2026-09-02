@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useNav } from '@slidev/client'
 import { computed } from 'vue'
+import logoUrl from '../assets/logo.png'
+import urjcLogoUrl from '../assets/URJC.jpg'
 
 const props = defineProps<{
   date?: string
@@ -28,7 +30,7 @@ const year = computed(() => resolvedDate.value?.split('-')[1] ?? resolvedDate.va
     </div>
 
     <div class="cover-main">
-      <img class="cover-logo" src="/images/logo.png" alt="Logo">
+      <img class="cover-logo" :src="logoUrl" alt="Logo">
       <div class="cover-text-group">
         <div class="cover-title">
           <slot />
@@ -47,7 +49,7 @@ const year = computed(() => resolvedDate.value?.split('-')[1] ?? resolvedDate.va
     </div>
 
     <div class="cover-bottom-bar">
-      <img class="cover-urjc-logo" src="/images/URJC.jpg" alt="URJC">
+      <img class="cover-urjc-logo" :src="urjcLogoUrl" alt="URJC">
     </div>
   </div>
 </template>

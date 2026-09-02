@@ -29,6 +29,16 @@ test.describe('vite.config.ts consumer-root path resolution', () => {
       join(consumerRoot, 'slides.md'),
       '---\nlayout: cover\n---\n\n# Consumer slide\n\n```java\npublic void foo() {} // [!mark@10,20] a comment\n```\n',
     )
+    // A second deck in the same project, holding a marker line identical to
+    // the one in `slides.md`. A course is normally one deck per lecture, so
+    // the callout saver must key off the slide's *own* source file rather
+    // than the conventional `slides.md` name -- with identical lines in both,
+    // a middleware that assumed `slides.md` would silently edit the wrong
+    // deck instead of failing.
+    writeFileSync(
+      join(consumerRoot, 'tema2.md'),
+      '---\nlayout: cover\n---\n\n# Second deck\n\n```java\npublic void foo() {} // [!mark@10,20] a comment\n```\n',
+    )
 
     const { createServer } = await import('vite')
     server = await createServer({
@@ -102,7 +112,7 @@ test.describe('vite.config.ts consumer-root path resolution', () => {
     const res = await fetch(`${baseUrl}/api/save-code-highlight-position`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceLine, x: 42, y: 99 }),
+      body: JSON.stringify({ sourceLine, filepath: join(consumerRoot, 'slides.md'), x: 42, y: 99 }),
     })
     expect(res.status).toBe(200)
 
@@ -111,5 +121,38 @@ test.describe('vite.config.ts consumer-root path resolution', () => {
 
     const rootSlidesAfter = readFileSync(join(repoRoot, 'slides.md'), 'utf-8')
     expect(rootSlidesAfter).toBe(rootSlidesBefore)
+  })
+
+  test('save-code-highlight-position writes into the slide\'s own deck, not slides.md', async () => {
+    const sourceLine = 'public void foo() {} // [!mark@10,20] a comment'
+    const slidesBefore = readFileSync(join(consumerRoot, 'slides.md'), 'utf-8')
+
+    const res = await fetch(`${baseUrl}/api/save-code-highlight-position`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceLine, filepath: join(consumerRoot, 'tema2.md'), x: 7, y: 8 }),
+    })
+    expect(res.status).toBe(200)
+
+    expect(readFileSync(join(consumerRoot, 'tema2.md'), 'utf-8')).toContain('[!mark@7,8]')
+    // `slides.md` holds the same marker line, so an assumed-filename
+    // middleware would have rewritten this one instead.
+    expect(readFileSync(join(consumerRoot, 'slides.md'), 'utf-8')).toBe(slidesBefore)
+  })
+
+  test('save-code-highlight-position rejects a filepath outside the project root', async () => {
+    const sourceLine = 'public void foo() {} // [!mark@10,20] a comment'
+    const rootSlidesBefore = readFileSync(join(repoRoot, 'slides.md'), 'utf-8')
+
+    for (const filepath of [join(repoRoot, 'slides.md'), '../slides.md', '', join(consumerRoot, 'notes.txt')]) {
+      const res = await fetch(`${baseUrl}/api/save-code-highlight-position`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceLine, filepath, x: 1, y: 2 }),
+      })
+      expect(res.status, `filepath: ${JSON.stringify(filepath)}`).toBe(400)
+    }
+
+    expect(readFileSync(join(repoRoot, 'slides.md'), 'utf-8')).toBe(rootSlidesBefore)
   })
 })
