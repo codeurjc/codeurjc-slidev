@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { throttledWatch, useEventListener } from '@vueuse/core'
-import { useEditor } from '__USE_EDITOR_PATH__'
+import { geometryContentKey, geometryKeyPrefix, useEditor } from '__USE_EDITOR_PATH__'
 import { computed, ref, watch } from 'vue'
 import { useNav } from '../composables/useNav'
 import { useDynamicSlideInfo } from '../composables/useSlideInfo'
@@ -23,7 +23,34 @@ const dirty = ref(false)
 
 const { info, update } = useDynamicSlideInfo(currentSlideNo)
 
-const visibleElementNames = computed(() => editor.elementNames.value.filter(name => !editor.hidden[name]))
+const FIXED_ELEMENT_LABELS: Record<string, string> = { 'red-bar': 'Red Bar', 'logo': 'Logo', 'title': 'Title', 'content': 'Content', 'image': 'Image' }
+const FIXED_ELEMENT_COLORS: Record<string, string> = { 'red-bar': '#cb0017', 'logo': '#e8792b', 'title': '#2563eb', 'content': '#16a34a', 'image': '#9333ea' }
+
+// The fixed layout elements, plus the current slide's per-slide `geometry`
+// frontmatter entries (registered by layouts/default.vue). A slide with
+// `geometry.content` lists its own "Content (this slide)" instead of the
+// layout-level content element.
+const elementItems = computed(() => {
+  const no = currentSlideNo.value
+  const contentKey = geometryContentKey(no)
+  const hasSlideContent = contentKey in editor.positions
+  const items: { key: string, label: string, color: string }[] = []
+  for (const name of editor.elementNames.value) {
+    if (editor.hidden[name])
+      continue
+    if (name === 'content' && hasSlideContent)
+      items.push({ key: contentKey, label: 'Content (this slide)', color: FIXED_ELEMENT_COLORS.content })
+    else
+      items.push({ key: name, label: FIXED_ELEMENT_LABELS[name] ?? name, color: FIXED_ELEMENT_COLORS[name] ?? '#888' })
+  }
+  const imagePrefix = `${geometryKeyPrefix(no)}image:`
+  const imageKeys = Object.keys(editor.positions)
+    .filter(key => key.startsWith(imagePrefix))
+    .sort((a, b) => Number(a.slice(imagePrefix.length)) - Number(b.slice(imagePrefix.length)))
+  for (const key of imageKeys)
+    items.push({ key, label: `Image ${Number(key.slice(imagePrefix.length)) + 1} (this slide)`, color: FIXED_ELEMENT_COLORS.image })
+  return items
+})
 
 const dimRatio = ref<number | null>(null)
 
@@ -109,17 +136,24 @@ async function save() {
 }
 
 async function onSaveLayout() {
+  // Only the fixed layout elements belong in a layout file. Dynamic entries
+  // (callouts, per-slide `geometry:*` frontmatter rects) are persisted
+  // elsewhere, and must never leak into layout CSS vars or data-* attributes.
+  const layoutKeys = editor.elementNames.value
   // Read hidden/aspect-lock state from data-* attributes on the slide element
   const layoutEl = document.querySelector('.slidev-layout.default')
   const hiddenStr = layoutEl?.getAttribute('data-hidden') || ''
   const hiddenList = hiddenStr ? hiddenStr.split(',') : []
   const hidden = Object.fromEntries(
-    Object.keys(editor.positions).map(k => [k, hiddenList.includes(k)]),
+    layoutKeys.map(k => [k, hiddenList.includes(k)]),
   )
   const lockedStr = layoutEl?.getAttribute('data-aspect-locked') || ''
   const lockedList = lockedStr ? lockedStr.split(',') : []
   const aspectLocked = Object.fromEntries(
-    Object.keys(editor.positions).map(k => [k, lockedList.includes(k)]),
+    layoutKeys.map(k => [k, lockedList.includes(k)]),
+  )
+  const positions = Object.fromEntries(
+    layoutKeys.map(k => [k, editor.positions[k]]),
   )
 
   const currentLayout = info.value?.frontmatter?.layout || 'default'
@@ -131,7 +165,7 @@ async function onSaveLayout() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        positions: { ...editor.positions },
+        positions,
         hidden,
         aspectLocked,
         saveAs: editor.saveAs.value,
@@ -298,24 +332,24 @@ throttledWatch(
         </div>
         <div class="lep-elements">
           <div
-            v-for="name in visibleElementNames"
-            :key="name"
+            v-for="item in elementItems"
+            :key="item.key"
             class="lep-el"
-            :class="{ active: editor.selected.value === name }"
+            :class="{ active: editor.selected.value === item.key }"
             role="button"
             tabindex="0"
-            @click="editor.selected.value = name"
-            @keydown.enter="editor.selected.value = name"
+            @click="editor.selected.value = item.key"
+            @keydown.enter="editor.selected.value = item.key"
           >
-            <span class="lep-dot" :style="{ background: { 'red-bar': '#cb0017', 'logo': '#e8792b', 'title': '#2563eb', 'content': '#16a34a', 'image': '#9333ea' }[name] }" />
-            <span class="lep-el-label">{{ { 'red-bar': 'Red Bar', "logo": 'Logo', "title": 'Title', "content": 'Content', "image": 'Image' }[name] }}</span>
+            <span class="lep-dot" :style="{ background: item.color }" />
+            <span class="lep-el-label">{{ item.label }}</span>
             <button
               type="button"
               class="lep-lock-btn"
-              :title="editor.aspectLocked[name] ? 'Unlock aspect ratio' : 'Lock aspect ratio'"
-              @click.stop="editor.toggleAspectLock(name)"
+              :title="editor.aspectLocked[item.key] ? 'Unlock aspect ratio' : 'Lock aspect ratio'"
+              @click.stop="editor.toggleAspectLock(item.key)"
             >
-              {{ editor.aspectLocked[name] ? '🔒' : '🔓' }}
+              {{ editor.aspectLocked[item.key] ? '🔒' : '🔓' }}
             </button>
           </div>
         </div>

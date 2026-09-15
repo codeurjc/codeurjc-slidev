@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { blue, bold, cyan, dim, green, yellow } from 'ansis'
+import { blue, bold, cyan, dim, green, red, yellow } from 'ansis'
 import minimist from 'minimist'
 import path from 'pathe'
 import prompts from 'prompts'
@@ -32,6 +32,37 @@ async function init() {
   console.log()
 
   let targetDir = argv._[0]
+  let odpPath = typeof argv['from-odp'] === 'string' ? argv['from-odp'] : undefined
+
+  if (!targetDir && odpPath === undefined) {
+    const { mode } = await prompts({
+      type: 'select',
+      name: 'mode',
+      message: 'Start from:',
+      choices: [
+        { title: 'An empty project', value: 'empty' },
+        { title: 'An ODP presentation (LibreOffice Impress)', value: 'odp' },
+      ],
+    })
+    if (mode === 'odp') {
+      const { answer } = await prompts({ type: 'text', name: 'answer', message: 'Path to the .odp file:' })
+      odpPath = answer?.trim() ?? ''
+    }
+  }
+
+  // Validate the ODP before anything is written, so a bad path leaves no half-made project behind.
+  if (odpPath !== undefined) {
+    const absolute = path.resolve(cwd, odpPath)
+    if (!odpPath || !fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) {
+      console.error(red(`  ODP file not found: ${odpPath || '(no path given)'}`))
+      process.exitCode = 1
+      return
+    }
+    odpPath = absolute
+    if (!targetDir)
+      targetDir = slugify(path.basename(odpPath, path.extname(odpPath)))
+  }
+
   if (!targetDir) {
     const { projectName } = await prompts({
       type: 'text',
@@ -82,6 +113,32 @@ async function init() {
 
   const pkg = require(path.join(templateDir, 'package.json'))
   pkg.name = packageName
+
+  if (odpPath) {
+    console.log(dim('  Importing ') + path.basename(odpPath) + dim(' ...'))
+    let odpImport
+    try {
+      odpImport = await import(new URL('./dist/odp-import.mjs', import.meta.url).href)
+    }
+    catch {
+      console.error(red('  The ODP importer bundle is missing (dist/odp-import.mjs). Run `pnpm --filter create-codeurjc-slidev build` first.'))
+      process.exitCode = 1
+      return
+    }
+    const imported = await odpImport.importOdpProject({
+      odpPath,
+      root,
+      codeDir: typeof argv.code === 'string' ? path.resolve(cwd, argv.code) : undefined,
+      codeRepo: typeof argv['code-repo'] === 'string' ? argv['code-repo'] : undefined,
+    })
+    // Click steps produced by the import (callout steps, merged build-ups) are kept as separate PDF pages.
+    pkg.scripts.export = 'slidev export --with-clicks'
+    if (imported.hasComparison)
+      pkg.scripts['dev:compare'] = 'slidev comparison.md --open'
+    for (const line of odpImport.formatReport(imported))
+      console.log(line)
+  }
+
   write('package.json', JSON.stringify(pkg, null, 2))
 
   console.log(green('  Done.\n'))
@@ -171,6 +228,17 @@ async function getValidPackageName(projectName) {
     })
     return inputPackageName
   }
+}
+
+// Default project directory for an imported ODP: its file name without
+// diacritics, lowercased, with runs of anything else collapsed to `-`.
+function slugify(name) {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036F]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'slides'
 }
 
 function copyDir(srcDir, destDir) {

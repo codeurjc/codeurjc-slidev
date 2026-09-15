@@ -1,12 +1,23 @@
 <script setup lang="ts">
 import type { Rect, Side } from '../composables/useHighlightLayout'
+import type { GeometryRect, GeometryTarget } from '../composables/useSlideGeometry'
 import { useSlideContext } from '@slidev/client'
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, unref, watch } from 'vue'
 import logoUrl from '../assets/logo.png'
 import { findFitFontSize, TITLE_MAX_PT, TITLE_MIN_PT, useAutoFitText } from '../composables/useAutoFitText'
 import { CONTENT_DEFAULT_WIDTH, useEditor } from '../composables/useEditor'
 import { elbowPath, estimateCalloutSize, placeCallout, pointsToSvgPath } from '../composables/useHighlightLayout'
 import { computeBelowPreset } from '../composables/useImagePosition'
+import {
+  geometryContentKey,
+  geometryContentVars,
+  geometryImageKey,
+  geometryKeyPrefix,
+  hasGeometryImages,
+  parseSlideGeometry,
+  sameRect,
+  withGeometryRect,
+} from '../composables/useSlideGeometry'
 
 const VAR_MAP: Record<string, Record<string, string>> = {
   'red-bar': { y: '--ed-red-y', x: '--ed-red-x', w: '--ed-red-w', h: '--ed-red-h' },
@@ -23,14 +34,158 @@ const editor = useEditor()
 // slides in from other files via `src:`. Sent along when persisting a dragged
 // callout so the `@x,y` is written back into the right file. (Slidev flattens
 // `source.filepath` onto the slide itself in the client-side bundle.)
-const { $route } = useSlideContext()
+const { $route, $frontmatter, $page, $clicks } = useSlideContext()
 const slideSourcePath = $route?.meta?.slide?.filepath
+
+// --- Per-slide geometry frontmatter ---------------------------------------
+// A slide's own `geometry` frontmatter (see composables/useSlideGeometry.ts)
+// overrides this layout's content-box position for that slide only, and
+// positions its content images by document order -- no layout fork. While the
+// layout editor is open, the live editor entry (keyed per slide number, since
+// the editor state is shared by every mounted slide) takes over so drags
+// render immediately; edits are written back into the slide's frontmatter.
+const slideNo = computed(() => Number(unref($page)) || 0)
+const geometry = computed(() => parseSlideGeometry($frontmatter as Record<string, unknown>))
+const geometryContentEditorKey = computed(() => geometryContentKey(slideNo.value))
+
+function effectiveContentRect(): GeometryRect | null {
+  const declared = geometry.value.content
+  if (!declared)
+    return null
+  return (editor.editing.value && editor.positions[geometryContentEditorKey.value]) || declared
+}
+
+function effectiveImageRect(index: number): GeometryRect | null {
+  const declared = geometry.value.images[index] ?? null
+  if (!declared)
+    return null
+  return (editor.editing.value && editor.positions[geometryImageKey(slideNo.value, index)]) || declared
+}
+
+const rootInlineStyle = computed((): Record<string, string> => {
+  const style: Record<string, string> = editor.editing.value ? { ...editor.rootStyle.value } : {}
+  const content = effectiveContentRect()
+  if (content)
+    Object.assign(style, geometryContentVars(content))
+  return style
+})
+
+// On a slide with `geometry.content`, the content overlay drags that per-slide
+// entry instead of the layout-level `content` element, so there's only ever
+// one content handle and a drag can't accidentally edit the shared layout.
+const contentOverlayKey = computed(() => geometry.value.content ? geometryContentEditorKey.value : 'content')
+
+const geometryImageOverlays = computed(() => geometry.value.images.flatMap((declared, index) => {
+  if (!declared)
+    return []
+  const key = geometryImageKey(slideNo.value, index)
+  const rect = editor.positions[key]
+  return rect ? [{ key, index, rect }] : []
+}))
+
+watch(() => geometry.value.warnings.join('\n'), (joined) => {
+  if (joined)
+    console.warn(`[codeurjc-slidev-theme] slide ${slideNo.value}: ignoring invalid geometry frontmatter\n${joined}`)
+}, { immediate: true })
+
+// Mirrors the declared rects into the editor's per-slide entries. A declared
+// rect is only re-applied when the frontmatter value itself changed (e.g. a
+// hand edit, or our own write coming back through HMR), so an in-progress
+// editor change isn't reverted by an unrelated frontmatter update.
+const lastDeclaredGeometry = new Map<string, string>()
+function syncGeometryEditorKeys() {
+  const g = geometry.value
+  const valid = new Set<string>()
+  const sync = (suffix: string, key: string, declared: GeometryRect, aspectLocked: boolean) => {
+    valid.add(suffix)
+    editor.ensurePosition(key, declared, { aspectLocked })
+    const serialized = JSON.stringify(declared)
+    if (lastDeclaredGeometry.get(key) !== serialized) {
+      lastDeclaredGeometry.set(key, serialized)
+      if (!editor.isInteracting.value)
+        Object.assign(editor.positions[key], declared)
+    }
+  }
+  if (g.content)
+    sync('content', geometryContentEditorKey.value, g.content, false)
+  g.images.forEach((declared, index) => {
+    if (declared)
+      sync(`image:${index}`, geometryImageKey(slideNo.value, index), declared, true)
+  })
+  editor.pruneDynamicKeys(geometryKeyPrefix(slideNo.value), valid)
+}
+watch(geometry, syncGeometryEditorKeys, { immediate: true })
+
+function geometryEditorSnapshot(): string {
+  const g = geometry.value
+  const rects: Record<string, GeometryRect | undefined> = {}
+  if (g.content)
+    rects.content = editor.positions[geometryContentEditorKey.value]
+  g.images.forEach((declared, index) => {
+    if (declared)
+      rects[`image:${index}`] = editor.positions[geometryImageKey(slideNo.value, index)]
+  })
+  return JSON.stringify(rects)
+}
+
+// Persists editor changes to this slide's geometry frontmatter (drag, resize,
+// the side panel's numeric inputs, undo) once they settle -- never mid-drag,
+// never through /api/save-layout. Slidev's frontmatter patch replaces the whole
+// `geometry` key, so only the changed rects are swapped into the authored value.
+let persistTimer: ReturnType<typeof setTimeout> | undefined
+watch(() => (editor.editing.value ? geometryEditorSnapshot() : ''), (snapshot) => {
+  clearTimeout(persistTimer)
+  if (snapshot)
+    persistTimer = setTimeout(persistGeometry, 400)
+})
+onUnmounted(() => clearTimeout(persistTimer))
+
+async function persistGeometry() {
+  if (editor.isInteracting.value) {
+    persistTimer = setTimeout(persistGeometry, 400)
+    return
+  }
+  const g = geometry.value
+  let raw: unknown = ($frontmatter as Record<string, unknown>).geometry
+  let changed = false
+  const consider = (target: GeometryTarget, key: string, declared: GeometryRect) => {
+    const live = editor.positions[key]
+    // Never write a rect the parser would itself reject (e.g. NaN from a
+    // mis-measured gesture would serialize as `null`).
+    const valid = live && [live.x, live.y, live.w, live.h].every(Number.isFinite) && live.x >= 0 && live.y >= 0 && live.w > 0 && live.h > 0
+    if (valid && !sameRect(live, declared)) {
+      raw = withGeometryRect(raw, target, live)
+      changed = true
+    }
+  }
+  if (g.content)
+    consider({ kind: 'content' }, geometryContentEditorKey.value, g.content)
+  g.images.forEach((declared, index) => {
+    if (declared)
+      consider({ kind: 'image', index }, geometryImageKey(slideNo.value, index), declared)
+  })
+  if (!changed || !slideNo.value || !__SLIDEV_HAS_SERVER__)
+    return
+  try {
+    // Slidev's own slide-patch endpoint (the same request its
+    // `useSlideInfo().update()` sends). It writes into whichever markdown file
+    // the slide came from, and a `frontmatter` patch replaces top-level keys.
+    await fetch(`/__slidev/slides/${slideNo.value}.json`, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ frontmatter: { geometry: raw } }),
+    })
+  }
+  catch {
+    // best-effort: a failed save just means the edit stays session-only
+  }
+}
 
 const rootEl = ref<HTMLElement | null>(null)
 const contentEl = ref<HTMLElement | null>(null)
 const contentInnerEl = ref<HTMLElement | null>(null)
 
-useAutoFitText(contentEl, contentInnerEl, () => editor.positions.content?.h ?? 400)
+useAutoFitText(contentEl, contentInnerEl, () => effectiveContentRect()?.h ?? editor.positions.content?.h ?? 400)
 
 // --- Title shrink-to-fit-one-line ---------------------------------------
 // The title (h1:first-child) never wraps to a second line when the slide
@@ -181,6 +336,8 @@ interface CalloutItem {
   // without re-running placement/collision detection.
   highlightRect: Rect
   side: Side
+  /** Click step from the marker's `{N}` suffix; undefined means always visible. */
+  click?: number
 }
 
 const calloutItems = ref<CalloutItem[]>([])
@@ -296,6 +453,29 @@ function deriveSide(rect: Rect, codeRect: Rect): Side {
   return dy > 0 ? 'below' : 'above'
 }
 
+// --- Callout click steps ---------------------------------------------------
+// A highlight with a `{N}` click step (see composables/useCodeHighlights.ts)
+// is hidden -- styling, callout and connector -- until the slide reaches
+// click N. The steps themselves are registered with Slidev's click system by
+// the transformer (hidden `v-click` placeholders), since registrations made
+// after mount don't count; here we only react to the current click. The
+// editor always shows everything so every callout can be dragged.
+function isStepHidden(click: number | undefined): boolean {
+  return click !== undefined && !editor.editing.value && Number(unref($clicks)) < click
+}
+
+watch(
+  [() => unref($clicks), () => editor.editing.value, calloutItems],
+  () => {
+    const container = contentInnerEl.value
+    if (!container)
+      return
+    for (const el of Array.from(container.querySelectorAll('[data-highlight-click]')))
+      el.classList.toggle('step-hidden', isStepHidden(Number(el.getAttribute('data-highlight-click'))))
+  },
+  { flush: 'post', immediate: true },
+)
+
 function computeCallouts() {
   computeBottomSourceLinks()
   const root = rootEl.value
@@ -378,7 +558,11 @@ function computeCallouts() {
     }
     placed.push(rect)
     const path = pointsToSvgPath(elbowPath(highlightRect, rect, side))
-    items.push({ id, comment, rect, path, overrideKey, sourceLine, highlightRect, side })
+    // Stepped callouts are placed exactly like visible ones (and occupy their
+    // slot in `placed`), so revealing a later step never moves earlier callouts.
+    const clickAttr = first.getAttribute('data-highlight-click')
+    const click = clickAttr ? Number(clickAttr) : undefined
+    items.push({ id, comment, rect, path, overrideKey, sourceLine, highlightRect, side, click })
   }
   calloutItems.value = items
   editor.pruneDynamicKeys('callout:', new Set(groups.keys()))
@@ -442,7 +626,57 @@ async function saveCalloutPosition(overrideKey: string, sourceLine: string) {
 // sit at different nesting depths -- see design.md), marks it as the single
 // tracked/draggable image, and derives hidden.image + a live default position
 // (when none was ever explicitly saved for this layout).
+function clearGeometryImage(img: HTMLElement) {
+  img.classList.remove('geometry-image')
+  for (const prop of ['left', 'top', 'width', 'height'])
+    img.style.removeProperty(prop)
+}
+
+// On a slide declaring `geometry.images`, positions the Nth content image by
+// the Nth frontmatter entry (same document-order traversal as the tracked
+// image below) and skips single tracked-image extraction entirely -- images
+// without an entry stay in normal flow. Returns whether it handled the slide.
+function updateGeometryImages(): boolean {
+  const container = contentInnerEl.value
+  if (!container)
+    return true
+  const imgs = Array.from(container.querySelectorAll('img'))
+  if (!hasGeometryImages(geometry.value)) {
+    for (const img of imgs) {
+      if (img.classList.contains('geometry-image'))
+        clearGeometryImage(img)
+    }
+    return false
+  }
+  editor.hidden.image = true
+  imgs.forEach((img, index) => {
+    img.classList.remove('tracked-image')
+    const rect = effectiveImageRect(index)
+    if (!rect) {
+      clearGeometryImage(img)
+      return
+    }
+    img.classList.add('geometry-image')
+    img.style.left = `${rect.x}px`
+    img.style.top = `${rect.y}px`
+    img.style.width = `${rect.w}px`
+    img.style.height = `${rect.h}px`
+  })
+  return true
+}
+
+// Re-apply image positions when the declared geometry changes or, while the
+// editor is open, as its live rects move (inline styles on slot DOM aren't
+// reactive on their own).
+watch(
+  () => JSON.stringify([editor.editing.value, geometry.value.images.map((_, index) => effectiveImageRect(index))]),
+  () => updateTrackedImage(),
+  { flush: 'post' },
+)
+
 function updateTrackedImage() {
+  if (updateGeometryImages())
+    return
   const container = contentInnerEl.value
   if (!container)
     return
@@ -516,7 +750,7 @@ watch(editor.aspectLocked, (v) => {
     :class="{ editing: editor.editing.value }"
     style="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 98px; --ed-content-x: 31px; --ed-content-w: 901px; --ed-content-h: 424px; --ed-image-y: 80px; --ed-image-x: 438px; --ed-image-w: 400px; --ed-image-h: 300px"
     data-styles="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 98px; --ed-content-x: 31px; --ed-content-w: 901px; --ed-content-h: 424px; --ed-image-y: 80px; --ed-image-x: 438px; --ed-image-w: 400px; --ed-image-h: 300px"
-    :style="editor.editing.value ? editor.rootStyle.value : {}"
+    :style="rootInlineStyle"
   >
     <!-- ed:red-bar:start -->
     <div
@@ -566,7 +800,7 @@ watch(editor.aspectLocked, (v) => {
     <div
       ref="contentEl"
       class="content"
-      :class="{ 'el-active': editor.editing.value && editor.selected.value === 'content' }"
+      :class="{ 'el-active': editor.editing.value && editor.selected.value === contentOverlayKey }"
     >
       <div ref="contentInnerEl" class="content-inner">
         <slot />
@@ -576,14 +810,14 @@ watch(editor.aspectLocked, (v) => {
     <div
       v-if="editor.editing.value && !editor.hidden.content"
       class="content-overlay"
-      :class="{ 'el-active': editor.selected.value === 'content' }"
-      @mousedown.stop="editor.startDrag($event, 'content')"
+      :class="{ 'el-active': editor.selected.value === contentOverlayKey }"
+      @mousedown.stop="editor.startDrag($event, contentOverlayKey)"
     >
-      <span class="el-tag">Content</span>
+      <span class="el-tag">{{ geometry.content ? 'Content (this slide)' : 'Content' }}</span>
       <div
-        v-if="editor.selected.value === 'content'"
+        v-if="editor.selected.value === contentOverlayKey"
         class="resize-handle se"
-        @mousedown.stop="editor.startResize($event, 'content')"
+        @mousedown.stop="editor.startResize($event, contentOverlayKey)"
       />
       <div
         v-if="editor.selected.value === 'content'"
@@ -638,11 +872,30 @@ watch(editor.aspectLocked, (v) => {
       </div>
     </div>
 
+    <template v-if="editor.editing.value">
+      <div
+        v-for="item in geometryImageOverlays"
+        :key="item.key"
+        class="image-overlay geometry-image-overlay"
+        :style="{ top: `${item.rect.y}px`, left: `${item.rect.x}px`, width: `${item.rect.w}px`, height: `${item.rect.h}px` }"
+        :class="{ 'el-active': editor.selected.value === item.key }"
+        @mousedown.stop="editor.startDrag($event, item.key)"
+      >
+        <span class="el-tag">Image {{ item.index + 1 }} (this slide)</span>
+        <div
+          v-if="editor.selected.value === item.key"
+          class="resize-handle se"
+          @mousedown.stop="editor.startResize($event, item.key)"
+        />
+      </div>
+    </template>
+
     <svg class="code-callout-svg" xmlns="http://www.w3.org/2000/svg">
       <path
         v-for="item in calloutItems"
         :key="`path-${item.id}`"
         class="code-callout-connector"
+        :class="{ 'step-hidden': isStepHidden(item.click) }"
         :d="item.path"
       />
     </svg>
@@ -651,7 +904,7 @@ watch(editor.aspectLocked, (v) => {
       :key="item.id"
       :ref="(el) => setCalloutRef(item.id, el as Element | null)"
       class="code-callout"
-      :class="{ 'el-active': editor.editing.value && editor.selected.value === item.overrideKey }"
+      :class="{ 'el-active': editor.editing.value && editor.selected.value === item.overrideKey, 'step-hidden': isStepHidden(item.click) }"
       :style="{ left: `${item.rect.x}px`, top: `${item.rect.y}px` }"
       @mousedown.stop="startCalloutDrag($event, item)"
     >
@@ -733,6 +986,20 @@ watch(editor.aspectLocked, (v) => {
   left: var(--ed-image-x, 438px);
   width: var(--ed-image-w, 400px);
   height: var(--ed-image-h, 300px);
+  object-fit: contain;
+  z-index: 40;
+}
+
+/* Images positioned by the slide's own `geometry.images` frontmatter (see
+   updateGeometryImages): same out-of-flow treatment as the tracked image, but
+   each box comes from inline left/top/width/height set per image rather than
+   from the single layout-level --ed-image-* vars. object-fit: contain keeps
+   the image's aspect ratio, centered inside its declared box. */
+.content-inner .geometry-image {
+  display: block;
+  position: absolute;
+  max-width: none;
+  max-height: none;
   object-fit: contain;
   z-index: 40;
 }
@@ -949,6 +1216,20 @@ watch(editor.aspectLocked, (v) => {
 .content-inner :where(.code-hl-mark-end) {
   border-radius: 0 3px 3px 0;
   border-left: none;
+}
+
+/* A highlight whose `{N}` click step hasn't been reached yet: no highlight
+   styling, no callout, no connector. visibility (not display) keeps every
+   callout measurable and in its placed slot, so revealing a step never moves
+   the callouts already on screen. */
+.content-inner .code-hl-mark.step-hidden {
+  background: transparent;
+  border-color: transparent;
+}
+
+.code-callout.step-hidden,
+.code-callout-connector.step-hidden {
+  visibility: hidden;
 }
 
 .code-callout-svg {

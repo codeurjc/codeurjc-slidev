@@ -1,0 +1,121 @@
+import { describe, expect, it } from 'vitest'
+import {
+  geometryContentKey,
+  geometryContentVars,
+  geometryImageKey,
+  geometryKeyPrefix,
+  hasGeometryImages,
+  isGeometryKey,
+  parseSlideGeometry,
+  serializeSlideGeometry,
+  withGeometryRect,
+} from '../useSlideGeometry'
+
+describe('parseSlideGeometry', () => {
+  it('returns an empty geometry when the frontmatter has none', () => {
+    expect(parseSlideGeometry({ layout: 'default' })).toEqual({ content: null, images: [], warnings: [] })
+    expect(parseSlideGeometry(undefined)).toEqual({ content: null, images: [], warnings: [] })
+  })
+
+  it('reads content only', () => {
+    const g = parseSlideGeometry({ geometry: { content: { x: 31, y: 98, w: 560, h: 424 } } })
+    expect(g.content).toEqual({ x: 31, y: 98, w: 560, h: 424 })
+    expect(g.images).toEqual([])
+    expect(g.warnings).toEqual([])
+    expect(hasGeometryImages(g)).toBe(false)
+  })
+
+  it('reads images only, in order', () => {
+    const g = parseSlideGeometry({ geometry: { images: [{ x: 1, y: 2, w: 3, h: 4 }, { x: 5, y: 6, w: 7, h: 8 }] } })
+    expect(g.content).toBeNull()
+    expect(g.images).toEqual([{ x: 1, y: 2, w: 3, h: 4 }, { x: 5, y: 6, w: 7, h: 8 }])
+    expect(hasGeometryImages(g)).toBe(true)
+  })
+
+  it('reads both content and images', () => {
+    const g = parseSlideGeometry({ geometry: { content: { x: 0, y: 0, w: 10, h: 10 }, images: [{ x: 1, y: 1, w: 1, h: 1 }] } })
+    expect(g.content).toEqual({ x: 0, y: 0, w: 10, h: 10 })
+    expect(g.images).toHaveLength(1)
+  })
+
+  it('drops content with a missing field and names it in the warning', () => {
+    const g = parseSlideGeometry({ geometry: { content: { x: 1, y: 2, w: 3 } } })
+    expect(g.content).toBeNull()
+    expect(g.warnings).toEqual(['geometry.content.h must be a number'])
+  })
+
+  it('rejects non-numeric, negative and non-positive values', () => {
+    expect(parseSlideGeometry({ geometry: { content: { x: '1', y: 2, w: 3, h: 4 } } }).warnings).toEqual(['geometry.content.x must be a number'])
+    expect(parseSlideGeometry({ geometry: { content: { x: -1, y: 2, w: 3, h: 4 } } }).warnings).toEqual(['geometry.content.x must not be negative'])
+    expect(parseSlideGeometry({ geometry: { content: { x: 1, y: 2, w: 0, h: 4 } } }).warnings).toEqual(['geometry.content.w must be greater than 0'])
+    expect(parseSlideGeometry({ geometry: { content: { x: 1, y: 2, w: 3, h: -4 } } }).warnings).toEqual(['geometry.content.h must be greater than 0'])
+  })
+
+  it('keeps an invalid image entry as a null placeholder so later entries keep their index', () => {
+    const g = parseSlideGeometry({ geometry: { images: [{ x: 1 }, { x: 5, y: 6, w: 7, h: 8 }] } })
+    expect(g.images).toEqual([null, { x: 5, y: 6, w: 7, h: 8 }])
+    expect(g.warnings).toEqual(['geometry.images[0].y must be a number'])
+    expect(hasGeometryImages(g)).toBe(true)
+  })
+
+  it('warns when images is not a list', () => {
+    const g = parseSlideGeometry({ geometry: { images: { x: 1, y: 1, w: 1, h: 1 } } })
+    expect(g.images).toEqual([])
+    expect(g.warnings).toEqual(['geometry.images must be a list'])
+  })
+
+  it('warns when geometry itself is not an object', () => {
+    expect(parseSlideGeometry({ geometry: 'wide' }).warnings).toEqual(['geometry must be an object with optional content and images'])
+  })
+
+  it('ignores extra unknown keys', () => {
+    const g = parseSlideGeometry({ geometry: { content: { x: 1, y: 2, w: 3, h: 4, z: 9 }, title: { x: 0 } } })
+    expect(g.content).toEqual({ x: 1, y: 2, w: 3, h: 4 })
+    expect(g.warnings).toEqual([])
+  })
+})
+
+describe('serializeSlideGeometry', () => {
+  it('rounds to whole pixels and omits empty parts', () => {
+    expect(serializeSlideGeometry({ content: { x: 1.4, y: 2.6, w: 3, h: 4 } })).toEqual({ content: { x: 1, y: 3, w: 3, h: 4 } })
+    expect(serializeSlideGeometry({ images: [{ x: 0, y: 0, w: 10.5, h: 10 }] })).toEqual({ images: [{ x: 0, y: 0, w: 11, h: 10 }] })
+    expect(serializeSlideGeometry({ content: null, images: [] })).toBeUndefined()
+  })
+})
+
+describe('withGeometryRect', () => {
+  it('replaces only the targeted image, keeping other entries as authored', () => {
+    const raw = { content: { x: 1, y: 1, w: 1, h: 1 }, images: [{ x: 'bad' }, { x: 5, y: 6, w: 7, h: 8 }] }
+    const next = withGeometryRect(raw, { kind: 'image', index: 1 }, { x: 55, y: 6, w: 7, h: 8 })
+    expect(next).toEqual({ content: { x: 1, y: 1, w: 1, h: 1 }, images: [{ x: 'bad' }, { x: 55, y: 6, w: 7, h: 8 }] })
+    // the input is not mutated
+    expect(raw.images[1]).toEqual({ x: 5, y: 6, w: 7, h: 8 })
+  })
+
+  it('replaces the content rect', () => {
+    expect(withGeometryRect({ images: [] }, { kind: 'content' }, { x: 2.2, y: 3, w: 4, h: 5 })).toEqual({ images: [], content: { x: 2, y: 3, w: 4, h: 5 } })
+  })
+
+  it('starts from an empty object when there is no authored geometry', () => {
+    expect(withGeometryRect(undefined, { kind: 'image', index: 0 }, { x: 1, y: 2, w: 3, h: 4 })).toEqual({ images: [{ x: 1, y: 2, w: 3, h: 4 }] })
+  })
+})
+
+describe('editor keys and CSS vars', () => {
+  it('scopes keys by slide number without prefix collisions', () => {
+    expect(geometryContentKey(1)).toBe('geometry:1:content')
+    expect(geometryImageKey(10, 2)).toBe('geometry:10:image:2')
+    expect(geometryImageKey(10, 2).startsWith(geometryKeyPrefix(1))).toBe(false)
+    expect(isGeometryKey('geometry:3:content')).toBe(true)
+    expect(isGeometryKey('callout:0')).toBe(false)
+  })
+
+  it('maps a content rect to --ed-content-* variables', () => {
+    expect(geometryContentVars({ x: 31, y: 98, w: 560, h: 424 })).toEqual({
+      '--ed-content-x': '31px',
+      '--ed-content-y': '98px',
+      '--ed-content-w': '560px',
+      '--ed-content-h': '424px',
+    })
+  })
+})

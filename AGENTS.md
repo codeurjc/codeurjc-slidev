@@ -20,6 +20,7 @@ Includes a custom layout editor that lets you drag/resize slide elements (red ba
 - `composables/useHighlightLayout.ts` — pure geometry for callout auto-placement and elbow connector routing
 - `composables/useSnippetImport.ts` — `<<< @/path[selector] lang` snippet-import parsing, selector resolution (line-range / content-anchor-range, now also reporting the resolved 1-based line numbers) against a file's text, the code-root convention check, and `[!source ...]` directive-line parsing (see "Code source links" below)
 - `composables/useSourceLink.ts` — GitHub `origin`-remote detection (walking up to the nearest `.git` from the imported file, resolving symlinks first), default-branch resolution, and GitHub source-URL assembly; git access is injected so it's unit-testable without a real repo
+- `composables/useSlideGeometry.ts` — per-slide `geometry` frontmatter parsing/validation (content box + ordered image list), rect replacement for write-back, and the per-slide editor keys (see "Slide geometry" below)
 - `composables/useSlideTitleCarryover.ts` — leading-heading parsing, the per-level (title/subtitle) carry-chain resolver, and heading injection for slide title/subtitle carry-over (see "Slide title carry-over" below)
 - `setup/transformers.ts` — registers a `pre` markdown-transformer that resolves `<<<` snippet imports (with slicing) into literal fenced code blocks before Slidev's own `<<<` handling ever sees them, plus the `codeblocks` transformer that renders highlights (from inline markers or external anchors) and source-link icons as callouts/title decorations
 - `setup/preparser.ts` — registers a `transformSlide` preparser extension that injects carried title/subtitle headings into a slide's content and syncs the result into Slidev's own parsed `slide.title`
@@ -29,6 +30,31 @@ Includes a custom layout editor that lets you drag/resize slide elements (red ba
 
 Slidev auto-loads a theme package's `vite.config.ts`, `layouts/`, `setup/`, and `components/` by globbing every root in `[...theme/addon roots, userRoot]` — a consumer needs zero local Vite config for any of this to work.
 
+## Slide geometry
+
+A `default`-layout slide can position its own content box and any number of content images through frontmatter, without forking the layout. The paste presets' per-slide layout fork is unchanged. Parsing and validation live in `composables/useSlideGeometry.ts`; rendering and editor wiring live in `layouts/default.vue`.
+
+```yaml
+---
+geometry:
+  content: {x: 31, y: 98, w: 560, h: 424}
+  images:
+    - {x: 620, y: 110, w: 320, h: 180}
+    - {x: 620, y: 310, w: 320, h: 180}
+---
+```
+
+- **Coordinates** are slide-canvas pixels, the same space as the layout editor's position readouts and the `--ed-*` layout variables. `.content`/`.content-inner` are unpositioned, so everything resolves against the layout root with no offset.
+- **`content`** overrides that slide's `--ed-content-*` only; other slides keep the layout's saved position. Content autofit measures against the overridden box.
+- **`images[N]`** positions the Nth `<img>` in the slide's content (document order), scaled to fit without distortion (`object-fit: contain`).
+  - Images without an entry stay in normal flow; extra entries are ignored.
+  - An invalid entry (console warning) leaves its image in flow without shifting later entries.
+  - A slide declaring `geometry.images` skips the layout's single tracked-image extraction (last `<img>` → layout-level `image` element).
+- **Editor.** In the Layout tab, frontmatter-positioned elements appear as "Content (this slide)" and "Image N (this slide)".
+  - Their editor keys are `geometry:<slideNo>:content` and `geometry:<slideNo>:image:<n>`, scoped by slide number because the editor state is shared by every mounted slide. Images default to aspect-locked.
+  - Drags, resizes, numeric inputs and undo are written back to that slide's frontmatter once they settle, never mid-drag. The write goes through Slidev's slide `update({ frontmatter })`, into whichever markdown file the slide came from.
+  - They never reach a layout file: "Save" / "Save as new layout" (and the save-layout middleware) only persist the five fixed layout elements.
+
 ## Code-highlight callouts
 
 Mark a line, line range, or substring inside a fenced code block, optionally with a comment that renders as a draggable callout box connected to the highlight by an elbow connector. Marks are written as a trailing comment on the target source line and are stripped from the rendered code (never shown to the audience). Parsing/rendering lives in `composables/useCodeHighlights.ts`; placement/routing lives in `composables/useHighlightLayout.ts`.
@@ -36,7 +62,7 @@ Mark a line, line range, or substring inside a fenced code block, optionally wit
 ### Marker grammar
 
 ```
-// [!mark[:start|:end][(<start>-<end>)][@<x>,<y>]] <comment>
+// [!mark[:start|:end][(<start>-<end>)][{<step>}][@<x>,<y>]] <comment>
 ```
 
 - No id: presenters never name or reference a highlight, so one isn't part of the syntax — ids are generated internally (by encounter order within the code block) purely for DOM grouping and position bookkeeping.
@@ -50,6 +76,7 @@ Mark a line, line range, or substring inside a fenced code block, optionally wit
 | Whole line | `// [!mark] comment` | Highlights the entire line the marker is on. |
 | Multi-line range | `// [!mark:start] comment` ... `// [!mark:end]` | Highlights every line from `:start` through `:end` inclusive, as one highlight/callout. The comment can go on either marker; if both have one, `:start`'s wins. Pairing is nearest-unclosed-start-first, like matching brackets, so ranges can nest. |
 | Substring | `// [!mark(<start>-<end>)] comment` | Highlights only the character range `[<start>, <end>)` of that line (0-based, end-exclusive), not the whole line — count characters in the source line itself (including leading whitespace), not the rendered/Shiki-wrapped HTML. |
+| Click step | append `{<step>}` after the role/substring range and before any `@x,y`, e.g. `[!mark{2}]`, `[!mark:start{3}]`, `[!mark(2-16){2}@120,40]` | The highlight, its callout and its connector stay hidden until the slide reaches click `<step>` (≥ 1), then stay visible. Several highlights can share a step, so they appear together. On a `:start`/`:end` range the `:start` marker's step wins. Unstepped highlights are always visible. Malformed steps (`{0}`, `{}`, `{x}`) make the marker unrecognized. |
 | Position override | append `@<x>,<y>` right before the closing `]`, e.g. `[!mark@120,40]` | Pins the callout's position instead of auto-placing it. Written automatically when you drag a callout in the editor (see below) — you normally don't type this by hand. |
 
 ### Example
@@ -67,6 +94,12 @@ public GestorNotas(DBAlumno alumnos) { // [!mark] Injects the DB dependency
 - When a side is already occupied by another callout on the same code block, a new callout shelf-stacks along that side (closest open slot to its own highlight) instead of jumping to a worse side.
 - In editor mode (Layout tab), drag a callout to override its position; the dragged position is written back into the marker as `@x,y` (e.g. `[!mark@120,40]`) via the `/api/save-code-highlight-position` endpoint, so it persists across reloads and survives further edits to the code above it.
 - Multiple highlights per code block are supported; callouts avoid overlapping the code block, each other, and (best-effort, via a bounds-clamped fallback) the edges of the slide itself.
+- **Click steps** (`{<step>}`):
+  - Placement runs over *all* callouts, stepped or not, and hidden steps only get `visibility: hidden`, so revealing a step never moves a callout that's already visible.
+  - The steps count toward the slide's clicks: `setup/transformers.ts` emits one zero-size `v-click` placeholder per distinct step, because Slidev ignores click registrations made after mount. `layouts/default.vue` then compares each highlight's step with the slide's current click (`$clicks`).
+  - In editor mode every callout is visible, and dragging a stepped callout keeps its `{<step>}` (the `@x,y` goes after it).
+  - `slidev export --with-clicks` keeps each step as its own page.
+  - Slidev's native `{1|3}` fence line ranges share the same click counter; how the two interleave is up to the author's numbering.
 
 ## Code snippet import
 
@@ -97,6 +130,7 @@ Since the imported file can't carry `// [!mark]` comments, highlights are declar
 | Content range | `[!mark:"a".."b"] comment` | Highlights from the line containing `a` through the line containing `b`, inclusive. |
 | Content + offset range | `[!mark:"a"+N] comment` | Highlights the matched line through `N` lines after it. |
 | Occurrence selector | append `#N` or `#*` to a content anchor | `#N` picks the Nth match (1-based); `#*` highlights every match, each with its own callout. |
+| Click step | append `{<step>}` after the anchor target (including any substring range, `+N` offset, `..` range, or `#N`/`#*`) and before any `@x,y`, e.g. `[!mark:3{2}]`, `[!mark:"text"#2{3}]` | Same reveal behavior as the inline `{<step>}` suffix. With `#*`, every match shares the step. |
 | Position override | append `@<x>,<y>` right before the closing `]` | Same convention as inline markers — written automatically when dragging a callout. |
 
 Degradation is intentional and non-fatal: an anchor whose text isn't found is skipped (console warning); an ambiguous anchor with no occurrence selector highlights the first match (console warning); an explicit `#N` past the match count is an authoring error, reported rather than silently falling back.
@@ -183,6 +217,22 @@ Slide 3: still carries "Ejercicios", sets its own subtitle.
 Slide 4: empty title — no title here, and none on slides after until a new one is set.
 ```
 
+## ODP import
+
+`create-codeurjc-slidev --from-odp <file.odp> [--code <dir>] [--code-repo <github-url>]` scaffolds one project per LibreOffice Impress deck, converting it on a best-effort basis. The importer is TypeScript in `packages/create-codeurjc-slidev/src/odp/`, bundled by `build.mjs` (esbuild, run on `prepack`) into `dist/odp-import.mjs`. The bundle inlines the theme composables it reuses; `index.mjs` only `import()`s it for `--from-odp`. Pipeline, one pure module per stage:
+
+- `zip.ts`/`xml.ts`/`styles.ts`/`parse.ts` — ODF archive → plain `OdpDeck` model (`model.ts`): shapes with geometry, paragraphs with list depth/list-header flags, runs with effective bold/italic/monospace resolved through style chains, images, tables, connector endpoints, master body regions, hidden flags.
+- `classify.ts` — roles per shape: cover/copyright slides; title (placeholder, else a short text in the top 20% band, for PPTX-imported decks); body + in-content heading (a list-header, a lone bold first bullet *with sub-items* or as the body's only item — not one followed by sibling bullets, so agenda slides that bold their current section keep their bullets — or a leading bold paragraph before a list); code (monospace ratio, or bordered `$ ` prompt boxes); filename/project labels; link boxes; annotation rectangles; connectors; decorations. Thresholds live in `constants.ts`.
+- `headings.ts` — writes the fewest `#`/`##` (bare resets, `resetTitle: true`) by simulating the theme's own `advanceCarryState` over all slides *including hidden ones* — Slidev runs the carry-over preparser before dropping hidden slides. A two-line title is `#`/`##`, and its in-content heading becomes `###`; otherwise the in-content heading is `##`.
+- `markdown.ts`/`geometry.ts` — inline markdown (whitespace moved outside markers), nested lists, tables; ODP cm → canvas px by mapping the master's body region onto the theme's default content box (per-axis scale, clamped), emitted as `geometry` frontmatter.
+- `code.ts` — code folder lookup/copy, whitespace-insensitive file index, exact (contiguous) / near (≥ 50% ordered LCS) / none matching with project-label tie-breaking, `<<<` import lines via the shared `computeSelectorForSelection` (moved into `useSnippetImport.ts`), GitHub base URL from `--code-repo` or the folder's git origin (skipped when git ignores the folder, as with `odp/` in this repo). Imports get explicit `[!source]` directives, since the copied `code/` has no `.git`.
+- `annotations.ts` — highlight rectangles → line/range/substring marks over the non-blank lines whose vertical centers they contain (line height from the frame's own height when LibreOffice grew it to fit, else the font size — authors pad boxes unevenly, so edge alignment rejected most real boxes); callouts paired via connector endpoints or short labels near the box's top; a labeled frame around the whole block becomes a whole-block range, an unlabeled one is ignored; `@x,y` from the callout box. Rendered as anchor lines (imports) or inline markers (fences, one marker per line, narrower marks first); anything inexpressible is a loss.
+- `draft.ts`/`buildups.ts` — per-slide drafts; runs of slides where each adds only convertible things (code callouts, trailing bullets, images) merge into one slide with click steps (`{N}`, `<v-click at>`, `<img v-click>`), otherwise stay separate with a warning.
+- `office.ts`/`svg.ts`/`comparison.ts` — LibreOffice ≥ 7.4 detection and SVG export (isolated profile), split per slide (by preserved `ooo:name` = ODP `draw:name`), and `comparison.md`: for each lossy slide an `image-right` info slide (never `default` layout, so carry-over is untouched) + `src: ./slides.md#<file index>`. The info slide shows the Slidev slide number (hidden slides uncounted); the `src:` index counts hidden slides.
+- `convert.ts` orchestrates; `index.ts` writes the project and formats the console report.
+
+Carry-over only runs through the Slidev **CLI** (`slidev`, `slidev comparison.md`): a programmatic `createServer`/`parser.load` never applies the theme's preparser, so check generated decks through the CLI.
+
 ## VSCode editor support
 
 `packages/vscode-codeurjc-slidev/` is a VSCode extension that previews this theme's grammar directly in the editor, without running the Slidev dev server. It reuses the theme package's composables verbatim (`workspace:*` dependency, deep imports like `codeurjc-slidev-theme/composables/useCodeHighlights`) rather than reimplementing the grammar — activation is gated on a document's frontmatter declaring `theme: codeurjc-slidev-theme` (`src/themeGate.ts`), so it stays inert for unrelated markdown.
@@ -234,7 +284,12 @@ Getting the theme package to typecheck cleanly against `@slidev/client`'s raw (u
 ## Tests
 
 - **Unit tests** (`vitest`): `pnpm test` (delegates to `pnpm --filter codeurjc-slidev-theme --filter vscode-codeurjc-slidev test`) — runs `packages/codeurjc-slidev-theme/composables/__tests__/*.spec.ts` in jsdom, and `packages/vscode-codeurjc-slidev/src/**/__tests__/*.spec.ts` in plain Node (no `vscode` module dependency at this layer — the extension's decoration/hover/CodeLens *logic* returns plain data shapes, converted to real `vscode.Range`/`Hover`/etc. only in the thin `src/extension.ts` adapter)
-- **E2e tests** (`playwright`): `pnpm test:e2e` — runs `tests/*.spec.ts` against a Chromium browser
+- **ODP importer tests** (`vitest`, part of `pnpm test`): `packages/create-codeurjc-slidev/src/odp/__tests__/`.
+  - Every rule is covered by small synthetic ODPs built on the fly (`odpFixture.ts`), plus a CLI run against the esbuild bundle (`cli.spec.ts`).
+  - `corpus.spec.ts` also converts the 11 real CodeURJC course decks, which are **never committed**. The decks and their code folders are provided upon request to the author. Put them in the repo's gitignored `odp/` (or point `CODEURJC_ODP_FIXTURES` elsewhere); each missing deck's tests skip with a console warning, so CI stays green.
+  - Before publishing the CLI, run the corpus tests locally, then smoke-build one generated project per deck family: `node packages/create-codeurjc-slidev/index.mjs <dir> --from-odp odp/<deck>.odp` for Tema 1.1 (placeholder frames), GitHub Actions (`codeurjc_final_` master) and Tema 1.2 (PPTX-imported). Symlink the repo's `node_modules` into `<dir>` and run `slidev build` there, so the local theme is used rather than the published one.
+  - Tests inject LibreOffice's runner, except one comparison-deck integration test that uses the real `soffice` and skips with a warning when LibreOffice ≥ 7.4 isn't installed.
+- **E2e tests** (`playwright`): `pnpm test:e2e` — runs `tests/*.spec.ts` against a Chromium browser. `tests/callout-click-steps.spec.ts` also runs a real `slidev export --with-clicks`, which loads Chromium through the root `playwright-chromium` devDependency. That dependency is pinned to the same version as `@playwright/test`, so both use the same downloaded browser; bump them together. Both packages declare a `playwright` bin and pnpm links `playwright-chromium`'s, which has no `test` command. That's why `test:e2e` calls the runner by path (`node ./node_modules/@playwright/test/cli.js test`). Run a subset with `pnpm test:e2e <file> --project <name>`, not `npx playwright test`. `npx playwright install` still works.
 - **VSCode extension-host smoke tests** (`@vscode/test-electron` + Mocha): `pnpm test:extension` — downloads/launches a real VSCode build against the fixture workspace at `packages/vscode-codeurjc-slidev/test-extension/fixture/`, asserting the extension activates, registers its command, and that hovers/CodeLens actually render end-to-end. Needs a display: on a headless machine (including this repo's own sandboxed dev environment) run it under `xvfb-run -a pnpm test:extension` — plain `pnpm test:extension` fails with a Chromium "unresponsive window" error with no display server available. This is a deliberately thin smoke layer (see `packages/vscode-codeurjc-slidev/`'s design rationale) — grammar edge cases belong in the vitest layer above, not here.
 
 The e2e `webServer` in `playwright.config.ts` auto-starts Slidev on port 3030 using `e2e/slides.md` as entry. `e2e/slides.md` declares `theme: codeurjc-slidev-theme`, so the theme package (resolved via the pnpm workspace link in `node_modules`) auto-loads through Slidev's own roots-merge — `e2e/` no longer needs symlinks to the theme's `composables/`/`setup/`/`_override/`/`layouts/`/`global-top.vue`/`vite.config.ts` (all removed; only the `code/` and `public/` symlinks remain, since those are e2e-specific asset fixtures unrelated to the theme). `e2e/layouts/` is intentionally not seeded with `default.vue` — the theme's own bundled layout is Slidev's fallback until an e2e test's save-layout call creates a consumer-local override, which is itself exercised as test coverage (see `tests/vite-consumer-root-resolution.spec.ts` and the fallback-handling tests in `tests/layout-editor.spec.ts`/`tests/image-position.spec.ts`). All test modifications are restored by `afterAll` hooks. Every `*.spec.ts` fixture that wholesale-replaces `e2e/slides.md`'s content must include `theme: codeurjc-slidev-theme` in its frontmatter — omitting it causes Slidev's "restarting on theme change" behavior to flap the dev server and cascade connection failures across later tests in the same run.

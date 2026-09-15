@@ -7,6 +7,8 @@
 //                                          end-exclusive character indices
 //                                          into the code line, not the
 //                                          rendered/Shiki-wrapped HTML)
+//   // [!mark{<N>}] comment               (click step: hidden until click N;
+//                                          goes before any @x,y override)
 //   // [!mark@<x>,<y>] comment            (manual callout position override)
 // Highlight ids are internal bookkeeping only (DOM grouping, position-map
 // keys) -- presenters never write or reference them, so they're generated
@@ -24,16 +26,27 @@ export interface CodeHighlight {
   substringRange?: { start: number, end: number }
   comment: string
   override?: { x: number, y: number }
+  /**
+   * Click step (`{N}` suffix, N >= 1): the highlight, its callout and its
+   * connector stay hidden until the slide reaches click N. Absent means always
+   * visible.
+   */
+  click?: number
   /** Exact original source line the marker was parsed from (for round-tripping position overrides). */
   sourceLine: string
 }
 
-const MARKER_RE = /^(.*?)(?:\/\/|#)\s*\[!mark(?::(start|end))?(?:\((\d+)-(\d+)\))?(?:@(-?\d+),(-?\d+))?\]\s*(.*)$/
+// `{N}` (click step) sits after the role/substring range and before the
+// `@x,y` override, so the editor's "append/replace the trailing @x,y" rewrite
+// never has to reason about it. Only a positive integer is accepted -- `{0}`,
+// `{}` or `{x}` make the whole marker unrecognized, like any malformed marker.
+const MARKER_RE = /^(.*?)(?:\/\/|#)\s*\[!mark(?::(start|end))?(?:\((\d+)-(\d+)\))?(?:\{([1-9]\d*)\})?(?:@(-?\d+),(-?\d+))?\]\s*(.*)$/
 
 interface ParsedMarkerLine {
   codePrefix: string
   role?: 'start' | 'end'
   substringRange?: { start: number, end: number }
+  click?: number
   override?: { x: number, y: number }
   comment: string
 }
@@ -56,11 +69,12 @@ function parseMarkerLine(line: string): ParsedMarkerLine | null {
   const m = line.match(MARKER_RE)
   if (!m)
     return null
-  const [, codePrefix, role, rangeStart, rangeEnd, ox, oy, comment] = m
+  const [, codePrefix, role, rangeStart, rangeEnd, click, ox, oy, comment] = m
   return {
     codePrefix: codePrefix.replace(/\s+$/, ''),
     role: role as 'start' | 'end' | undefined,
     substringRange: rangeStart !== undefined ? { start: Number(rangeStart), end: Number(rangeEnd) } : undefined,
+    click: click !== undefined ? Number(click) : undefined,
     override: ox !== undefined ? { x: Number(ox), y: Number(oy) } : undefined,
     comment: comment.trim(),
   }
@@ -70,7 +84,7 @@ export function parseCodeHighlights(code: string): { code: string, highlights: C
   const lines = code.split('\n')
   const strippedLines: string[] = []
   const highlights: CodeHighlight[] = []
-  const pendingStarts: { line: number, comment: string, override?: { x: number, y: number }, sourceLine: string }[] = []
+  const pendingStarts: { line: number, comment: string, click?: number, override?: { x: number, y: number }, sourceLine: string }[] = []
   let nextId = 0
 
   lines.forEach((line, index) => {
@@ -82,7 +96,7 @@ export function parseCodeHighlights(code: string): { code: string, highlights: C
     strippedLines.push(parsed.codePrefix)
 
     if (parsed.role === 'start') {
-      pendingStarts.push({ line: index, comment: parsed.comment, override: parsed.override, sourceLine: line })
+      pendingStarts.push({ line: index, comment: parsed.comment, click: parsed.click, override: parsed.override, sourceLine: line })
       return
     }
     if (parsed.role === 'end') {
@@ -96,6 +110,8 @@ export function parseCodeHighlights(code: string): { code: string, highlights: C
         endLine: index,
         comment: start.comment || parsed.comment,
         override: start.override || parsed.override,
+        // Same precedence as the comment: the `:start` marker's step wins.
+        click: start.click ?? parsed.click,
         sourceLine: start.sourceLine,
       })
       return
@@ -109,6 +125,7 @@ export function parseCodeHighlights(code: string): { code: string, highlights: C
       substringRange: parsed.substringRange,
       comment: parsed.comment,
       override: parsed.override,
+      click: parsed.click,
       sourceLine: line,
     })
   })
@@ -135,8 +152,10 @@ function findTopLevelCloseBracket(line: string): number {
 export function serializeMarkerOverride(sourceLine: string, x: number, y: number): string {
   const rounded = { x: Math.round(x), y: Math.round(y) }
   if (MARKER_RE.test(sourceLine)) {
+    // Any `{N}` click step stays in the preserved prefix, so the override
+    // always lands after it (the grammar's `...{N}@x,y]` order).
     return sourceLine.replace(
-      /(\[!mark(?::(?:start|end))?(?:\(\d+-\d+\))?)(?:@-?\d+,-?\d+)?(\])/,
+      /(\[!mark(?::(?:start|end))?(?:\(\d+-\d+\))?(?:\{[1-9]\d*\})?)(?:@-?\d+,-?\d+)?(\])/,
       `$1@${rounded.x},${rounded.y}$2`,
     )
   }
@@ -170,6 +189,8 @@ function highlightAttrs(h: CodeHighlight): string {
     attrs += ` data-comment="${escapeAttr(h.comment)}"`
   if (h.override)
     attrs += ` data-override-x="${h.override.x}" data-override-y="${h.override.y}"`
+  if (h.click)
+    attrs += ` data-highlight-click="${h.click}"`
   return attrs
 }
 
@@ -330,6 +351,7 @@ interface ExternalAnchorSpec {
   offset?: number
   substringRange?: { start: number, end: number }
   occurrence?: number | 'all'
+  click?: number
   override?: { x: number, y: number }
   comment: string
   sourceLine: string
@@ -433,6 +455,16 @@ function parseAnchorLine(line: string): ExternalAnchorSpec | null {
     }
   }
 
+  // Click step: after the whole anchor target (substring range, offset,
+  // occurrence selector), before any `@x,y` -- same order as inline markers.
+  if (line[i] === '{') {
+    const m = /^\{([1-9]\d*)\}/.exec(line.slice(i))
+    if (!m)
+      return null
+    spec.click = Number(m[1])
+    i += m[0].length
+  }
+
   if (line[i] === '@') {
     const m = /^@(-?\d+),(-?\d+)/.exec(line.slice(i))
     if (!m)
@@ -512,7 +544,7 @@ export function parseExternalHighlightAnchors(
         onWarn(`[code-highlight] anchor line ${spec.line} is out of range`)
         continue
       }
-      highlights.push({ id: String(nextId++), kind: 'line', startLine: idx, endLine: idx, comment: spec.comment, override: spec.override, sourceLine: spec.sourceLine })
+      highlights.push({ id: String(nextId++), kind: 'line', startLine: idx, endLine: idx, comment: spec.comment, override: spec.override, click: spec.click, sourceLine: spec.sourceLine })
       continue
     }
 
@@ -523,7 +555,7 @@ export function parseExternalHighlightAnchors(
         onWarn(`[code-highlight] anchor line range ${spec.line}..${spec.endLine} is out of range`)
         continue
       }
-      highlights.push({ id: String(nextId++), kind: 'range', startLine: start, endLine: end, comment: spec.comment, override: spec.override, sourceLine: spec.sourceLine })
+      highlights.push({ id: String(nextId++), kind: 'range', startLine: start, endLine: end, comment: spec.comment, override: spec.override, click: spec.click, sourceLine: spec.sourceLine })
       continue
     }
 
@@ -543,6 +575,7 @@ export function parseExternalHighlightAnchors(
           substringRange,
           comment: spec.comment,
           override: spec.override,
+          click: spec.click,
           sourceLine: spec.sourceLine,
         })
       }
@@ -569,7 +602,7 @@ export function parseExternalHighlightAnchors(
       else {
         endIdx = Math.min(startIdx + spec.offset!, lines.length - 1)
       }
-      highlights.push({ id: String(nextId++), kind: 'range', startLine: startIdx, endLine: endIdx, comment: spec.comment, override: spec.override, sourceLine: spec.sourceLine })
+      highlights.push({ id: String(nextId++), kind: 'range', startLine: startIdx, endLine: endIdx, comment: spec.comment, override: spec.override, click: spec.click, sourceLine: spec.sourceLine })
     }
   }
 

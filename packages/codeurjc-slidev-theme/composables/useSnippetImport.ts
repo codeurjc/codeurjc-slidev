@@ -275,3 +275,55 @@ export function splitSourceLink(combined: string): { payload: string, link: Comb
     return { payload, link: null }
   }
 }
+
+// --- Choosing a selector -----------------------------------------------------
+// Decides which `<<<` import selector form to produce for a known line range
+// of a file: a content-anchor range when safe (both boundary lines non-blank
+// and unique in the file -- self-healing against later edits elsewhere in the
+// file), otherwise a plain line range. Shared by editor tooling ("Copy
+// Selector for Selection") and the ODP importer, so both always choose
+// selectors the same way.
+//
+// The uniqueness check matters because `resolveSnippetSelector`'s
+// content-anchor-range resolution always picks the *first* line-substring
+// match in the file with no ambiguity detection of its own (unlike highlight
+// anchors, which support `#N`/`#*` occurrence selectors) -- generating an
+// anchor from non-unique boundary text could silently resolve to the wrong
+// lines later, so this check is a genuine safety measure, not extra caution.
+
+export interface SelectionLineRange {
+  /** 1-based, inclusive. */
+  startLine: number
+  endLine: number
+}
+
+/** Counts lines whose text contains `text` as a substring, matching `resolveSnippetSelector`'s own `.includes()`-based matching. */
+function countLinesContaining(lines: string[], text: string): number {
+  return lines.filter(l => l.includes(text)).length
+}
+
+/** Escapes `"` and `\` for embedding in a selector's quoted anchor text -- the write-direction counterpart to `unescapeQuoted`. */
+function escapeForQuotedSelector(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+/**
+ * Computes a `<<<` import selector's raw bracket content (without the
+ * surrounding `[` `]`) for `selection` within `fileLines`.
+ */
+export function computeSelectorForSelection(fileLines: string[], selection: SelectionLineRange): string {
+  const { startLine, endLine } = selection
+  if (startLine === endLine)
+    return `${startLine}-${startLine}`
+
+  const firstText = (fileLines[startLine - 1] ?? '').trim()
+  const lastText = (fileLines[endLine - 1] ?? '').trim()
+  const bothNonBlank = firstText.length > 0 && lastText.length > 0
+  const bothUnique = bothNonBlank
+    && countLinesContaining(fileLines, firstText) === 1
+    && countLinesContaining(fileLines, lastText) === 1
+
+  if (bothUnique)
+    return `"${escapeForQuotedSelector(firstText)}".."${escapeForQuotedSelector(lastText)}"`
+  return `${startLine}-${endLine}`
+}

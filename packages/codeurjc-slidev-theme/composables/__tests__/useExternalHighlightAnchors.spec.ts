@@ -167,3 +167,47 @@ describe('serializeMarkerOverride on anchor-declaration lines', () => {
     expect(serializeMarkerOverride(line, 5, 6)).toBe('[!mark:"arr[0] = 1;"@5,6] comment')
   })
 })
+
+describe('click-step suffix on anchor declarations', () => {
+  const SNIPPET = ['a();', 'assertEquals(1, x);', 'b();', 'assertEquals(2, y);', 'c();'].join('\n')
+
+  it('parses a step on a line anchor', () => {
+    expect(parseExternalHighlightAnchors(SNIPPET, ['[!mark:2{2}] Checks x'])).toEqual([
+      expect.objectContaining({ kind: 'line', startLine: 1, click: 2, comment: 'Checks x' }),
+    ])
+  })
+
+  it('parses a step on a line range and keeps a trailing override', () => {
+    expect(parseExternalHighlightAnchors(SNIPPET, ['[!mark:1..3{3}@120,40] Block'])).toEqual([
+      expect.objectContaining({ kind: 'range', startLine: 0, endLine: 2, click: 3, override: { x: 120, y: 40 } }),
+    ])
+  })
+
+  it('parses a step after an occurrence selector and a content range', () => {
+    expect(parseExternalHighlightAnchors(SNIPPET, ['[!mark:"assertEquals"#2{3}] Second'])).toEqual([
+      expect.objectContaining({ kind: 'substring', startLine: 3, click: 3 }),
+    ])
+    expect(parseExternalHighlightAnchors(SNIPPET, ['[!mark:"a();".."b();"{2}] Range'])).toEqual([
+      expect.objectContaining({ kind: 'range', startLine: 0, endLine: 2, click: 2 }),
+    ])
+    expect(parseExternalHighlightAnchors(SNIPPET, ['[!mark:"b();"+1{1}] Offset'])).toEqual([
+      expect.objectContaining({ kind: 'range', startLine: 2, endLine: 3, click: 1 }),
+    ])
+  })
+
+  it('gives every #* match the same step', () => {
+    const highlights = parseExternalHighlightAnchors(SNIPPET, ['[!mark:"assertEquals"#*{4}] Assertion'])
+    expect(highlights).toHaveLength(2)
+    expect(highlights.every(h => h.click === 4)).toBe(true)
+  })
+
+  it('ignores anchors with a malformed step', () => {
+    for (const bad of ['{0}', '{}', '{x}'])
+      expect(parseExternalHighlightAnchors(SNIPPET, [`[!mark:2${bad}] Note`])).toEqual([])
+  })
+
+  it('serializeMarkerOverride inserts @x,y after the step on anchor lines', () => {
+    expect(serializeMarkerOverride('[!mark:"assertEquals"#2{3}] Second', 10, 20)).toBe('[!mark:"assertEquals"#2{3}@10,20] Second')
+    expect(serializeMarkerOverride('[!mark:5{2}@1,1] Note', 3, 4)).toBe('[!mark:5{2}@3,4] Note')
+  })
+})

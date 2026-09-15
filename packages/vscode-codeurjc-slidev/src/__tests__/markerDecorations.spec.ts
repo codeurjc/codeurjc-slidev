@@ -68,3 +68,19 @@ describe('computeMarkerDecorations', () => {
     expect(highlights.map(h => h.comment)).toEqual(['first', 'second'])
   })
 })
+
+describe('computeMarkerDecorations with click-step suffixes', () => {
+  it('dims and highlights a marker carrying a {N} step like any other marker', () => {
+    const text = [
+      '```java',
+      'int x = 1; // [!mark{2}@120,40] Stepped note',
+      '```',
+    ].join('\n')
+    const { dims, highlights } = computeMarkerDecorations(text)
+    expect(highlights).toEqual([
+      { startLine: 1, endLine: 1, substringRange: undefined, comment: 'Stepped note' },
+    ])
+    const line = text.split('\n')[1]
+    expect(line.slice(dims[0].startChar, dims[0].endChar)).toBe('// [!mark{2}@120,40] Stepped note')
+  })
+})

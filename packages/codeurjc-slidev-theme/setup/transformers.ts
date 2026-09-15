@@ -52,9 +52,9 @@ function sourceLinkIconHtml(url: string): string {
  * Vue's automatic attribute inheritance) for `layouts/default.vue` to collect
  * into the slide's bottom row.
  */
-function wrapCodeBlock(info: string, html: string, sourceLink: CombinedSourceLink | null): string {
+function wrapCodeBlock(info: string, html: string, sourceLink: CombinedSourceLink | null, clickSteps: number[] = []): string {
   const title = /\[([^\]]*)\]/.exec(info)?.[1] ?? ''
-  const escaped = html.replace(/\{\{/g, '&lbrace;&lbrace;')
+  const escaped = html.replace(/\{\{/g, '&lbrace;&lbrace;') + clickStepRegistrations(clickSteps)
   if (!sourceLink)
     return `<CodeBlockWrapper title=${JSON.stringify(title)}>${escaped}</CodeBlockWrapper>`
 
@@ -62,6 +62,21 @@ function wrapCodeBlock(info: string, html: string, sourceLink: CombinedSourceLin
   const linkAttrs = ` data-source-link-url="${escapeAttr(sourceLink.url)}" data-source-link-placement="${placedAtTitle ? 'title' : 'bottom'}"`
   const icon = placedAtTitle ? sourceLinkIconHtml(sourceLink.url) : ''
   return `<CodeBlockWrapper title=${JSON.stringify(title)}${linkAttrs}>${escaped}${icon}</CodeBlockWrapper>`
+}
+
+/**
+ * Zero-size `v-click` placeholders, one per distinct callout click step in a
+ * code block. Slidev only counts click-driven elements registered before the
+ * slide mounts, and callouts themselves are only measured/placed by
+ * `layouts/default.vue` after mount -- emitting the steps here, as part of the
+ * slide's own compiled template, is what makes them count toward the slide's
+ * total clicks (so the presenter reveals every step before advancing).
+ */
+function clickStepRegistrations(clickSteps: number[]): string {
+  return [...new Set(clickSteps)]
+    .sort((a, b) => a - b)
+    .map(step => `<span v-click="${step}" class="code-callout-step" data-click-step="${step}" aria-hidden="true"></span>`)
+    .join('')
 }
 
 export default defineTransformersSetup(() => ({
@@ -224,7 +239,8 @@ export default defineTransformersSetup(() => ({
         return undefined
       const html = await ctx.renderHighlighted({ code })
       const highlighted = highlights.length > 0 ? injectHighlightSpans(html, highlights) : html
-      return wrapCodeBlock(ctx.info, highlighted, sourceLink)
+      const clickSteps = highlights.flatMap(h => (h.click ? [h.click] : []))
+      return wrapCodeBlock(ctx.info, highlighted, sourceLink, clickSteps)
     },
   ],
 }))

@@ -246,3 +246,67 @@ describe('findMarkerSpan', () => {
     expect(findMarkerSpan('int x = 1;')).toBeNull()
   })
 })
+
+describe('click-step suffix on inline markers', () => {
+  it('parses a whole-line marker with a click step and strips the marker', () => {
+    const { code, highlights } = parseCodeHighlights('this.alumnos = alumnos; // [!mark{2}] Stores the dependency')
+    expect(code).toBe('this.alumnos = alumnos;')
+    expect(highlights).toEqual([
+      expect.objectContaining({ kind: 'line', startLine: 0, click: 2, comment: 'Stores the dependency' }),
+    ])
+  })
+
+  it('leaves highlights without a suffix unstepped', () => {
+    const { highlights } = parseCodeHighlights('a(); // [!mark] Always shown')
+    expect(highlights[0].click).toBeUndefined()
+  })
+
+  it('applies a step on the :start marker to the whole range', () => {
+    const { highlights } = parseCodeHighlights(['a(); // [!mark:start{3}] Loop', 'b();', 'c(); // [!mark:end]'].join('\n'))
+    expect(highlights).toEqual([expect.objectContaining({ kind: 'range', startLine: 0, endLine: 2, click: 3 })])
+  })
+
+  it('falls back to the :end marker step when :start has none, and prefers :start when both do', () => {
+    const endOnly = parseCodeHighlights(['a(); // [!mark:start] Loop', 'b(); // [!mark:end{2}]'].join('\n'))
+    expect(endOnly.highlights[0].click).toBe(2)
+    const both = parseCodeHighlights(['a(); // [!mark:start{1}] Loop', 'b(); // [!mark:end{4}]'].join('\n'))
+    expect(both.highlights[0].click).toBe(1)
+  })
+
+  it('combines the suffix with a substring range and a position override', () => {
+    const { highlights } = parseCodeHighlights('  this.alumnos = alumnos; // [!mark(2-16){2}@120,40] Just the substring')
+    expect(highlights).toEqual([
+      expect.objectContaining({ kind: 'substring', substringRange: { start: 2, end: 16 }, click: 2, override: { x: 120, y: 40 } }),
+    ])
+  })
+
+  it('does not recognize malformed suffixes', () => {
+    for (const bad of ['{0}', '{}', '{x}']) {
+      const line = `a(); // [!mark${bad}] Note`
+      const { code, highlights } = parseCodeHighlights(line)
+      expect(highlights).toEqual([])
+      expect(code).toBe(line)
+      expect(findMarkerSpan(line)).toBeNull()
+    }
+  })
+
+  it('findMarkerSpan covers the whole marker including the suffix', () => {
+    const line = 'a(); // [!mark{2}] Note'
+    expect(findMarkerSpan(line)).toEqual({ start: 'a(); '.length, end: line.length })
+  })
+
+  it('serializeMarkerOverride keeps the suffix and inserts or replaces @x,y after it', () => {
+    expect(serializeMarkerOverride('a(); // [!mark{2}] Note', 200, 60)).toBe('a(); // [!mark{2}@200,60] Note')
+    expect(serializeMarkerOverride('a(); // [!mark(1-3){2}@5,5] Note', 7.6, 8.4)).toBe('a(); // [!mark(1-3){2}@8,8] Note')
+    expect(serializeMarkerOverride('a(); // [!mark:start{3}] Loop', 1, 2)).toBe('a(); // [!mark:start{3}@1,2] Loop')
+  })
+
+  it('injectHighlightSpans marks stepped highlight spans with their click step', () => {
+    const html = '<pre><code><span class="line"><span>a();</span></span></code></pre>'
+    const { highlights } = parseCodeHighlights('a(); // [!mark{2}] Note')
+    const out = injectHighlightSpans(html, highlights)
+    expect(out).toContain('data-highlight-click="2"')
+    const unstepped = injectHighlightSpans(html, parseCodeHighlights('a(); // [!mark] Note').highlights)
+    expect(unstepped).not.toContain('data-highlight-click')
+  })
+})

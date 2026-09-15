@@ -11,6 +11,10 @@ interface Rect {
 // and as the reset target for the image-position "Below" preset.
 export const CONTENT_DEFAULT_WIDTH = 876
 
+// Re-exported so the SideEditor override (which can only import this module,
+// via its injected `__USE_EDITOR_PATH__`) can recognize per-slide geometry keys.
+export { geometryContentKey, geometryImageKey, geometryKeyPrefix } from './useSlideGeometry'
+
 const ELEMENTS: Record<string, {
   label: string
   color: string
@@ -210,11 +214,17 @@ export function useEditor() {
   onMounted(() => window.addEventListener('keydown', onKeyDown))
   onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
 
-  function getContainerScale(): number {
-    const container = document.querySelector('.slidev-layout.default')
+  // Measures the layout the gesture actually started in. Slidev keeps
+  // neighbouring slides mounted (often at 0x0), so the document's *first*
+  // `.slidev-layout.default` is not necessarily the visible one -- dividing by
+  // its zero size turned every drag delta into NaN on any slide but the first.
+  function getContainerScale(e?: MouseEvent): number {
+    const target = e?.target instanceof Element ? e.target : null
+    const container = target?.closest('.slidev-layout.default') ?? document.querySelector('.slidev-layout.default')
     if (!container)
       return 1
-    return container.getBoundingClientRect().width / container.scrollWidth
+    const scale = container.getBoundingClientRect().width / container.scrollWidth
+    return Number.isFinite(scale) && scale > 0 ? scale : 1
   }
 
   function startDrag(e: MouseEvent, name: string) {
@@ -233,7 +243,7 @@ export function useEditor() {
       startY: e.clientY,
       origX: p.x,
       origY: p.y,
-      scale: getContainerScale(),
+      scale: getContainerScale(e),
       invertX: elCfg?.invertX ?? false,
     }
     window.addEventListener('mousemove', onDrag)
@@ -277,7 +287,7 @@ export function useEditor() {
       startY: e.clientY,
       origW: p.w,
       origH: p.h,
-      scale: getContainerScale(),
+      scale: getContainerScale(e),
       invertX: elCfg?.invertX ?? false,
       ratio: aspectLocked[name] ? p.w / p.h : null,
     }
@@ -452,6 +462,17 @@ export function useEditor() {
   const saveAs = ref(true)
   const saveLayoutName = ref('')
 
+  // Whether a drag or resize started from this instance is still in
+  // progress -- lets callers that persist positions elsewhere (e.g. per-slide
+  // `geometry` frontmatter) avoid writing mid-gesture.
+  const isInteracting = computed(() => dragState.value !== null || resizeState.value !== null)
+
+  // A layout file only ever holds the fixed ELEMENTS: dynamic entries
+  // (callouts, per-slide `geometry:*` rects) are persisted by their owners.
+  function pickFixed<T>(record: Record<string, T>): Record<string, T> {
+    return Object.fromEntries(Object.keys(ELEMENTS).filter(key => key in record).map(key => [key, record[key]]))
+  }
+
   async function saveLayout(hiddenOverride?: Record<string, boolean>) {
     saving.value = true
     saved.value = false
@@ -460,9 +481,9 @@ export function useEditor() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          positions: { ...positions },
-          hidden: hiddenOverride ?? { ...hidden },
-          aspectLocked: { ...aspectLocked },
+          positions: pickFixed(positions),
+          hidden: pickFixed(hiddenOverride ?? hidden),
+          aspectLocked: pickFixed(aspectLocked),
           saveAs: saveAs.value,
           layoutName: saveLayoutName.value,
         }),
@@ -503,11 +524,14 @@ export function useEditor() {
   // positions/hidden/aspectLocked generically by key, so once registered a
   // dynamic entry participates in drag, undo, and save exactly like a fixed
   // element, with no further changes needed to those code paths.
-  function ensurePosition(key: string, initial: Rect) {
+  // `aspectLocked` only seeds a newly registered entry (e.g. frontmatter
+  // geometry images default to locked, like the fixed `image` element); an
+  // existing entry keeps whatever the user has toggled since.
+  function ensurePosition(key: string, initial: Rect, options: { aspectLocked?: boolean } = {}) {
     if (!(key in _sharedPositions)) {
       _sharedPositions[key] = { ...initial }
       _sharedHidden[key] = false
-      _sharedAspectLocked[key] = false
+      _sharedAspectLocked[key] = options.aspectLocked ?? false
     }
   }
 
@@ -560,5 +584,6 @@ export function useEditor() {
     updateSnapshot,
     ensurePosition,
     pruneDynamicKeys,
+    isInteracting,
   }
 }

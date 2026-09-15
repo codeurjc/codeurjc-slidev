@@ -2,7 +2,7 @@
 
 A [Slidev](https://sli.dev) theme for CodeURJC presentations.
 
-Gives your presentation the CodeURJC look out of the box, plus a set of quality-of-life authoring features: code-highlight callouts, code-snippet import from a `code/` directory, auto-fit text sizing, copy/paste image embedding, and slide title/subtitle carry-over.
+Gives your presentation the CodeURJC look out of the box, plus a set of quality-of-life authoring features: code-highlight callouts (with click steps), code-snippet import from a `code/` directory, auto-fit text sizing, copy/paste image embedding, per-slide content/image positioning, and slide title/subtitle carry-over. Existing LibreOffice Impress (ODP) decks can be imported into a new project.
 
 ## Starting a new presentation
 
@@ -20,9 +20,17 @@ This generates a standalone project with just `package.json`, `slides.md`, `code
 - **[`codeurjc-slidev-theme`](https://www.npmjs.com/package/codeurjc-slidev-theme)** — the runtime Slidev theme (`theme: codeurjc-slidev-theme` in a presentation's frontmatter)
 - **[`create-codeurjc-slidev`](https://www.npmjs.com/package/create-codeurjc-slidev)** — the scaffolding CLI used above
 
+To start from an existing LibreOffice Impress deck instead, pass it with `--from-odp`:
+
+```sh
+pnpm create codeurjc-slidev tema-1-2 --from-odp "Tema 1.2 - Pruebas unitarias.odp"
+```
+
+Titles, lists, images, code (as `<<<` imports when it matches a file in the code folder) and code annotations are converted on a best-effort basis. Whatever can't be converted is listed in the console, and with LibreOffice ≥ 7.4 installed a `comparison.md` deck shows each affected slide next to its original. See [`packages/create-codeurjc-slidev/README.md`](packages/create-codeurjc-slidev/README.md) for all flags.
+
 ## Learning how to use it
 
-`tutorial.md` walks through every authoring feature (theming, code callouts, code-snippet import, QoL features, layout editor, etc.) as a Slidev presentation you can click through. Run it with:
+`tutorial.md` walks through every authoring feature (theming, ODP import, code callouts and click steps, code-snippet import, per-slide geometry, QoL features, layout editor, etc.) as a Slidev presentation you can click through. Run it with:
 
 ```sh
 pnpm dev tutorial.md
@@ -31,10 +39,12 @@ pnpm dev tutorial.md
 ## Features
 
 - Urjc-themed UnoCSS preset (`urjc-red`, `urjc-green` colors) applied throughout the layouts
-- Code-highlight callouts: mark a line/range/substring in a fenced code block with `// [!mark]`, get a draggable, auto-placed callout box
+- Code-highlight callouts: mark a line/range/substring in a fenced code block with `// [!mark]`, get a draggable, auto-placed callout box; add `{N}` (`// [!mark{2}]`) to reveal it at click N, kept as separate pages by `slidev export --with-clicks`
 - Code-snippet import: `<<< @/code/path/to/File.java[selector] lang`, with the same highlight/callout markers declared in `slides.md` instead of the source file
 - Auto-fit text sizing, copy/paste image embedding with position presets, Mermaid diagram centering, double-click to jump straight to a slide's markdown
+- Per-slide geometry: a slide's `geometry` frontmatter positions its content box and any number of images, editable from the layout editor without touching the layout
 - Slide title/subtitle carry-over across a run of same-topic slides
+- ODP import: `create-codeurjc-slidev --from-odp` turns a LibreOffice Impress deck into a project, with a side-by-side comparison deck for whatever couldn't be converted
 - Layout editor integrated into Slidev's built-in SideEditor panel: drag/resize slide elements (red bar, logo, title, content) with undo support, and save layouts as new `.vue` files or overwrite the current one
 
 See `CLAUDE.md` for the full grammar/behavior reference (marker syntax, snippet-import selectors, title carry-over rules).

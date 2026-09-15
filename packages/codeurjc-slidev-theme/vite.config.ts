@@ -194,7 +194,9 @@ export default defineConfig({
           // Persist aspect-lock state as data-aspect-locked, storing only the
           // locked exceptions since every element is unlocked by default
           const aspectLocked = body.aspectLocked || {}
-          const lockedNames = Object.keys(aspectLocked).filter(name => aspectLocked[name] === true)
+          // Only fixed layout elements -- dynamic editor keys (callouts,
+          // per-slide `geometry:*` rects) never belong in a layout file.
+          const lockedNames = Object.keys(aspectLocked).filter(name => name in VAR_MAP && aspectLocked[name] === true)
           content = content.replace(/\s*data-aspect-locked="[^"]*"/, '')
           if (lockedNames.length > 0) {
             content = content.replace(

@@ -244,3 +244,15 @@ describe('analyzeImports', () => {
     })
   })
 })
+
+describe('analyzeImports with click-step suffixes', () => {
+  it('resolves a stepped anchor without any diagnostic', () => {
+    const text = [
+      '<<< @/code/Foo.java java',
+      '[!mark:"getNotasAlumno"{2}] Fetches grades',
+    ].join('\n')
+    const { diagnostics, hovers } = analyzeImports(text, fakeResolver({ 'code/Foo.java': FILE_TEXT }))
+    expect(diagnostics).toEqual([])
+    expect(hovers.find(h => h.line === 1)?.contents).toBe('Line 5: Fetches grades')
+  })
+})

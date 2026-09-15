@@ -1,4 +1,5 @@
 ---
+theme: codeurjc-slidev-theme
 layout: cover
 date: 07-2026
 subject: codeurjc-slidev
@@ -33,7 +34,37 @@ pnpm dev
 
 ---
 
+# Importing an ODP presentation
+```sh
+pnpm create codeurjc-slidev tema-1-2 --from-odp "Tema 1.2 - Pruebas unitarias.odp"
+```
+- Converts a LibreOffice Impress deck into a new project, one project per ODP
+    - Without arguments, the CLI asks whether to start from an empty project or from an ODP
+- `--code <dir>`: the code folder the slides show. By default, the folder next to the ODP with the same name. It's copied into `code/`, never cloned
+- `--code-repo <url>`: GitHub URL for source links. By default, the code folder's own GitHub `origin`
+
+---
+
+## What gets converted
+- Every slide, in order: hidden slides keep `hide: true`, and cover/copyright slides use the theme's layouts
+- Titles are written only where they change, relying on title inheritance. A two-line title becomes title + subtitle
+- Bullet lists, bold, italic, inline code, links and tables
+- Images are copied into `public/images/` and placed with per-slide `geometry` frontmatter
+- Code that matches a file in the code folder becomes a `<<<` import; other code stays inline. Highlight boxes and callouts drawn over code become code annotations
+- Build-ups (consecutive slides that only add a callout, a bullet or an image) become one slide with click steps
+
+---
+
+## What can't be converted
+- The import is a best effort: arrows, diagrams, grouped shapes, callouts over screenshots... are listed in the console, never written into `slides.md`
+- With **LibreOffice ≥ 7.4** installed, the import also writes `comparison.md`: for each slide that lost something, the original slide next to its list of losses, followed by the converted slide
+    - Open it with `pnpm run dev:compare`
+- The project's `export` script is `slidev export --with-clicks`, so the PDF keeps every click step
+
+---
+
 # The CodeURJC theme
+##
 - Every slide gets the CodeURJC look for free: red bar, logo, and title styling, with no setup beyond `theme: codeurjc-slidev-theme`
 - Comes with an `urjc-red` / `urjc-green` UnoCSS color preset, so custom elements you add can match the theme's palette
 - The rest of this tutorial covers the authoring features layered on top of that base theme
@@ -68,6 +99,7 @@ pnpm dev
 ---
 
 # Auto-fit text size
+##
 - A slide's content automatically adjusts its font size to fit the content box
 - If the text fits comfortably, a default comfortable size is kept (it doesn't grow needlessly)
 - If the text is too long, it shrinks progressively until it fits
@@ -85,7 +117,41 @@ pnpm dev
 
 ---
 
+# Positioning content and images per slide
+- A `default`-layout slide can place its own content box and any number of images from its frontmatter, without creating a new layout
+```yaml
+geometry:
+  content: {x: 31, y: 98, w: 520, h: 424}
+  images:
+    - {x: 590, y: 110, w: 350, h: 190}
+    - {x: 590, y: 320, w: 350, h: 190}
+```
+- Coordinates are slide pixels, the same ones the layout editor shows (the slide is 980 px wide)
+- `content` moves only this slide's content box; `images[N]` places the Nth image of the slide, scaled without distortion
+- Images without an entry stay in the normal flow
+
+---
+geometry:
+  content: {x: 31, y: 98, w: 520, h: 424}
+  images:
+    - {x: 590, y: 110, w: 350, h: 190}
+    - {x: 590, y: 320, w: 350, h: 190}
+---
+
+## Example
+- This slide's own frontmatter is the `geometry` example from the previous slide
+- Its text is narrowed to the left with `geometry.content`
+- Both images are placed on the right with `geometry.images`, in the order they appear in the markdown
+- In edit mode, the Layout tab lists them as "Content (this slide)" and "Image N (this slide)": dragging them rewrites this slide's frontmatter, never the layout
+
+![URJC](/images/URJC.jpg)
+
+![CodeURJC](/images/logo.png)
+
+---
+
 # Centered mermaid diagrams
+##
 - ` ```mermaid ` blocks are centered and use a readable default width in the `default` layout, with no extra markup needed on each slide
 
 ---
@@ -118,7 +184,7 @@ graph LR
 
 # Code annotations: syntax
 ```
-// [!mark[:start|:end][(<start>-<end>)][@<x>,<y>]] <comment>
+// [!mark[:start|:end][(<start>-<end>)][{<step>}][@<x>,<y>]] <comment>
 ```
 - No id needed: marks aren't referenced by anything else, so none is written (one is generated internally, for internal use only)
 - `<comment>`: everything after the `]`; if left empty, the line is still highlighted but no box appears
@@ -126,6 +192,7 @@ graph LR
     - Whole line: `// [!mark] comment`
     - Multi-line range: `// [!mark:start]` ... `// [!mark:end]`
     - Substring: `// [!mark(<start>-<end>)] comment`, with `<start>`/`<end>` as character indices (0-based, end-exclusive) into the code line
+    - Click step: `{N}`, e.g. `// [!mark{2}] comment` (see "click steps" below)
     - Fixed position: `@x,y` right before the `]` (written automatically when you drag the callout in the editor)
 
 ---
@@ -156,7 +223,36 @@ public float calculaNotaMedia(long idAlumno) {
 
 ---
 
+# Code annotations: click steps
+- Add `{N}` to a mark to reveal it step by step: the highlight, its callout and its connector appear at click `N` and stay visible
+    - It goes after the range or substring and before `@x,y`: `// [!mark{2}]`, `// [!mark:start{3}]`, `// [!mark(2-16){2}@120,40]`
+- Several marks can share a step, so they appear together; marks without a step are always visible
+- Callouts are placed as if every step were visible, so revealing a step never moves the callouts already shown
+- In edit mode every callout is visible, to drag them freely
+- `slidev export --with-clicks` exports each step as its own page
+
+---
+
+## Example (click to advance)
+```java
+public GestorNotas(DBAlumno alumnos) { // [!mark] Always visible: injects the database dependency
+	this.alumnos = alumnos;
+}
+
+public float calculaNotaMedia(long idAlumno) {
+	List<Float> notas = alumnos.getNotasAlumno(idAlumno); // [!mark(29-53){1}] Click 1: fetches the student's grades
+	float suma = 0.0f; // [!mark:start{2}] Click 2: loops through the grades to sum them
+	for(float nota : notas) {
+		suma += nota;
+	}
+	return suma / notas.size(); // [!mark:end]
+}
+```
+
+---
+
 # Importing code from files
+##
 - Reference a file from the `code/` directory (real, runnable exercise/example projects) directly on a slide
 - The file is read live and **re-rendered whenever it changes**
 - The referenced file stays completely clean: no mark or slide-only syntax is ever added to it
@@ -187,6 +283,7 @@ public float calculaNotaMedia(long idAlumno) {
     - `[!mark:"a".."b"] comment` — from the line containing `a` through the line containing `b`
     - `[!mark:"a"+N] comment` — from the line containing `a` through `N` lines after it
     - `#N` / `#*` at the end of a content anchor: picks the Nth occurrence, or highlights every occurrence
+    - `{N}` after the anchor: click step, as with inline marks (`[!mark:3{2}]`, `[!mark:"text"#2{3}]`)
 - Just like inline marks, `@x,y` pins the position and is written automatically when dragging the callout
 
 ---

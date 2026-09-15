@@ -46,6 +46,8 @@ export default defineConfig({
         'autofit-text.spec.ts',
         'code-snippet-import.spec.ts',
         'code-source-links.spec.ts',
+        'slide-geometry.spec.ts',
+        'callout-click-steps.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'] },
     },

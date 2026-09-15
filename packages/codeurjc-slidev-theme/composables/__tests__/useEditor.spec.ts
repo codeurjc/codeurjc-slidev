@@ -406,3 +406,60 @@ describe('useEditor', () => {
     })
   })
 })
+
+describe('useEditor dynamic entries and layout saves', () => {
+  it('seeds aspect lock only when a dynamic entry is first registered', () => {
+    const { ensurePosition, aspectLocked, toggleAspectLock } = useEditor()
+    ensurePosition('geometry:99:image:0', { x: 1, y: 2, w: 3, h: 4 }, { aspectLocked: true })
+    expect(aspectLocked['geometry:99:image:0']).toBe(true)
+    toggleAspectLock('geometry:99:image:0')
+    ensurePosition('geometry:99:image:0', { x: 1, y: 2, w: 3, h: 4 }, { aspectLocked: true })
+    expect(aspectLocked['geometry:99:image:0']).toBe(false)
+  })
+
+  it('defaults dynamic entries to unlocked', () => {
+    const { ensurePosition, aspectLocked } = useEditor()
+    ensurePosition('callout:dyn-default', { x: 0, y: 0, w: 10, h: 10 })
+    expect(aspectLocked['callout:dyn-default']).toBe(false)
+  })
+
+  it('is not interacting while no drag or resize is active', () => {
+    expect(useEditor().isInteracting.value).toBe(false)
+  })
+
+  it('saveLayout only sends the fixed layout elements', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false })
+    globalThis.fetch = fetchMock
+    const { ensurePosition, saveLayout } = useEditor()
+    ensurePosition('geometry:98:content', { x: 1, y: 1, w: 100, h: 100 })
+    ensurePosition('geometry:98:image:0', { x: 1, y: 1, w: 100, h: 100 }, { aspectLocked: true })
+    ensurePosition('callout:98', { x: 1, y: 1, w: 100, h: 100 })
+    await saveLayout()
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    const fixed = ['red-bar', 'logo', 'title', 'content', 'image']
+    expect(Object.keys(body.positions)).toEqual(fixed)
+    expect(Object.keys(body.hidden)).toEqual(fixed)
+    expect(Object.keys(body.aspectLocked)).toEqual(fixed)
+  })
+})
+
+describe('useEditor drag scale', () => {
+  it('keeps drag positions finite when the layout under the pointer has no measurable size', () => {
+    const layout = document.createElement('div')
+    layout.className = 'slidev-layout default'
+    const handle = document.createElement('div')
+    layout.appendChild(handle)
+    document.body.appendChild(layout)
+    const { editing, ensurePosition, positions, startDrag } = useEditor()
+    editing.value = true
+    ensurePosition('geometry:77:image:0', { x: 100, y: 120, w: 300, h: 200 })
+    const down = new MouseEvent('mousedown', { clientX: 10, clientY: 10, bubbles: true })
+    handle.dispatchEvent(down)
+    startDrag(down, 'geometry:77:image:0')
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 60, clientY: 10 }))
+    window.dispatchEvent(new MouseEvent('mouseup'))
+    expect(positions['geometry:77:image:0']).toEqual({ x: 150, y: 120, w: 300, h: 200 })
+    editing.value = false
+    layout.remove()
+  })
+})

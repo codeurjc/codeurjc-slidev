@@ -14,3 +14,5 @@ packages/codeurjc-slidev-theme/layouts/layout-*.vue
 target/
 packages/vscode-codeurjc-slidev/.vscode-test/
 .eslintcache
+# Local-only ODP import fixtures (decks + code folders), provided upon request to the author
+/odp/
