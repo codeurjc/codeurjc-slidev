@@ -45,20 +45,20 @@
   "dependencies": {
     "@vueuse/core": "^14.3.0",
     "markdown-it": "^14.2.0",
-    "unocss": "^66.7.3"
+    "unocss": "^66.10.2"
   },
   "devDependencies": {
     "@slidev/types": "^52.19.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/vue": "^8.1.0",
     "@types/file-saver": "^2.0.7",
-    "@types/markdown-it": "^14.1.2",
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^22.20.1",
     "@vitejs/plugin-vue": "^6.0.7",
     "jsdom": "^29.1.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.9",
-    "vue": "^3.5.39",
-    "vue-tsc": "^3.3.9"
+    "vue": "^3.5.42",
+    "vue-tsc": "^3.3.11"
   }
 }
