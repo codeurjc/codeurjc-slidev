@@ -1,4 +1,3 @@
-import type { SlideForHeadingResolve } from '../composables/useSlideTitleCarryover'
 import type { CombinedSourceLink } from '../composables/useSnippetImport'
 import { readFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
@@ -9,7 +8,6 @@ import {
   parseCodeHighlights,
   parseExternalHighlightAnchors,
 } from '../composables/useCodeHighlights'
-import { injectCarriedHeadings, isDefaultLayout, parseLeadingHeadings, resolveSlideHeadings } from '../composables/useSlideTitleCarryover'
 import {
   combineCodeAndAnchors,
 
@@ -68,60 +66,6 @@ function wrapCodeBlock(info: string, html: string, sourceLink: CombinedSourceLin
 
 export default defineTransformersSetup(() => ({
   pre: [
-    // Belt-and-suspenders alongside setup/preparser.ts's transformSlide hook:
-    // Slidev resolves the active theme *from* slides.md's own headmatter, so
-    // its very first parse of the file (just to read that headmatter) runs
-    // before the theme -- and thus this package's setup/preparser.ts -- is
-    // even known, using a roots list that excludes it. That first parse's
-    // result becomes `ctx.options.data` for the rest of the process's
-    // lifetime; in `slidev build`/`slidev export` there is no later
-    // reparse-with-full-roots to correct it (unlike the dev server, which
-    // gets one via a real file edit), so the preparser's injection silently
-    // never applies there and carried titles are simply absent from the
-    // exported output. This transformer recomputes the same carry-over
-    // decision independently, from `ctx.options.data.slides` (always present
-    // and already reflecting every slide's own raw content/frontmatter,
-    // regardless of whether the preparser ran) -- so rendering is correct
-    // even when the preparser's `slide.title`/TOC feedback isn't. Runs first
-    // so its overwrite (confined to the leading heading lines only, via the
-    // common-suffix diff below) can't collide with the snippet-import
-    // transformer below, which only ever touches later lines.
-    (ctx) => {
-      if (!isDefaultLayout(ctx.slide.frontmatter))
-        return
-      const content = ctx.s.original
-      const own = parseLeadingHeadings(content)
-      const allSlides: SlideForHeadingResolve[] = ctx.options.data.slides.map(s => ({
-        content: s.content,
-        frontmatter: s.frontmatter,
-      }))
-      const resolved = resolveSlideHeadings(allSlides, ctx.slide.index)
-      const newContent = injectCarriedHeadings(content, own, resolved)
-      if (newContent === content)
-        return
-
-      // Diffed down to a common-suffix overwrite (rather than replacing the
-      // whole slide) so this can never collide with the snippet-import
-      // transformer below, which only ever touches lines further down.
-      let suffixLen = 0
-      const maxSuffix = Math.min(content.length, newContent.length)
-      while (
-        suffixLen < maxSuffix
-        && content[content.length - 1 - suffixLen] === newContent[newContent.length - 1 - suffixLen]
-      ) {
-        suffixLen++
-      }
-
-      const overwriteEnd = content.length - suffixLen
-      const newPrefix = newContent.slice(0, newContent.length - suffixLen)
-      // A slide with no leading blank line and no own heading at all (carried
-      // title/subtitle purely prepended, nothing of the original consumed)
-      // diffs down to a zero-length range, which MagicString's `overwrite`
-      // rejects -- insert instead.
-      if (overwriteEnd === 0)
-        ctx.s.appendLeft(0, newPrefix)
-      else ctx.s.overwrite(0, overwriteEnd, newPrefix)
-    },
     // Rewrites `<<< @/path[selector] lang` lines into a literal fenced code
     // block *before* markdown-it (and therefore Slidev's own native `<<<`
     // rule, which only slices via in-file #region markers) ever parses the

@@ -1,9 +1,9 @@
 import { Buffer } from 'node:buffer'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
 import { defineConfig } from 'vite'
-import { serializeMarkerOverride } from './composables/useCodeHighlights'
+import { serializeMarkerOverride } from './composables/useCodeHighlights.ts'
 
 const VAR_MAP: Record<string, Record<string, string>> = {
   'red-bar': { y: '--ed-red-y', x: '--ed-red-x', w: '--ed-red-w', h: '--ed-red-h' },
@@ -374,44 +374,6 @@ export default defineConfig({
           res.statusCode = 200
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify({ filename, path: `/images/${filename}` }))
-        })
-      },
-    },
-    {
-      // Slidev resolves the active theme from `slides.md`'s own headmatter,
-      // which means its *very first* parse of the file (used just to read
-      // that headmatter, before the theme -- and thus this package's own
-      // `setup/preparser.ts` -- is even known) runs with a roots list that
-      // doesn't include this theme yet. That first parse's result becomes
-      // the server's permanent in-memory slide data unless/until a real file
-      // edit triggers a reparse (which does use the fully-resolved roots) --
-      // so on a cold `pnpm dev` start, preparser-driven features like slide
-      // title/subtitle carry-over silently never apply to any slide, until
-      // the presenter happens to edit the deck. Forcing one synthetic
-      // change event right after the dev server starts listening triggers
-      // that same reparse path immediately, so carry-over (and any other
-      // preparser extension) is correct from the first load rather than
-      // only after a first edit.
-      //
-      // Which file is the deck isn't knowable from here -- Slidev's resolved
-      // `options.entry` is never exposed to a theme's own Vite config, and
-      // the entry is only `slides.md` by convention (`slidev tema2.md` is
-      // just as valid). Nudging every top-level markdown file in the project
-      // root covers whichever one it is: Slidev's own `handleHotUpdate`
-      // looks the changed file up in its `data.watchFiles` map and returns
-      // immediately for anything that isn't part of the running deck, so the
-      // extra events for e.g. a README are no-ops. The entry is always
-      // directly in this root, since Slidev derives `userRoot` (Vite's
-      // `config.root`) as the entry's own directory.
-      name: 'slidev-force-initial-reparse-for-preparser-extensions',
-      configureServer(server) {
-        server.httpServer?.once('listening', () => {
-          const candidates = readdirSync(server.config.root, { withFileTypes: true })
-            .filter(e => e.isFile() && e.name.endsWith('.md'))
-            .map(e => resolve(server.config.root, e.name))
-          setTimeout(() => {
-            for (const entry of candidates) server.watcher.emit('change', entry)
-          }, 0)
         })
       },
     },
