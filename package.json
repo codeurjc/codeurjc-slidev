@@ -19,8 +19,8 @@
     "prepare": "simple-git-hooks"
   },
   "dependencies": {
-    "@slidev/cli": "^52.15.0",
-    "@slidev/client": "52.16.0",
+    "@slidev/cli": "^52.19.1",
+    "@slidev/client": "^52.19.1",
     "codeurjc-slidev-theme": "workspace:*"
   },
   "devDependencies": {

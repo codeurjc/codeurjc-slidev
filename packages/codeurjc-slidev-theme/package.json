@@ -48,7 +48,7 @@
     "unocss": "^66.7.3"
   },
   "devDependencies": {
-    "@slidev/types": "^52.18.0",
+    "@slidev/types": "^52.19.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/vue": "^8.1.0",
     "@types/file-saver": "^2.0.7",
