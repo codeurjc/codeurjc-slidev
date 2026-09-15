@@ -38,8 +38,8 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "peerDependencies": {
-    "@slidev/cli": "^52.15.0",
-    "@slidev/client": "^52.15.0",
+    "@slidev/cli": "^52.17.1",
+    "@slidev/client": "^52.17.1",
     "vue": "^3.5.39"
   },
   "dependencies": {
