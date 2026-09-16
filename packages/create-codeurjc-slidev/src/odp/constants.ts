@@ -31,6 +31,21 @@ export const CODE_FRAME_COVERAGE = 0.9
 export const LABEL_TOP_DISTANCE_CM = 1.2
 /** Max distance between a connector endpoint and the shape it attaches to. */
 export const CONNECTOR_DISTANCE_CM = 0.5
+/** Shapes other than lines and arrows belong to the same diagram only when this close (overlapping or touching). */
+export const DIAGRAM_TOUCH_CM = 0.1
+/** A short plain text this close to a shape of a drawing with arrows is that shape's label. */
+export const DIAGRAM_LABEL_DISTANCE_CM = 1
+export const DIAGRAM_LABEL_MAX_LINES = 3
+/** Every edge of a mermaid flowchart must run within this angle of one axis. */
+export const DIAGRAM_AXIS_TOLERANCE_DEG = 20
+/** A text rotated more than this can't become a callout without losing its rotation. */
+export const ROTATED_TEXT_MIN_RAD = 0.02
+/** Tolerance for matching a diagram shape to its group in LibreOffice's SVG export, in 1/100 mm (5x this for centres and sizes). */
+export const SVG_MATCH_TOLERANCE = 50
+/** Centres and sizes may also differ by this fraction of the shape's size (borders, arrowheads, rotated outlines). */
+export const SVG_MATCH_RELATIVE = 0.15
+/** Margin around a cropped diagram's view box, in 1/100 mm. */
+export const DIAGRAM_SVG_MARGIN = 20
 /** A body frame differing from the master's body region by more than this (left/right edge) gets content geometry. */
 export const GEOMETRY_TOLERANCE_CM = 0.5
 /** How far outside a code shape a filename/project label may sit. */
@@ -39,6 +54,8 @@ export const LABEL_DISTANCE_CM = 1.5
 /** Line height = font size x this, matching the corpus decks' ~115% paragraph line spacing. */
 export const LINE_HEIGHT_FACTOR = 1.17
 export const PT_TO_CM = 2.54 / 72
+/** Font size assumed for a paragraph whose runs don't state one (e.g. an empty spacer paragraph). */
+export const DEFAULT_FONT_SIZE_PT = 18
 /** Monospace glyph advance, as a fraction of the font size. */
 export const MONO_CHAR_WIDTH_EM = 0.6
 /** A one-line highlight rectangle narrower than this fraction of its code shape is a substring highlight. */

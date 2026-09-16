@@ -1,5 +1,6 @@
 import type { Element, Node } from '@xmldom/xmldom'
 import type { OdpDeck, OdpMaster, OdpShape, OdpSlide, Paragraph, Rect, TextRun } from './model'
+import { applyMatrix, boundingRect, LINE_GEOMETRY_RE, parseTransform, placementMatrix, rotationOf } from './shapeGeometry'
 import { MONO_FONT_RE, StyleResolver } from './styles'
 import { attr, childElements, descendants, firstChild, is, lengthCm, parseXml } from './xml'
 import { readOdpArchive } from './zip'
@@ -87,14 +88,45 @@ function rectOf(el: Element): Rect | undefined {
   return { x, y, w, h }
 }
 
+/**
+ * Where a shape sits on the page: its bounding box, local box and placement
+ * matrix. A `draw:transform` (rotation, skew, translation) replaces
+ * `svg:x`/`svg:y`; the geometry's mirror flags only flip the drawing inside its
+ * box, which matters for line endpoints and arrow directions but not the box.
+ */
+function placementOf(el: Element, geometry?: Element): Pick<OdpShape, 'rect' | 'local' | 'rotation'> {
+  const w = lengthCm(attr(el, 'svg', 'width'))
+  const h = lengthCm(attr(el, 'svg', 'height'))
+  if (w === undefined || h === undefined)
+    return {}
+  const transform = parseTransform(attr(el, 'draw', 'transform'))
+  const x = lengthCm(attr(el, 'svg', 'x'))
+  const y = lengthCm(attr(el, 'svg', 'y'))
+  if (!transform && (x === undefined || y === undefined))
+    return {}
+  const matrix = placementMatrix({
+    w,
+    h,
+    x,
+    y,
+    transform,
+    mirrorH: geometry ? attr(geometry, 'draw', 'mirror-horizontal') === 'true' : false,
+    mirrorV: geometry ? attr(geometry, 'draw', 'mirror-vertical') === 'true' : false,
+  })
+  if (!transform)
+    return { rect: { x: x!, y: y!, w, h }, local: { w, h, matrix } }
+  const rotation = rotationOf(transform)
+  return { rect: boundingRect(matrix, w, h), local: { w, h, matrix }, ...(Math.abs(rotation) > 1e-3 ? { rotation } : {}) }
+}
+
 const SHAPE_ELEMENTS = new Set(['custom-shape', 'rect', 'ellipse', 'circle', 'polygon', 'polyline', 'path', 'regular-polygon', 'caption', 'measure'])
 
 function parseShape(el: Element, resolver: StyleResolver): OdpShape | null {
   const graphicStyles = [attr(el, 'presentation', 'style-name'), attr(el, 'draw', 'style-name')]
   const textStyles = [attr(el, 'draw', 'text-style-name'), ...graphicStyles]
-  const base = (kind: OdpShape['kind']): OdpShape => ({
+  const base = (kind: OdpShape['kind'], geometry?: Element): OdpShape => ({
     kind,
-    rect: rectOf(el),
+    ...placementOf(el, geometry),
     paragraphs: [],
     images: [],
     ...resolver.graphic(graphicStyles),
@@ -127,9 +159,15 @@ function parseShape(el: Element, resolver: StyleResolver): OdpShape | null {
   }
 
   if (el.namespaceURI && is(el, 'draw', el.localName ?? '') && SHAPE_ELEMENTS.has(el.localName ?? '')) {
-    const shape = base('shape')
     const geometry = firstChild(el, 'draw', 'enhanced-geometry')
+    const shape = base('shape', geometry)
     shape.geometryType = geometry ? attr(geometry, 'draw', 'type') : el.localName ?? undefined
+    // A line drawn as a custom shape runs from its local box's (0,0) to (w,h).
+    if (shape.local && shape.geometryType && LINE_GEOMETRY_RE.test(shape.geometryType)) {
+      const start = applyMatrix(shape.local.matrix, 0, 0)
+      const end = applyMatrix(shape.local.matrix, shape.local.w, shape.local.h)
+      shape.endpoints = { x1: start.x, y1: start.y, x2: end.x, y2: end.y }
+    }
     shape.paragraphs = collectParagraphs(el, textStyles, resolver)
     return shape
   }
@@ -137,8 +175,11 @@ function parseShape(el: Element, resolver: StyleResolver): OdpShape | null {
   if (is(el, 'draw', 'line') || is(el, 'draw', 'connector')) {
     const shape = base(is(el, 'draw', 'line') ? 'line' : 'connector')
     const [x1, y1, x2, y2] = ['x1', 'y1', 'x2', 'y2'].map(k => lengthCm(attr(el, 'svg', k)))
-    if (x1 !== undefined && y1 !== undefined && x2 !== undefined && y2 !== undefined)
-      shape.endpoints = { x1, y1, x2, y2 }
+    if (x1 !== undefined && y1 !== undefined && x2 !== undefined && y2 !== undefined) {
+      const transform = parseTransform(attr(el, 'draw', 'transform'))
+      const [start, end] = transform ? [applyMatrix(transform, x1, y1), applyMatrix(transform, x2, y2)] : [{ x: x1, y: y1 }, { x: x2, y: y2 }]
+      shape.endpoints = { x1: start.x, y1: start.y, x2: end.x, y2: end.y }
+    }
     return shape
   }
 

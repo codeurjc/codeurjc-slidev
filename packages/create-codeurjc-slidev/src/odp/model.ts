@@ -2,6 +2,8 @@
 // conversion stage after parsing works on these types only (no XML/DOM), so
 // each stage stays unit-testable with small hand-built models.
 
+import type { Matrix } from './shapeGeometry'
+
 /** A box in centimeters, in the slide page's own coordinate space. */
 export interface Rect {
   x: number
@@ -35,9 +37,16 @@ export interface OdpShape {
   presentationClass?: string
   /** `draw:enhanced-geometry`'s `draw:type` for custom shapes (e.g. `ooxml-rect`, `right-arrow`). */
   geometryType?: string
+  /** Axis-aligned bounding box on the page, after any rotation (`draw:transform`). */
   rect?: Rect
-  /** Start/end points of lines and connectors, in centimeters. */
+  /** The shape's local box and the matrix placing it on the page (rotation, translation and geometry mirroring folded in). */
+  local?: { w: number, h: number, matrix: Matrix }
+  /** Rotation in radians, counter-clockwise on screen; absent or 0 when unrotated. */
+  rotation?: number
+  /** Start/end points of lines, connectors and line-shaped custom shapes, in centimeters. */
   endpoints?: { x1: number, y1: number, x2: number, y2: number }
+  /** Arrowheads from the line style's `draw:marker-start`/`draw:marker-end`. */
+  markers?: { start: boolean, end: boolean }
   paragraphs: Paragraph[]
   /** `Pictures/...` (or external) hrefs of a frame's images, in document order. */
   images: string[]

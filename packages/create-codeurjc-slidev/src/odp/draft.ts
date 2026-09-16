@@ -3,15 +3,17 @@ import type { GeometryRect } from 'codeurjc-slidev-theme/composables/useSlideGeo
 import type { AnnotationResult, CodeMark } from './annotations'
 import type { ClassifiedSlide, CoverFields, SlideRole } from './classify'
 import type { CodeMatch, IndexedFile, RepoBase } from './code'
+import type { DiagramGroup, MermaidDiagram } from './diagrams'
 import type { EmittedImage } from './imageCallouts'
 import type { OdpDeck, OdpShape, Paragraph, Rect } from './model'
 import { basename, extname } from 'node:path'
 import { annotateCodes, renderAnchorMarks, renderInlineMarks } from './annotations'
 import { codeLinesOf, commentToken, importLineFor, inferLanguage, isWholeFile, languageForFilename, matchCode, normalizeCodeLine, sourceUrl } from './code'
+import { diagramGroups, isSvgCandidate, mermaidFor } from './diagrams'
 import { bodyRegionFor, contentGeometryFor, mapRect } from './geometry'
 import { slideCalloutsFor } from './imageCallouts'
 import { paragraphsToMarkdown, runsToMarkdown, tableToMarkdown } from './markdown'
-import { shapeText } from './model'
+import { paragraphText, shapeText } from './model'
 
 // A slide draft: everything needed to write one slide of slides.md, still in
 // structured form so build-up merging can assign click steps before rendering.
@@ -24,6 +26,8 @@ export interface DraftContext {
   images: Map<string, Uint8Array>
   /** Archive href -> public path, so a picture reused on several slides is written once. */
   imagePaths: Map<string, string>
+  /** Whether diagrams can be embedded as SVG cropped from LibreOffice's export (LibreOffice ≥ 7.4 found). */
+  canEmbedDiagrams?: boolean
 }
 
 export interface DraftCode {
@@ -37,7 +41,10 @@ export interface DraftCode {
 }
 
 export type DraftBlock
-  = | { kind: 'body', y: number, paragraphs: Paragraph[], steps?: number[] }
+  // `offset`: index of the block's first paragraph within the slide's body
+  // paragraphs, when a diagram split the body into several blocks.
+  = | { kind: 'body', y: number, paragraphs: Paragraph[], steps?: number[], offset?: number }
+    | { kind: 'diagram', y: number, mermaid: string }
     | { kind: 'code', y: number, code: DraftCode }
     | { kind: 'markdown', y: number, markdown: string }
 
@@ -63,6 +70,14 @@ export interface SlideDraft {
   contentGeometry?: GeometryRect
   /** Losses found while drafting (rendering may add more, e.g. for code). */
   losses: string[]
+  /** Conversion notes that lost nothing but may deserve a look (e.g. a diagram redrawn by mermaid). */
+  info: string[]
+  /** Drawings to embed as SVG cropped from LibreOffice's export; their shapes are already left out of everything else. */
+  diagramCandidates: DiagramGroup[]
+  /** Every shape converted as part of a diagram (mermaid or SVG candidate), extras included. */
+  diagramShapes: Set<OdpShape>
+  /** Drawings that would have been embedded as SVG, kept in their ordinary conversion because LibreOffice isn't available. */
+  unembeddedDiagrams: number
   classified: ClassifiedSlide
   annotations: AnnotationResult
 }
@@ -118,6 +133,10 @@ export function draftSlide(cs: ClassifiedSlide, ctx: DraftContext): SlideDraft {
     images: [],
     callouts: [],
     losses,
+    info: [],
+    diagramCandidates: [],
+    diagramShapes: new Set(),
+    unembeddedDiagrams: 0,
     classified: cs,
     annotations,
   }
@@ -144,50 +163,46 @@ export function draftSlide(cs: ClassifiedSlide, ctx: DraftContext): SlideDraft {
       draft.blocks.push({ kind: 'markdown', y: table.rect?.y ?? 0, markdown: md })
   }
 
-  // Images come first: an anchor addresses an image by its emitted index, and
-  // a text box that becomes a callout must not also be flattened into a
-  // paragraph below.
-  const tableRects = cs.tables.flatMap(t => (t.rect ? [t.rect] : []))
-  const emittedImages: EmittedImage[] = []
-  for (const image of [...cs.images].sort((a, b) => (a.rect?.y ?? 0) - (b.rect?.y ?? 0) || (a.rect?.x ?? 0) - (b.rect?.x ?? 0))) {
-    const href = pickImageHref(image)
-    if (!href || !image.rect)
-      continue
-    if (tableRects.some(t => overlaps(t, image.rect!))) {
-      losses.push('image placed over a table omitted')
-      continue
-    }
-    if (!BROWSER_IMAGE_EXTENSIONS.has(extname(href).toLowerCase())) {
-      losses.push(`image in an unsupported format omitted (${extname(href) || href})`)
-      continue
-    }
-    const publicPath = publicImagePath(href, ctx)
-    if (!publicPath) {
-      losses.push('linked (not embedded) image omitted')
+  // Diagrams: clear graphs become mermaid before callouts could pair their
+  // arrows with box labels; any other drawing that the ordinary conversion
+  // would partly lose is left out of it, to be embedded as an SVG.
+  const groups = diagramGroups(cs, annotations)
+  const slideText = [
+    ...cs.titleLines,
+    cs.heading ?? '',
+    ...cs.bodyParagraphs.map(paragraphText),
+    ...cs.codes.map(c => shapeText(c.shape)),
+    ...cs.tables.flatMap(t => (t.table ?? []).flat(2).map(paragraphText)),
+    ...cs.links.map(shapeText),
+  ].join('\n')
+  const undecided: DiagramGroup[] = []
+  for (const group of groups) {
+    const otherTexts = cs.texts.filter(t => !group.members.includes(t)).map(shapeText)
+    const mermaid = mermaidFor(group, cs, [slideText, ...otherTexts].join('\n'))
+    if (!mermaid) {
+      undecided.push(group)
       continue
     }
-    emittedImages.push({ shape: image, index: draft.images.length })
-    draft.images.push({ key: href, publicPath, rect: mapRect(image.rect, region) })
+    for (const m of group.members)
+      draft.diagramShapes.add(m)
+    placeMermaid(draft, mermaid)
+    draft.callouts.push(...mermaid.callouts)
+    draft.info.push('diagram converted to a mermaid flowchart')
   }
 
-  const slideCallouts = slideCalloutsFor(cs, region, annotations, emittedImages)
-  draft.callouts = slideCallouts.callouts
-
-  for (const text of cs.texts) {
-    if (annotations.consumedTexts.has(text) || slideCallouts.consumedTexts.has(text))
-      continue
-    if (text.hasBorder || text.hasFill) {
-      const preview = shapeText(text).replace(/\s+/g, ' ').trim()
-      losses.push(`shape with text omitted ("${preview.length > 40 ? `${preview.slice(0, 40)}…` : preview}")`)
-      continue
-    }
-    const md = paragraphsToMarkdown(text.paragraphs)
-    if (md) {
-      draft.blocks.push({ kind: 'markdown', y: text.rect?.y ?? 0, markdown: md })
-      losses.push('positioned text box flattened into a paragraph')
-    }
+  let overlay = convertOverlay(cs, ctx, region, annotations, draft.diagramShapes)
+  const candidates = undecided.filter(g => isSvgCandidate(g, cs, overlay))
+  // LibreOffice doesn't export hidden slides, so those keep the ordinary conversion too.
+  if (candidates.length > 0 && ctx.canEmbedDiagrams && !slide.hidden) {
+    for (const shape of candidates.flatMap(g => [...g.members, ...g.extras]))
+      draft.diagramShapes.add(shape)
+    draft.diagramCandidates = candidates
+    overlay = convertOverlay(cs, ctx, region, annotations, draft.diagramShapes)
   }
-  draft.blocks.sort((a, b) => a.y - b.y)
+  else if (!slide.hidden) {
+    draft.unembeddedDiagrams = candidates.length
+  }
+  applyOverlay(draft, overlay, ctx)
 
   for (const link of cs.links) {
     const md = link.paragraphs.map(p => runsToMarkdown(p.runs)).filter(Boolean).join('<br>')
@@ -198,11 +213,131 @@ export function draftSlide(cs: ClassifiedSlide, ctx: DraftContext): SlideDraft {
   if (draft.images.length > 0 || cs.bodyShape)
     draft.contentGeometry = contentGeometryFor(cs.bodyShape?.rect, region)
 
-  const unusedConnectors = cs.connectors.filter(c => !annotations.consumedConnectors.has(c) && !slideCallouts.consumedConnectors.has(c)).length
-  if (unusedConnectors > 0)
-    losses.push(unusedConnectors === 1 ? 'arrow or line omitted' : `${unusedConnectors} arrows or lines omitted`)
-  losses.push(...countLosses([...cs.decorations.map(d => d.description), ...annotations.losses]))
   return draft
+}
+
+/**
+ * What the ordinary conversion makes of a slide's images and loose shapes
+ * (everything code annotations didn't claim), leaving out `excluded` shapes:
+ * emitted images, slide callouts, flattened paragraphs, and what gets lost --
+ * both as the slide's loss list and per shape, so diagram detection can tell
+ * whether a group of shapes would lose anything. Pure: image files are only
+ * registered once a result is applied.
+ */
+export interface OverlayConversion {
+  images: { shape: OdpShape, href: string, rect: GeometryRect }[]
+  callouts: SlideCallout[]
+  blocks: DraftBlock[]
+  /** Texts turned into callouts. */
+  calloutTexts: Set<OdpShape>
+  lossByShape: Map<OdpShape, string>
+  losses: string[]
+}
+
+export function convertOverlay(cs: ClassifiedSlide, ctx: DraftContext, region: Rect, annotations: AnnotationResult, excluded: Set<OdpShape>): OverlayConversion {
+  const losses: string[] = []
+  const lossByShape = new Map<OdpShape, string>()
+  const lose = (shape: OdpShape, description: string) => {
+    losses.push(description)
+    lossByShape.set(shape, description)
+  }
+  const kept = <T extends OdpShape>(shapes: T[]) => shapes.filter(s => !excluded.has(s))
+  const visible: ClassifiedSlide = { ...cs, images: kept(cs.images), texts: kept(cs.texts), connectors: kept(cs.connectors) }
+
+  // Images come first: an anchor addresses an image by its emitted index, and
+  // a text box that becomes a callout must not also be flattened into a
+  // paragraph below.
+  const tableRects = cs.tables.flatMap(t => (t.rect ? [t.rect] : []))
+  const images: OverlayConversion['images'] = []
+  const emittedImages: EmittedImage[] = []
+  for (const image of [...visible.images].sort((a, b) => (a.rect?.y ?? 0) - (b.rect?.y ?? 0) || (a.rect?.x ?? 0) - (b.rect?.x ?? 0))) {
+    const href = pickImageHref(image)
+    if (!href || !image.rect)
+      continue
+    if (tableRects.some(t => overlaps(t, image.rect!))) {
+      lose(image, 'image placed over a table omitted')
+      continue
+    }
+    if (!BROWSER_IMAGE_EXTENSIONS.has(extname(href).toLowerCase())) {
+      lose(image, `image in an unsupported format omitted (${extname(href) || href})`)
+      continue
+    }
+    if (!ctx.deck.pictures.has(href)) {
+      lose(image, 'linked (not embedded) image omitted')
+      continue
+    }
+    emittedImages.push({ shape: image, index: images.length })
+    images.push({ shape: image, href, rect: mapRect(image.rect, region) })
+  }
+
+  const slideCallouts = slideCalloutsFor(visible, region, annotations, emittedImages)
+
+  const blocks: DraftBlock[] = []
+  for (const text of visible.texts) {
+    if (annotations.consumedTexts.has(text) || slideCallouts.consumedTexts.has(text))
+      continue
+    if (text.hasBorder || text.hasFill) {
+      const preview = shapeText(text).replace(/\s+/g, ' ').trim()
+      lose(text, `shape with text omitted ("${preview.length > 40 ? `${preview.slice(0, 40)}…` : preview}")`)
+      continue
+    }
+    const md = paragraphsToMarkdown(text.paragraphs)
+    if (md) {
+      blocks.push({ kind: 'markdown', y: text.rect?.y ?? 0, markdown: md })
+      lose(text, 'positioned text box flattened into a paragraph')
+    }
+  }
+
+  const unusedConnectors = visible.connectors.filter(c => !annotations.consumedConnectors.has(c) && !slideCallouts.consumedConnectors.has(c))
+  for (const connector of unusedConnectors)
+    lossByShape.set(connector, 'arrow or line omitted')
+  if (unusedConnectors.length > 0)
+    losses.push(unusedConnectors.length === 1 ? 'arrow or line omitted' : `${unusedConnectors.length} arrows or lines omitted`)
+  const decorations = cs.decorations.filter(d => !excluded.has(d.shape))
+  for (const d of decorations)
+    lossByShape.set(d.shape, d.description)
+  losses.push(...countLosses([...decorations.map(d => d.description), ...annotations.losses]))
+
+  return { images, callouts: slideCallouts.callouts, blocks, calloutTexts: slideCallouts.consumedTexts, lossByShape, losses }
+}
+
+/**
+ * Puts a mermaid diagram among the content blocks. A drawing over the body
+ * usually sits in a run of empty paragraphs the author left for it, so the
+ * body is split at the run nearest the drawing's top; otherwise the diagram
+ * is ordered by its top edge.
+ */
+function placeMermaid(draft: SlideDraft, mermaid: MermaidDiagram): void {
+  const cs = draft.classified
+  const diagram: DraftBlock = { kind: 'diagram', y: mermaid.top, mermaid: mermaid.source }
+  const bodyRect = cs.bodyShape?.rect
+  const overBody = bodyRect && mermaid.top >= bodyRect.y && mermaid.top <= bodyRect.y + bodyRect.h
+  const gap = overBody ? [...cs.bodyGaps].sort((a, b) => Math.abs(a.y - mermaid.top) - Math.abs(b.y - mermaid.top))[0] : undefined
+  const index = gap ? draft.blocks.findIndex(b => b.kind === 'body' && gap.index >= (b.offset ?? 0) && gap.index <= (b.offset ?? 0) + b.paragraphs.length) : -1
+  if (!gap || index < 0) {
+    draft.blocks.push(diagram)
+    return
+  }
+  const body = draft.blocks[index] as Extract<DraftBlock, { kind: 'body' }>
+  const offset = body.offset ?? 0
+  const cut = gap.index - offset
+  // Same y for all three pieces: the (stable) sort keeps them in this order.
+  const pieces: DraftBlock[] = [
+    ...(cut > 0 ? [{ ...body, paragraphs: body.paragraphs.slice(0, cut), offset }] : []),
+    { ...diagram, y: body.y },
+    ...(cut < body.paragraphs.length ? [{ ...body, paragraphs: body.paragraphs.slice(cut), offset: offset + cut }] : []),
+  ]
+  draft.blocks.splice(index, 1, ...pieces)
+}
+
+/** Writes an overlay conversion into a draft, registering its image files. */
+function applyOverlay(draft: SlideDraft, overlay: OverlayConversion, ctx: DraftContext): void {
+  for (const image of overlay.images)
+    draft.images.push({ key: image.href, publicPath: publicImagePath(image.href, ctx)!, rect: image.rect })
+  draft.callouts.push(...overlay.callouts)
+  draft.blocks.push(...overlay.blocks)
+  draft.blocks.sort((a, b) => a.y - b.y)
+  draft.losses.push(...overlay.losses)
 }
 
 // --- Rendering ------------------------------------------------------------------
@@ -289,6 +424,9 @@ export function renderDraftBody(draft: SlideDraft, repoBase: RepoBase | undefine
   for (const block of draft.blocks) {
     if (block.kind === 'body') {
       parts.push(renderBody(block))
+    }
+    else if (block.kind === 'diagram') {
+      parts.push(fence(block.mermaid.split('\n'), 'mermaid'))
     }
     else if (block.kind === 'code') {
       const rendered = renderCode(block.code, repoBase)

@@ -89,7 +89,7 @@ export class StyleResolver {
   }
 
   /** Graphic properties of a shape's own style chain. */
-  graphic(styleNames: (string | undefined)[]): { hasBorder: boolean, hasFill: boolean, paddingTop: number, paddingBottom: number } {
+  graphic(styleNames: (string | undefined)[]): { hasBorder: boolean, hasFill: boolean, paddingTop: number, paddingBottom: number, markers: { start: boolean, end: boolean } } {
     const find = (key: string, ns: 'fo' | 'draw') => {
       for (const n of styleNames) {
         const v = this.lookup(n, ['graphic-properties'], ns, key)
@@ -98,6 +98,10 @@ export class StyleResolver {
       }
       return undefined
     }
+    const marker = (key: string) => {
+      const v = find(key, 'draw')
+      return v !== undefined && v !== 'none'
+    }
     const stroke = find('stroke', 'draw')
     const fill = find('fill', 'draw')
     return {
@@ -105,6 +109,7 @@ export class StyleResolver {
       hasFill: fill !== undefined && fill !== 'none',
       paddingTop: lengthCm(find('padding-top', 'fo')) ?? 0.125,
       paddingBottom: lengthCm(find('padding-bottom', 'fo')) ?? 0.125,
+      markers: { start: marker('marker-start'), end: marker('marker-end') },
     }
   }
 

@@ -28,6 +28,9 @@ export const BASE_AUTOMATIC_STYLES = [
   '<style:style style:name="dpHidden" style:family="drawing-page"><style:drawing-page-properties presentation:visibility="hidden"/></style:style>',
   '<style:style style:name="grBox" style:family="graphic"><style:graphic-properties draw:stroke="solid" draw:fill="none" fo:padding-top="0.125cm"/></style:style>',
   '<style:style style:name="grPlain" style:family="graphic"><style:graphic-properties draw:stroke="none" draw:fill="none"/></style:style>',
+  '<style:style style:name="grFilled" style:family="graphic"><style:graphic-properties draw:stroke="solid" draw:fill="solid" draw:auto-grow-height="false"/></style:style>',
+  '<style:style style:name="grArrowEnd" style:family="graphic"><style:graphic-properties draw:stroke="solid" draw:fill="none" draw:marker-end="Arrow"/></style:style>',
+  '<style:style style:name="grArrowStart" style:family="graphic"><style:graphic-properties draw:stroke="solid" draw:fill="none" draw:marker-start="Arrow"/></style:style>',
 ].join('')
 
 const FONT_FACES = [
@@ -94,8 +97,17 @@ export function customShape(type: string, r: RectCm, inner = '', styleName = 'gr
   return `<draw:custom-shape draw:style-name="${styleName}" ${rectAttrs(r)}>${inner}<draw:enhanced-geometry draw:type="${type}"/></draw:custom-shape>`
 }
 
-export function line(x1: number, y1: number, x2: number, y2: number): string {
-  return `<draw:line svg:x1="${x1}cm" svg:y1="${y1}cm" svg:x2="${x2}cm" svg:y2="${y2}cm"/>`
+/**
+ * A custom shape placed by `draw:transform` instead of `svg:x`/`svg:y`, as
+ * LibreOffice writes rotated shapes. `geometryAttrs` adds raw attributes to
+ * the enhanced geometry (e.g. `draw:mirror-vertical="true"`).
+ */
+export function transformedShape(type: string, size: { w: number, h: number }, transform: string, inner = '', styleName = 'grPlain', geometryAttrs = ''): string {
+  return `<draw:custom-shape draw:style-name="${styleName}" svg:width="${size.w}cm" svg:height="${size.h}cm" draw:transform="${transform}">${inner}<draw:enhanced-geometry draw:type="${type}"${geometryAttrs ? ` ${geometryAttrs}` : ''}/></draw:custom-shape>`
+}
+
+export function line(x1: number, y1: number, x2: number, y2: number, styleName?: string): string {
+  return `<draw:line${styleName ? ` draw:style-name="${styleName}"` : ''} svg:x1="${x1}cm" svg:y1="${y1}cm" svg:x2="${x2}cm" svg:y2="${y2}cm"/>`
 }
 
 /** A `text:p`. `content` is raw inner XML (use `span`/`a`/`br` helpers or plain escaped text). */

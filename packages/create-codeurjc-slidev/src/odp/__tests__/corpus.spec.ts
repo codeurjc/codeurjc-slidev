@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
 import { convertOdp } from '../convert'
+import { detectLibreOffice } from '../office'
 
 // Converts the real CodeURJC course decks the importer was tuned on. They are
 // never committed (the repo's `odp/` is gitignored): the decks and their code
@@ -104,5 +105,68 @@ describe('oDP corpus', () => {
     const { slidesMarkdown, reports } = await convert('2.5 Análisis estático de código')
     expect(slidesMarkdown).toMatch(/ {2}- at: \{ image: \d+, x: [\d.]+, y: [\d.]+ \}\n(?! {4}text:)/)
     expect(reports.flatMap(r => r.losses).join('\n')).not.toContain('arrow or line omitted')
+  })
+
+  it.skipIf(!deckPath('Anexo – Introducción a Docker para CI') || !deckPath('Tema 1.2 - Pruebas unitarias') || !deckPath('Tema 4 - Pruebas de sistema - Selenium'))('rotated arrows take part in callouts instead of silently vanishing', async () => {
+    const docker = await convert('Anexo – Introducción a Docker para CI')
+    // A 180°-rotated arrow from an explanation box to a command.
+    expect(docker.slidesMarkdown).toMatch(/\$ mvn spring-boot:build-image # \[!mark@\d+,\d+\] Genera la imagen posts:0\.1\.0-SNAPSHOT/)
+    expect(docker.slidesMarkdown).toContain('text: Nombre de la imagen que hemos creado')
+    const tema12 = await convert('Tema 1.2 - Pruebas unitarias')
+    expect(tema12.slidesMarkdown).toContain('text: Sólo muestra que la aserción no es correcta')
+    // A vertically mirrored line's tip is its top-right end: 27% down the screenshot, not 40%.
+    expect(tema12.slidesMarkdown).toContain('- at: { image: 0, x: 0.042, y: 0.2721 }')
+    const selenium = await convert('Tema 4 - Pruebas de sistema - Selenium')
+    expect(selenium.slidesMarkdown).toMatch(/@LocalServerPort \/\/ \[!mark@\d+,\d+\] Arranque automático del SUT/)
+  })
+
+  it.skipIf(!deckPath('Tema 1.1 - Introducción a pruebas software'))('tema 1.1: the methodology pipelines become mermaid flowcharts with their "Pruebas" callouts', async () => {
+    const { reports, slideSources } = await convert('Tema 1.1 - Introducción a pruebas software')
+    const slideOf = (odp: number) => {
+      const report = reports.find(r => r.odpNumbers.includes(odp))!
+      return { report, source: slideSources[report.fileIndex - 1] }
+    }
+    const pointedAt = { 81: 'Implementación', 82: 'Implementación', 83: 'Requisitos', 84: 'Requisitos' }
+    for (const [odp, node] of Object.entries(pointedAt)) {
+      const { report, source } = slideOf(Number(odp))
+      expect(source).toContain('```mermaid\nflowchart LR\n  n1["Requisitos"]\n  n2["Análisis / Diseño"]\n  n3["Implementación"]\n  n1 --> n2\n  n2 --> n3\n```')
+      expect(source).toContain(`callouts:\n  - at: { text: ${node} }\n    text: Pruebas`)
+      expect(report).toMatchObject({ losses: [], info: ['diagram converted to a mermaid flowchart'] })
+    }
+    // Given/When/Then boxes pointing into a code screenshot stay image callouts.
+    expect(slideOf(56).source).toMatch(/- at: \{ image: 0, x: [\d.]+, y: [\d.]+ \}\n {4}text: Given/)
+    expect(slideOf(56).source).not.toContain('```mermaid')
+  })
+
+  it.skipIf(!deckPath('Tema 1.2 - Pruebas unitarias'))('tema 1.2: without LibreOffice the class diagram keeps its ordinary conversion, and the console says why', async () => {
+    const result = await convertOdp({ odpPath: deckPath('Tema 1.2 - Pruebas unitarias')!, office: async () => ({ code: -1, stdout: '' }), git: () => null })
+    expect(result.notices).toContain('Diagrams kept as losses: LibreOffice ≥ 7.4 (soffice) was not found')
+    expect([...result.images.keys()].some(k => k.startsWith('images/diagram-'))).toBe(false)
+  })
+
+  describe('with the real LibreOffice', () => {
+    it.skipIf(!deckPath('Tema 1.2 - Pruebas unitarias') || !deckPath('2.2 Código de calidad'))('embeds the drawings callouts can\'t express as cropped SVG images', async (ctx) => {
+      const status = await detectLibreOffice()
+      if (!status.ok) {
+        console.warn(`[corpus] skipping the diagram-image assertions: soffice ≥ 7.4 not available (${status.reason})`)
+        ctx.skip()
+      }
+      const svgNote = 'diagram embedded as an SVG image (not editable)'
+      const tema12 = await convertOdp({ odpPath: deckPath('Tema 1.2 - Pruebas unitarias')!, git: () => null })
+      const uml = new TextDecoder().decode(tema12.images.get('images/diagram-page123.svg'))
+      expect(uml).toContain('WebSocketUser')
+      expect(uml).not.toContain('Ejercicio 8')
+      expect(tema12.reports.find(r => r.odpNumbers.includes(123))).toMatchObject({ losses: [], info: [svgNote] })
+
+      const calidad = await convertOdp({ odpPath: deckPath('2.2 Código de calidad')!, git: () => null })
+      for (const odp of [153, 156, 157]) {
+        expect(calidad.images.has(`images/diagram-page${odp}.svg`)).toBe(true)
+        expect(calidad.reports.find(r => r.odpNumbers.includes(odp))).toMatchObject({ losses: [], info: [svgNote] })
+      }
+      // The hexagon slide's labels are inside the picture now, not callouts over it.
+      const hexagon = calidad.slideSources[calidad.reports.find(r => r.odpNumbers.includes(156))!.fileIndex - 1]
+      expect(hexagon).not.toContain('callouts:')
+      expect(new TextDecoder().decode(calidad.images.get('images/diagram-page156.svg'))).toContain('Puerto primario')
+    }, 600_000)
   })
 })

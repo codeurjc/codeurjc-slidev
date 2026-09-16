@@ -88,7 +88,9 @@ export function analyzePair(a: SlideDraft, b: SlideDraft): PairAnalysis {
     ...b.annotations.consumedConnectors,
     ...b.classified.images,
   ])
-  const unconvertible = added.filter(s => !allowed.has(s))
+  // Diagram shapes never count as convertible additions: a diagram that
+  // appears or changes across the run keeps the slides separate.
+  const unconvertible = added.filter(s => !allowed.has(s) || b.diagramShapes.has(s))
   return {
     superset: true,
     convertible: unconvertible.length === 0,
@@ -123,7 +125,7 @@ function mergeRun(run: SlideDraft[]): SlideDraft {
       return { ...block, code: { ...block.code, marks } }
     }
     if (block.kind === 'body') {
-      const steps = block.paragraphs.map((_, i) => firstStep(d => d.classified.bodyParagraphs.length > i))
+      const steps = block.paragraphs.map((_, i) => firstStep(d => d.classified.bodyParagraphs.length > i + (block.offset ?? 0)))
       return { ...block, steps }
     }
     return block

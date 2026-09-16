@@ -55,14 +55,21 @@ export function formatReport(imported: ImportProjectResult): string[] {
     `  Code: ${stats.imports} snippet import${stats.imports === 1 ? '' : 's'}, ${stats.inlineCode} inline block${stats.inlineCode === 1 ? '' : 's'}${codeFiles ? `, ${codeFiles} files copied into code/` : ''}`,
     ...result.notices.map(n => `  ! ${n}`),
   ]
+  const where = (r: ConvertResult['reports'][number]) => {
+    const odp = r.odpNumbers.length === 1 ? `ODP slide ${r.odpNumbers[0]}` : `ODP slides ${r.odpNumbers[0]}–${r.odpNumbers[r.odpNumbers.length - 1]}`
+    return r.hidden ? `Hidden slide (${odp})` : `Slide ${r.slidevNumber} (${odp})`
+  }
+  const noted = result.reports.filter(r => r.info.length > 0)
+  if (noted.length > 0) {
+    lines.push(`  Converted with notes (${noted.length} slide${noted.length === 1 ? '' : 's'}; nothing lost, worth a look):`)
+    for (const r of noted)
+      lines.push(`    ${where(r)}: ${r.info.join('; ')}`)
+  }
   const lossy = result.reports.filter(r => r.losses.length > 0)
   if (lossy.length > 0) {
     lines.push(`  Not converted (${lossy.length} slide${lossy.length === 1 ? '' : 's'}; slides.md contains none of this):`)
-    for (const r of lossy) {
-      const odp = r.odpNumbers.length === 1 ? `ODP slide ${r.odpNumbers[0]}` : `ODP slides ${r.odpNumbers[0]}–${r.odpNumbers[r.odpNumbers.length - 1]}`
-      const where = r.hidden ? `Hidden slide (${odp})` : `Slide ${r.slidevNumber} (${odp})`
-      lines.push(`    ${where}: ${r.losses.join('; ')}`)
-    }
+    for (const r of lossy)
+      lines.push(`    ${where(r)}: ${r.losses.join('; ')}`)
   }
   lines.push(result.comparison === 'written'
     ? '  Comparison deck written to comparison.md (open it with the dev:compare script)'

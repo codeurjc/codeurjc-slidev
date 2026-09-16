@@ -33,9 +33,14 @@ The import is a best effort:
   - Anything else stays inline.
   - Highlight boxes and callouts over code become code-highlight callouts, including several that land on the same line (nested boxes ending together, or a callout beside a box's last line).
 - **Annotations over images:** an arrow from a text box into a screenshot becomes a callout anchored to that spot of the picture, an arrow with nothing at its other end becomes a bare arrow, and a label written on top of an image stays where it was drawn. They used to be reported as losses.
+- **Diagrams drawn with shapes:**
+  - A plain flowchart (labelled boxes joined by arrows in one direction) becomes a `mermaid` diagram. An arrow with a label pointing at one of its steps becomes a callout on that step.
+  - Any other drawing that couldn't be converted without losing part of it (a class diagram, shapes drawn over a picture, rotated labels) becomes an SVG image cropped from LibreOffice's rendering of the slide, placed where it was. It isn't editable as text.
+  - Without LibreOffice, those drawings are converted as far as possible and the rest is reported as lost.
+- **Rotated shapes** (arrows turned to point up, rotated labels) keep their real position and direction.
 - **Build-ups:** consecutive slides that each add a callout, bullet or image become a single slide with click steps. The project's `export` script uses `slidev export --with-clicks`, so the PDF keeps every step.
 
-Everything that couldn't be converted (arrows, diagrams, grouped shapes, callouts over screenshots, ...) is listed in the console. `slides.md` itself never contains warnings.
+Everything that couldn't be converted (arrows, grouped shapes, OLE objects, ...) is listed in the console. Conversions worth a look that lost nothing (a diagram redrawn by mermaid or embedded as an image) are listed separately, as notes. `slides.md` itself never contains warnings.
 
 ### Comparison deck
 
@@ -45,7 +50,7 @@ When **LibreOffice ≥ 7.4** (`soffice`) is installed, the import also writes `c
 pnpm run dev:compare
 ```
 
-Without LibreOffice (or with an older version), the comparison deck is skipped and the console says why.
+Without LibreOffice (or with an older version), the comparison deck and diagram images are skipped and the console says why. LibreOffice runs its export once per import, for both.
 
 ## Development
 

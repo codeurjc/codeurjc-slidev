@@ -3,7 +3,8 @@ import type { IndexedFile, RepoBase } from './code'
 import type { ComparisonEntry } from './comparison'
 import type { DraftContext, SlideDraft } from './draft'
 import type { DesiredHeadings } from './headings'
-import type { OfficeRunner } from './office'
+import type { LibreOfficeStatus, OfficeRunner } from './office'
+import type { SvgExport } from './svgCrop'
 import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import { serializeSlideCallouts } from 'codeurjc-slidev-theme/composables/useSlideCallouts'
@@ -13,12 +14,15 @@ import { mergeBuildUps } from './buildups'
 import { classifySlide } from './classify'
 import { buildCodeIndex, detectRepoBase, parseCodeRepoFlag, resolveCodeFolder } from './code'
 import { comparisonMarkdown } from './comparison'
+import { boxOf } from './diagrams'
 import { draftSlide, renderDraftBody } from './draft'
 import { toYaml } from './frontmatter'
+import { bodyRegionFor, mapRect } from './geometry'
 import { emitHeadings } from './headings'
 import { detectLibreOffice, exportSvg, realOfficeRunner } from './office'
 import { parseOdp } from './parse'
 import { splitSvgSlides } from './svg'
+import { cropDiagram, parseSvgExport } from './svgCrop'
 
 // The ODP -> Slidev conversion pipeline, producing everything a project needs
 // (slides.md, images, the code folder to copy, the optional comparison deck)
@@ -31,7 +35,7 @@ export interface ConvertOptions {
   /** `--code-repo`: GitHub base URL for source links. */
   codeRepo?: string
   git?: GitRunner
-  /** LibreOffice process runner; `false` disables the comparison deck. */
+  /** LibreOffice process runner; `false` disables LibreOffice (no comparison deck, no diagram images). */
   office?: OfficeRunner | false
 }
 
@@ -43,6 +47,8 @@ export interface SlideReport {
   fileIndex: number
   hidden: boolean
   losses: string[]
+  /** Conversion notes that lost nothing (e.g. a diagram redrawn by mermaid or embedded as an image). */
+  info: string[]
 }
 
 export interface ConvertResult {
@@ -127,11 +133,51 @@ export async function convertOdp(options: ConvertOptions): Promise<ConvertResult
     notices.push(`No code folder found next to the ODP (expected "${basename(options.odpPath, extname(options.odpPath))}/"); code stays inline`)
   }
 
+  // LibreOffice, needed for diagram images and the comparison deck. Its SVG
+  // export runs at most once, the first time either needs it.
+  const office = options.office === false ? undefined : options.office ?? realOfficeRunner
+  const officeStatus: LibreOfficeStatus | undefined = office ? await detectLibreOffice(office) : undefined
+  let exported: Promise<string> | undefined
+  const exportOnce = () => (exported ??= exportSvg(options.odpPath, office!))
+
   // Drafts, build-ups.
-  const ctx: DraftContext = { deck, codeIndex, repoBase, images: new Map(), imagePaths: new Map() }
+  const ctx: DraftContext = { deck, codeIndex, repoBase, images: new Map(), imagePaths: new Map(), canEmbedDiagrams: officeStatus?.ok === true }
   const merged = mergeBuildUps(classified.map(cs => draftSlide(cs, ctx)))
   notices.push(...merged.warnings)
   const drafts = merged.drafts
+
+  // Diagram images, cropped from the export.
+  if (drafts.some(d => d.unembeddedDiagrams > 0) && officeStatus && !officeStatus.ok) {
+    notices.push(officeStatus.reason === 'missing'
+      ? 'Diagrams kept as losses: LibreOffice ≥ 7.4 (soffice) was not found'
+      : `Diagrams kept as losses: LibreOffice ${officeStatus.version} found, but ≥ 7.4 is required`)
+  }
+  if (drafts.some(d => d.diagramCandidates.length > 0)) {
+    let svg: SvgExport | undefined
+    try {
+      svg = parseSvgExport(await exportOnce())
+    }
+    catch (error) {
+      notices.push(`Diagram images not written: ${(error as Error).message}`)
+    }
+    for (const draft of drafts) {
+      const slide = draft.classified.slide
+      const region = bodyRegionFor(deck, slide)
+      draft.diagramCandidates.forEach((group, i) => {
+        const cropped = svg && cropDiagram(svg, slide.name, group.members.map(boxOf), group.extras.map(boxOf))
+        if (!cropped) {
+          draft.losses.push('diagram omitted (not found in LibreOffice\'s SVG export)')
+          return
+        }
+        let path = `images/diagram-${slide.name}${i > 0 ? `-${i + 1}` : ''}.svg`
+        for (let n = 2; ctx.images.has(path); n++)
+          path = `images/diagram-${slide.name}-${i + 1}-${n}.svg`
+        ctx.images.set(path, new TextEncoder().encode(cropped))
+        draft.images.push({ key: path, publicPath: path, rect: mapRect(group.rect, region) })
+        draft.info.push('diagram embedded as an SVG image (not editable)')
+      })
+    }
+  }
 
   const deckTitle = drafts.find(d => d.role === 'cover' && !d.hidden)?.cover?.title
     ?? drafts.find(d => d.role === 'cover')?.cover?.title
@@ -172,7 +218,7 @@ export async function convertOdp(options: ConvertOptions): Promise<ConvertResult
     sources.push(slideSource(frontmatter, content))
     if (!draft.hidden)
       slidevNumber++
-    reports.push({ odpNumbers: draft.odpNumbers, slidevNumber: draft.hidden ? undefined : slidevNumber, fileIndex: i + 1, hidden: draft.hidden, losses })
+    reports.push({ odpNumbers: draft.odpNumbers, slidevNumber: draft.hidden ? undefined : slidevNumber, fileIndex: i + 1, hidden: draft.hidden, losses, info: [...draft.info] })
   })
 
   // Comparison deck.
@@ -182,12 +228,11 @@ export async function convertOdp(options: ConvertOptions): Promise<ConvertResult
   const lossy = reports.filter(r => r.losses.length > 0)
   if (lossy.length > 0) {
     comparison = 'skipped'
-    if (options.office === false) {
+    if (!officeStatus) {
       notices.push('Comparison deck disabled')
     }
     else {
-      const office = options.office ?? realOfficeRunner
-      const status = await detectLibreOffice(office)
+      const status = officeStatus
       if (!status.ok) {
         notices.push(status.reason === 'missing'
           ? 'Comparison deck skipped: LibreOffice ≥ 7.4 (soffice) was not found'
@@ -202,7 +247,7 @@ export async function convertOdp(options: ConvertOptions): Promise<ConvertResult
         })
         let rendered = new Map<string, string>()
         try {
-          rendered = splitSvgSlides(await exportSvg(options.odpPath, office), new Set(wanted.values()))
+          rendered = splitSvgSlides(await exportOnce(), new Set(wanted.values()))
         }
         catch (error) {
           notices.push(`Comparison deck written without originals: ${(error as Error).message}`)

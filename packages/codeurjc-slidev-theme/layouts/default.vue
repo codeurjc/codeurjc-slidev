@@ -266,6 +266,11 @@ function fitTitle() {
 // has no meaningful saved state for it.
 let imageEverSaved = false
 
+// Diagram shadow roots being watched for callout placement (see watchDiagrams).
+let diagramObserver: MutationObserver | undefined
+const observedShadowRoots = new WeakSet<ShadowRoot>()
+let diagramRetry: ReturnType<typeof setTimeout> | undefined
+
 onMounted(() => {
   const el = rootEl.value
   if (!el)
@@ -326,6 +331,7 @@ onMounted(() => {
     computeCallouts()
     fitTitle()
   })
+  diagramObserver = new MutationObserver(() => computeCallouts())
   const observer = new MutationObserver(() => {
     updateTrackedImage()
     computeCallouts()
@@ -350,6 +356,8 @@ onMounted(() => {
   resizeObserver.observe(el)
   onUnmounted(() => {
     observer.disconnect()
+    diagramObserver?.disconnect()
+    clearTimeout(diagramRetry)
     resizeObserver.disconnect()
     window.removeEventListener('resize', computeCallouts)
     window.removeEventListener('resize', fitTitle)
@@ -763,11 +771,62 @@ function warnAnchorOnce(message: string) {
   console.warn(`[codeurjc-slidev-theme] slide ${slideNo.value}: ${message}`)
 }
 
-/** The element a content anchor names: the first match that doesn't itself contain another match, so the deepest wins over its wrappers. */
-function findAnchorElement(container: Element, text: string): Element | null {
-  const matches = Array.from(container.querySelectorAll('li, p, td, th, h1, h2, h3, h4, h5, h6, code, strong, em, a, blockquote'))
-    .filter(el => (el.textContent ?? '').includes(text))
+const ANCHOR_SELECTOR = 'li, p, td, th, h1, h2, h3, h4, h5, h6, code, strong, em, a, blockquote'
+// Mermaid labels are HTML spans/paragraphs in a foreignObject, or SVG text.
+const DIAGRAM_ANCHOR_SELECTOR = `${ANCHOR_SELECTOR}, span, text, tspan`
+
+/** The first match that doesn't itself contain another match, so the deepest wins over its wrappers. */
+function deepestMatch(candidates: Element[], text: string): Element | null {
+  const matches = candidates.filter(el => (el.textContent ?? '').includes(text))
   return matches.find(el => !matches.some(other => other !== el && el.contains(other))) ?? null
+}
+
+/** Open shadow roots within the content: where Slidev renders mermaid diagrams. */
+function shadowRootsUnder(container: Element): ShadowRoot[] {
+  return Array.from(container.querySelectorAll('*')).flatMap(el => (el.shadowRoot ? [el.shadowRoot] : []))
+}
+
+// Mermaid diagrams render asynchronously into shadow roots, which neither the
+// content MutationObserver nor a plain querySelectorAll can see into. Each
+// placement pass starts watching any new shadow root, so a callout anchored
+// to a diagram's label is placed as soon as the diagram draws. Attaching a
+// shadow root isn't a DOM mutation either, so while a diagram host has none
+// yet (Slidev attaches it just after mount), placement retries shortly.
+function watchDiagrams(container: Element) {
+  for (const shadow of shadowRootsUnder(container)) {
+    if (observedShadowRoots.has(shadow))
+      continue
+    observedShadowRoots.add(shadow)
+    diagramObserver?.observe(shadow, { childList: true, subtree: true })
+  }
+  if (!diagramRetry && Array.from(container.querySelectorAll('.mermaid')).some(el => !el.shadowRoot)) {
+    diagramRetry = setTimeout(() => {
+      diagramRetry = undefined
+      computeCallouts()
+    }, 200)
+  }
+}
+
+/** A mermaid diagram that hasn't rendered into its shadow root yet (Slidev renders them asynchronously). */
+function hasPendingDiagram(container: Element): boolean {
+  return Array.from(container.querySelectorAll('.mermaid')).some(el => !el.shadowRoot || el.shadowRoot.childElementCount === 0)
+}
+
+/**
+ * The element a content anchor names. Plain content wins; only then are
+ * rendered diagrams searched, where a node's label resolves to the whole
+ * node (its shape), which is what a callout should point at and avoid.
+ */
+function findAnchorElement(container: Element, text: string): Element | null {
+  const plain = deepestMatch(Array.from(container.querySelectorAll(ANCHOR_SELECTOR)), text)
+  if (plain)
+    return plain
+  for (const shadow of shadowRootsUnder(container)) {
+    const match = deepestMatch(Array.from(shadow.querySelectorAll(DIAGRAM_ANCHOR_SELECTOR)), text)
+    if (match)
+      return match.closest('g.node') ?? match
+  }
+  return null
 }
 
 /**
@@ -793,7 +852,10 @@ function resolveCalloutAnchor(container: Element, originRect: DOMRect, scale: nu
 
   const el = findAnchorElement(container, anchor.text)
   if (!el) {
-    warnAnchorOnce(`callout anchored to text "${anchor.text}", which no element on this slide contains`)
+    // The text may be a diagram's label that just hasn't rendered yet; the
+    // shadow-root observer re-runs placement once it has.
+    if (!hasPendingDiagram(container))
+      warnAnchorOnce(`callout anchored to text "${anchor.text}", which no element on this slide contains`)
     return null
   }
   const rect = rectOf(el, originRect, scale)
@@ -808,6 +870,7 @@ function computeCallouts() {
     calloutItems.value = []
     return
   }
+  watchDiagrams(container)
   const scale = getScale()
   const originRect = root.getBoundingClientRect()
   // While Slidev keeps an adjacent slide's layout mounted but not yet laid

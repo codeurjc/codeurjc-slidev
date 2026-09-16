@@ -3,11 +3,14 @@ import {
   CODE_FRAME_COVERAGE,
   COVER_SEARCH_SLIDES,
   DATE_RE,
+  DEFAULT_FONT_SIZE_PT,
   HEADING_MAX_CHARS,
   LABEL_DISTANCE_CM,
+  LINE_HEIGHT_FACTOR,
   MONO_FILENAME_RE,
   MONO_RATIO,
   PROJECT_LABEL_RE,
+  PT_TO_CM,
   TITLE_BAND_TOP_FRACTION,
   TITLE_MAX_CHARS,
 } from './constants'
@@ -48,7 +51,16 @@ export interface ClassifiedSlide {
   heading?: string
   /** Body paragraphs with the heading removed, empty items dropped, and list depths normalized. */
   bodyParagraphs: Paragraph[]
+  /**
+   * Where runs of empty body paragraphs were dropped: `index` is the position in
+   * `bodyParagraphs` the run preceded, `y` an estimate (cm) of the run's top on
+   * the page. Authors leave such runs as room for a drawing over the body.
+   */
+  bodyGaps: { index: number, y: number }[]
   bodyShape?: OdpShape
+  titleShape?: OdpShape
+  /** Filename/project label shapes near code (attached or not), which have a role even when not listed elsewhere. */
+  labelShapes: OdpShape[]
   codes: CodeShape[]
   links: OdpShape[]
   images: OdpShape[]
@@ -135,6 +147,43 @@ function isBoldParagraph(p: Paragraph): boolean {
  * non-list paragraph followed by a list) and returns the remaining
  * paragraphs with empty ones dropped and list depths renormalized.
  */
+/**
+ * Runs of empty paragraphs in a body frame, located in the `rest` paragraphs
+ * `extractHeading` keeps (so `index` counts only kept paragraphs) and with a
+ * top estimated from the preceding paragraphs' font sizes. Line wrapping and
+ * paragraph spacing are ignored, so the estimate errs early for long lines.
+ */
+export function bodyGapsOf(body: OdpShape, heading: string | undefined): { index: number, y: number }[] {
+  const gaps: { index: number, y: number }[] = []
+  let y = (body.rect?.y ?? 0) + body.paddingTop
+  let kept = 0
+  let headingSkipped = heading === undefined
+  let inRun = false
+  let lastSize = DEFAULT_FONT_SIZE_PT
+  for (const p of body.paragraphs) {
+    const sizes = p.runs.flatMap(r => (r.fontSizePt ? [r.fontSizePt] : []))
+    const size = sizes.length > 0 ? Math.max(...sizes) : lastSize
+    lastSize = size
+    const empty = paragraphText(p).trim() === ''
+    if (empty) {
+      // A run before any kept paragraph only counts after an extracted heading.
+      if (!inRun && (kept > 0 || (heading !== undefined && headingSkipped)))
+        gaps.push({ index: kept, y })
+      inRun = true
+    }
+    else {
+      inRun = false
+      if (headingSkipped)
+        kept++
+      else
+        headingSkipped = true
+    }
+    y += size * LINE_HEIGHT_FACTOR * PT_TO_CM
+  }
+  // A run at the very end isn't a gap between content.
+  return gaps.filter(g => g.index < kept)
+}
+
 export function extractHeading(paragraphs: Paragraph[]): { heading?: string, rest: Paragraph[] } {
   const nonEmpty = paragraphs.filter(p => paragraphText(p).trim() !== '')
   if (nonEmpty.length === 0)
@@ -207,6 +256,8 @@ export function classifySlide(slide: OdpSlide, deck: OdpDeck): ClassifiedSlide {
     role: 'content',
     titleLines: [],
     bodyParagraphs: [],
+    bodyGaps: [],
+    labelShapes: [],
     codes: [],
     links: [],
     images: [],
@@ -245,8 +296,10 @@ export function classifySlide(slide: OdpSlide, deck: OdpDeck): ClassifiedSlide {
       .filter(s => !isMonospaceShape(s) && shapeText(s).trim().length <= TITLE_MAX_CHARS && s.paragraphs.filter(p => paragraphText(p).trim()).length <= 2)
       .sort((a, b) => a.rect!.y - b.rect!.y)[0]
   }
-  if (titleShape)
+  if (titleShape) {
+    result.titleShape = titleShape
     result.titleLines = titleLinesOf(titleShape)
+  }
 
   const remaining = shapes.filter(s => s !== titleShape)
 
@@ -267,6 +320,7 @@ export function classifySlide(slide: OdpSlide, deck: OdpDeck): ClassifiedSlide {
     }
   }
 
+  result.labelShapes = labelCandidates
   const slideProjectLabel = labelCandidates.map(s => shapeText(s).trim()).find(t => PROJECT_LABEL_RE.test(t))
   result.codes = codeShapes.map(shape => ({ shape, terminal: !isMonospaceShape(shape), projectLabel: slideProjectLabel }))
   for (const label of labelCandidates) {
@@ -291,6 +345,7 @@ export function classifySlide(slide: OdpSlide, deck: OdpDeck): ClassifiedSlide {
     const { heading, rest: bodyRest } = extractHeading(bodyShape.paragraphs)
     result.heading = heading
     result.bodyParagraphs = bodyRest
+    result.bodyGaps = bodyGapsOf(bodyShape, heading)
   }
 
   for (const s of rest) {

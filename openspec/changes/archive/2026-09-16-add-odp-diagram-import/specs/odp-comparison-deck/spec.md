@@ -1,21 +1,4 @@
-# odp-comparison-deck
-
-## Purpose
-
-When LibreOffice 7.4 or newer is available, writes a separate `comparison.md` deck for an imported project that pairs each slide with conversion losses with its original rendering (split from LibreOffice's SVG export) and the converted slide, leaving `slides.md` itself clean.
-
-## Requirements
-
-### Requirement: The comparison deck requires LibreOffice 7.4 or newer
-The importer SHALL check for a `soffice` executable reporting version 7.4 or newer before generating the comparison deck. When it's missing or older, the import SHALL still complete normally, no comparison deck SHALL be generated, and the console SHALL say that LibreOffice ≥ 7.4 is needed for the comparison deck.
-
-#### Scenario: LibreOffice missing
-- **WHEN** an ODP with losses is imported on a machine without `soffice` on the PATH
-- **THEN** the project is created with `slides.md`, no `comparison.md` exists, and the console explains that the comparison deck was skipped because LibreOffice ≥ 7.4 wasn't found
-
-#### Scenario: LibreOffice too old
-- **WHEN** `soffice --version` reports 7.3.7
-- **THEN** no comparison deck is generated, and the console reports the detected version and the 7.4 minimum
+## MODIFIED Requirements
 
 ### Requirement: Original slides are rendered from LibreOffice's SVG export
 When the comparison deck is generated, or when a slide has a diagram to embed as SVG, the importer SHALL export the ODP to SVG with LibreOffice, using an isolated temporary user profile so a running LibreOffice instance doesn't interfere. The export SHALL run at most once per import, and its result SHALL be shared by the comparison deck and diagram embedding. For the comparison deck, it SHALL split the export into one standalone SVG per exported slide, containing the shared definitions, the slide's master page and the slide itself, with the navigation script removed. Only slides with losses SHALL be written, to `public/odp-originals/<ODP slide name>.svg`. Slides SHALL be matched to ODP slides by the slide name the export preserves (e.g. `page16`). A hidden ODP slide, which LibreOffice doesn't export, SHALL have no rendered original.
@@ -58,10 +41,3 @@ Slides without losses SHALL NOT appear, including slides that only have info not
 #### Scenario: Slide with only info notes
 - **WHEN** a slide's only report is the note `diagram embedded as an SVG image (not editable)`
 - **THEN** that slide doesn't appear in `comparison.md`
-
-### Requirement: The comparison deck leaves slides.md clean and renders converted slides faithfully
-Generating the comparison deck SHALL NOT add anything to `slides.md`. A converted slide imported into `comparison.md` SHALL render with the same title and subtitle (including carried-over values) as when presenting `slides.md`.
-
-#### Scenario: Carried title in the comparison deck
-- **WHEN** converted slide 14 has no `#` heading of its own and carries "Tipos de pruebas" from an earlier slide in `slides.md`
-- **THEN** that slide shows "Tipos de pruebas" as its title in both `slides.md` and `comparison.md`
