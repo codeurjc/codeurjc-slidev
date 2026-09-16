@@ -1,10 +1,11 @@
 import type { GitRunner } from 'codeurjc-slidev-theme/composables/useSourceLink'
 import type { ConvertResult } from './convert'
 import type { OfficeRunner } from './office'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { copyCodeFolder } from './code'
 import { convertOdp } from './convert'
+import { importReportMarkdown, reportFileName, REPORTS_DIR } from './importReport'
 
 // Entry point bundled into `dist/odp-import.mjs` for the published CLI:
 // converts an ODP and writes the result into an already-scaffolded project.
@@ -19,12 +20,18 @@ export interface ImportProjectOptions {
   codeRepo?: string
   office?: OfficeRunner | false
   git?: GitRunner
+  /** Clock for the import report's timestamp (tests pin it). */
+  now?: () => Date
+  /** create-codeurjc-slidev's version, recorded in the import report. */
+  version?: string
 }
 
 export interface ImportProjectResult {
   result: ConvertResult
   hasComparison: boolean
   codeFiles: number
+  /** The import report's path, relative to the project root. */
+  reportPath?: string
 }
 
 function writeFile(path: string, data: string | Uint8Array) {
@@ -43,7 +50,14 @@ export async function importOdpProject(options: ImportProjectOptions): Promise<I
     for (const [path, svg] of result.originals)
       writeFile(join(options.root, 'public', path), svg)
   }
-  return { result, hasComparison: Boolean(result.comparisonMarkdown), codeFiles }
+  // The report goes last, so it records the comparison deck's final outcome.
+  // Earlier reports are never overwritten: the name is timestamped, with a
+  // suffix on a same-second clash.
+  const importedAt = (options.now ?? (() => new Date()))()
+  const reportsDir = join(options.root, REPORTS_DIR)
+  const fileName = reportFileName(importedAt, new Set(existsSync(reportsDir) ? readdirSync(reportsDir) : []))
+  writeFile(join(reportsDir, fileName), importReportMarkdown(result, { odpPath: options.odpPath, importedAt, version: options.version ?? 'unknown' }))
+  return { result, hasComparison: Boolean(result.comparisonMarkdown), codeFiles, reportPath: `${REPORTS_DIR}/${fileName}` }
 }
 
 /** Console lines summarizing an import: counts, notices, and every loss by slide. */
@@ -76,5 +90,7 @@ export function formatReport(imported: ImportProjectResult): string[] {
     : result.comparison === 'no-losses'
       ? '  Nothing was lost, so no comparison deck was needed'
       : '  Comparison deck not written (see the notice above)')
+  if (imported.reportPath)
+    lines.push(`  Report written to ${imported.reportPath}`)
   return lines
 }

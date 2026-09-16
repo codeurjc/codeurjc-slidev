@@ -9,6 +9,7 @@ import minimist from 'minimist'
 import path from 'pathe'
 import prompts from 'prompts'
 import { x } from 'tinyexec'
+import { emptyDir, removableEntries } from './project-dir.mjs'
 
 const argv = minimist(process.argv.slice(2))
 const cwd = process.cwd()
@@ -79,14 +80,14 @@ async function init() {
     fs.mkdirSync(root, { recursive: true })
   }
   else {
-    const existing = fs.readdirSync(root)
-    if (existing.length) {
+    // Import reports don't count: they're kept across re-imports.
+    if (removableEntries(root).length) {
       console.log(yellow(`  Target directory "${targetDir}" is not empty.`))
       const { yes } = await prompts({
         type: 'confirm',
         name: 'yes',
         initial: 'Y',
-        message: 'Remove existing files and continue?',
+        message: 'Remove existing files (import reports are kept) and continue?',
       })
       if (yes)
         emptyDir(root)
@@ -130,6 +131,7 @@ async function init() {
       root,
       codeDir: typeof argv.code === 'string' ? path.resolve(cwd, argv.code) : undefined,
       codeRepo: typeof argv['code-repo'] === 'string' ? argv['code-repo'] : undefined,
+      version,
     })
     // Click steps produced by the import (callout steps, merged build-ups) are kept as separate PDF pages.
     pkg.scripts.export = 'slidev export --with-clicks'
@@ -247,22 +249,6 @@ function copyDir(srcDir, destDir) {
     const srcFile = path.resolve(srcDir, file)
     const destFile = path.resolve(destDir, file)
     copy(srcFile, destFile)
-  }
-}
-
-function emptyDir(dir) {
-  if (!fs.existsSync(dir))
-    return
-
-  for (const file of fs.readdirSync(dir)) {
-    const abs = path.resolve(dir, file)
-    if (fs.lstatSync(abs).isDirectory()) {
-      emptyDir(abs)
-      fs.rmdirSync(abs)
-    }
-    else {
-      fs.unlinkSync(abs)
-    }
   }
 }
 

@@ -12,7 +12,7 @@ import { serializeSlideGeometry } from 'codeurjc-slidev-theme/composables/useSli
 import { realGitRunner } from 'codeurjc-slidev-theme/composables/useSourceLink'
 import { mergeBuildUps } from './buildups'
 import { classifySlide } from './classify'
-import { buildCodeIndex, detectRepoBase, parseCodeRepoFlag, resolveCodeFolder } from './code'
+import { buildCodeIndex, detectRepoBase, languageForFilename, parseCodeRepoFlag, resolveCodeFolder } from './code'
 import { comparisonMarkdown } from './comparison'
 import { boxOf } from './diagrams'
 import { draftSlide, renderDraftBody } from './draft'
@@ -51,6 +51,40 @@ export interface SlideReport {
   info: string[]
 }
 
+/** How one code block of the converted slides matched the code folder. */
+export interface CodeBlockReport {
+  odpNumbers: number[]
+  /** Number shown when presenting slides.md; undefined for hidden slides. */
+  slidevNumber?: number
+  hidden: boolean
+  language: string
+  /**
+   * `imported`: exact match, emitted as a `<<<` import; `close`: near match left
+   * inline; `none`: nothing matched; `command`: a terminal block (never
+   * matched); `no-folder`: the import had no code folder to match against.
+   */
+  outcome: 'imported' | 'close' | 'none' | 'command' | 'no-folder'
+  /** Matched file, relative to the code folder. */
+  file?: string
+  startLine?: number
+  endLine?: number
+  /** Block lines found in the file, out of the block's non-blank lines (near matches). */
+  matched?: number
+  total?: number
+  /** The block's first non-blank line, to find it in the deck. */
+  firstLine: string
+}
+
+/** What an import worked with: the code folder, source-link base and LibreOffice. */
+export interface ImportContext {
+  codeFolder?: string
+  codeFiles: number
+  /** GitHub base for source links, e.g. `https://github.com/org/repo/tree/main/sub`. */
+  repoBase?: string
+  /** LibreOffice detection result, or `disabled` when LibreOffice isn't used at all. */
+  office: LibreOfficeStatus | 'disabled'
+}
+
 export interface ConvertResult {
   deckTitle: string
   slidesMarkdown: string
@@ -65,6 +99,10 @@ export interface ConvertResult {
   reports: SlideReport[]
   notices: string[]
   comparison: 'written' | 'no-losses' | 'skipped'
+  /** fileIndex of a slide with losses -> its information slide's number in comparison.md (empty unless written). */
+  comparisonSlides: Map<number, number>
+  codeBlocks: CodeBlockReport[]
+  context: ImportContext
   stats: { odpSlides: number, slides: number, mergedBuildUps: number, imports: number, inlineCode: number, slidesWithLosses: number }
 }
 
@@ -191,6 +229,7 @@ export async function convertOdp(options: ConvertOptions): Promise<ConvertResult
   })))
 
   const reports: SlideReport[] = []
+  const codeBlocks: CodeBlockReport[] = []
   const sources: string[] = []
   let slidevNumber = 0
   let imports = 0
@@ -218,11 +257,34 @@ export async function convertOdp(options: ConvertOptions): Promise<ConvertResult
     sources.push(slideSource(frontmatter, content))
     if (!draft.hidden)
       slidevNumber++
+    for (const block of draft.role === 'content' ? draft.blocks : []) {
+      if (block.kind !== 'code')
+        continue
+      const { code } = block
+      const { match } = code
+      // The same condition renderCode uses to emit a `<<<` import.
+      const imported = match.kind === 'exact' && match.file && match.startLine && match.endLine
+      const outcome: CodeBlockReport['outcome'] = code.terminal
+        ? 'command'
+        : !codeFolder ? 'no-folder' : imported ? 'imported' : match.kind === 'near' && match.file ? 'close' : 'none'
+      codeBlocks.push({
+        odpNumbers: draft.odpNumbers,
+        slidevNumber: draft.hidden ? undefined : slidevNumber,
+        hidden: draft.hidden,
+        language: imported ? languageForFilename(match.file!.relPath) ?? code.language : code.language,
+        outcome,
+        ...(outcome === 'imported' || outcome === 'close'
+          ? { file: match.file!.relPath, startLine: match.startLine, endLine: match.endLine, matched: match.matched, total: match.total }
+          : {}),
+        firstLine: (code.lines.find(l => l.trim()) ?? '').trim(),
+      })
+    }
     reports.push({ odpNumbers: draft.odpNumbers, slidevNumber: draft.hidden ? undefined : slidevNumber, fileIndex: i + 1, hidden: draft.hidden, losses, info: [...draft.info] })
   })
 
   // Comparison deck.
   const originals = new Map<string, string>()
+  const comparisonSlides = new Map<number, number>()
   let comparison: ConvertResult['comparison'] = 'no-losses'
   let comparisonMd: string | undefined
   const lossy = reports.filter(r => r.losses.length > 0)
@@ -261,6 +323,13 @@ export async function convertOdp(options: ConvertOptions): Promise<ConvertResult
         })
         comparisonMd = comparisonMarkdown(entries, deckTitle)
         comparison = 'written'
+        // comparisonMarkdown's layout: an information slide per lossy slide,
+        // then the imported converted slide unless it's hidden.
+        let next = 1
+        for (const r of lossy) {
+          comparisonSlides.set(r.fileIndex, next)
+          next += r.hidden ? 1 : 2
+        }
       }
     }
   }
@@ -276,6 +345,14 @@ export async function convertOdp(options: ConvertOptions): Promise<ConvertResult
     reports,
     notices,
     comparison,
+    comparisonSlides,
+    codeBlocks,
+    context: {
+      codeFolder,
+      codeFiles: codeIndex.length,
+      repoBase: repoBase && `https://github.com/${repoBase.owner}/${repoBase.repo}/tree/${repoBase.branch}${repoBase.subpath ? `/${repoBase.subpath}` : ''}`,
+      office: officeStatus ?? 'disabled',
+    },
     stats: {
       odpSlides: deck.slides.length,
       slides: drafts.length,

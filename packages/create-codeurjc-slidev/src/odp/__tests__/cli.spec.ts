@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -68,6 +68,32 @@ describe('create-codeurjc-slidev --from-odp', () => {
     expect(stdout).toContain('Converted 2 ODP slides into 2 slides')
     expect(stdout).toContain('Code: 1 snippet import, 0 inline blocks')
     expect(stdout).toContain('Nothing was lost')
+  })
+
+  it('writes an import report, prints its path, and gitignores reports', async () => {
+    const { code, stdout } = await cli(['tema-2-report', '--from-odp', 'Tema 2 - Pruebas.odp'])
+    expect(code).toBe(0)
+    const root = join(work, 'tema-2-report')
+    const [report] = readdirSync(join(root, 'import-reports'))
+    expect(report).toMatch(/^import-report-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.md$/)
+    const markdown = readFileSync(join(root, 'import-reports', report), 'utf-8')
+    expect(markdown).toContain('# Import report — Tema 2 - Pruebas')
+    expect(markdown).toMatch(/- \*\*Importer:\*\* create-codeurjc-slidev \d+\.\d+\.\d+/)
+    expect(markdown).toContain('| 2 | 2 | java | imported | `ejem1/src/SumTest.java` lines 1–3 |')
+    expect(stdout).toContain(`Report written to import-reports/${report}`)
+    expect(readFileSync(join(root, '.gitignore'), 'utf-8')).toContain('import-reports/')
+  })
+
+  it('imports into a directory holding only earlier reports without asking, keeping them', async () => {
+    const root = join(work, 'tema-2-again')
+    mkdirSync(join(root, 'import-reports'), { recursive: true })
+    writeFileSync(join(root, 'import-reports/import-report-2026-01-01T00-00-00.md'), 'earlier')
+    const { code, stdout } = await cli(['tema-2-again', '--from-odp', 'Tema 2 - Pruebas.odp'])
+    expect(code).toBe(0)
+    expect(stdout).not.toContain('is not empty')
+    expect(existsSync(join(root, 'slides.md'))).toBe(true)
+    expect(readdirSync(join(root, 'import-reports'))).toHaveLength(2)
+    expect(readFileSync(join(root, 'import-reports/import-report-2026-01-01T00-00-00.md'), 'utf-8')).toBe('earlier')
   })
 
   it('defaults the project directory to a slug of the ODP name', async () => {

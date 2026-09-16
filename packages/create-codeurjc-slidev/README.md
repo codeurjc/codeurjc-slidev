@@ -52,6 +52,17 @@ pnpm run dev:compare
 
 Without LibreOffice (or with an older version), the comparison deck and diagram images are skipped and the console says why. LibreOffice runs its export once per import, for both.
 
+### Import report
+
+Every import also writes a markdown report to `import-reports/import-report-<date>T<time>.md` inside the project (e.g. `import-report-2026-09-16T20-45-12.md`), so there's a lasting record beyond the console:
+
+- **Context:** the ODP, when it was imported and with which version, the code folder, the source-link base, LibreOffice, and whether the comparison deck was written.
+- **Summary and notices:** slide and code counts, and every console notice (no code folder, source links skipped, build-ups kept separate, ...).
+- **Code:** every code block and how it matched the code folder: imported (with the file and lines), close to a file, no match, a terminal command, or no code folder at all. Useful to see which decks still need their code.
+- **Notes and losses** per slide, with the matching slide of `comparison.md`.
+
+Reports are never overwritten: each import adds a new one. Re-importing into an existing project keeps its `import-reports/` folder, even when you confirm removing the other files. New projects ignore `import-reports/` in `.gitignore`, since reports contain local paths; add that line yourself to projects created with an older version.
+
 ## Development
 
 The importer lives in `src/odp/` (TypeScript) and ships bundled as `dist/odp-import.mjs` (`pnpm build`, run automatically before publishing). Tests run with `pnpm test`.

@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
 import { convertOdp } from '../convert'
+import { importReportMarkdown } from '../importReport'
 import { detectLibreOffice } from '../office'
 
 // Converts the real CodeURJC course decks the importer was tuned on. They are
@@ -168,5 +169,19 @@ describe('oDP corpus', () => {
       expect(hexagon).not.toContain('callouts:')
       expect(new TextDecoder().decode(calidad.images.get('images/diagram-page156.svg'))).toContain('Puerto primario')
     }, 600_000)
+  })
+
+  it.skipIf(!deckPath('Tema 1.2 - Pruebas unitarias') || !deckPath('Integración Continua con GitHub Actions'))('import reports record how code matched, the notices and the losses', async () => {
+    const report = async (name: string) => importReportMarkdown(await convert(name), { odpPath: deckPath(name)!, importedAt: new Date(2026, 8, 16, 20, 45, 12), version: 'test' })
+    const tema12 = await report('Tema 1.2 - Pruebas unitarias')
+    expect(tema12).toMatch(/\| java \| imported \| `ejem\d\/[^`]+\.java` lines \d+–\d+ \|/)
+    expect(tema12).toMatch(/\| close \| `[^`]+` \(\d+ of \d+ lines match\) \|/)
+    expect(tema12).toMatch(/\| no match \| `[^`]+` \|/)
+    expect(tema12).toContain('- No GitHub origin found for the code folder')
+    expect(tema12).toMatch(/## Losses\n\n\| Slide \| ODP \| Losses \| Comparison \|/)
+
+    const actions = await report('Integración Continua con GitHub Actions')
+    expect(actions).toContain('## Code\n\nNo code folder was found, so no code block could be matched against files.')
+    expect(actions).toMatch(/\| yaml \| no code folder \| `name: Continuous integration example` \|/)
   })
 })

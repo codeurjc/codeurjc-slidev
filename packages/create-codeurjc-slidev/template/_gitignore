@@ -5,3 +5,5 @@ dist
 .vite-inspect
 .remote-assets
 components.d.ts
+# ODP import reports (local paths; one per import)
+import-reports/
