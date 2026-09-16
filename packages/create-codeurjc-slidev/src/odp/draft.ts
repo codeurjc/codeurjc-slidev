@@ -1,12 +1,15 @@
+import type { SlideCallout } from 'codeurjc-slidev-theme/composables/useSlideCallouts'
 import type { GeometryRect } from 'codeurjc-slidev-theme/composables/useSlideGeometry'
 import type { AnnotationResult, CodeMark } from './annotations'
 import type { ClassifiedSlide, CoverFields, SlideRole } from './classify'
 import type { CodeMatch, IndexedFile, RepoBase } from './code'
+import type { EmittedImage } from './imageCallouts'
 import type { OdpDeck, OdpShape, Paragraph, Rect } from './model'
 import { basename, extname } from 'node:path'
 import { annotateCodes, renderAnchorMarks, renderInlineMarks } from './annotations'
 import { codeLinesOf, commentToken, importLineFor, inferLanguage, isWholeFile, languageForFilename, matchCode, normalizeCodeLine, sourceUrl } from './code'
 import { bodyRegionFor, contentGeometryFor, mapRect } from './geometry'
+import { slideCalloutsFor } from './imageCallouts'
 import { paragraphsToMarkdown, runsToMarkdown, tableToMarkdown } from './markdown'
 import { shapeText } from './model'
 
@@ -55,6 +58,8 @@ export interface SlideDraft {
   heading?: string
   blocks: DraftBlock[]
   images: DraftImage[]
+  /** Slide-level callouts (arrows and labels over images, and labelled arrows at content). */
+  callouts: SlideCallout[]
   contentGeometry?: GeometryRect
   /** Losses found while drafting (rendering may add more, e.g. for code). */
   losses: string[]
@@ -111,6 +116,7 @@ export function draftSlide(cs: ClassifiedSlide, ctx: DraftContext): SlideDraft {
     heading: cs.heading,
     blocks: [],
     images: [],
+    callouts: [],
     losses,
     classified: cs,
     annotations,
@@ -138,8 +144,37 @@ export function draftSlide(cs: ClassifiedSlide, ctx: DraftContext): SlideDraft {
       draft.blocks.push({ kind: 'markdown', y: table.rect?.y ?? 0, markdown: md })
   }
 
+  // Images come first: an anchor addresses an image by its emitted index, and
+  // a text box that becomes a callout must not also be flattened into a
+  // paragraph below.
+  const tableRects = cs.tables.flatMap(t => (t.rect ? [t.rect] : []))
+  const emittedImages: EmittedImage[] = []
+  for (const image of [...cs.images].sort((a, b) => (a.rect?.y ?? 0) - (b.rect?.y ?? 0) || (a.rect?.x ?? 0) - (b.rect?.x ?? 0))) {
+    const href = pickImageHref(image)
+    if (!href || !image.rect)
+      continue
+    if (tableRects.some(t => overlaps(t, image.rect!))) {
+      losses.push('image placed over a table omitted')
+      continue
+    }
+    if (!BROWSER_IMAGE_EXTENSIONS.has(extname(href).toLowerCase())) {
+      losses.push(`image in an unsupported format omitted (${extname(href) || href})`)
+      continue
+    }
+    const publicPath = publicImagePath(href, ctx)
+    if (!publicPath) {
+      losses.push('linked (not embedded) image omitted')
+      continue
+    }
+    emittedImages.push({ shape: image, index: draft.images.length })
+    draft.images.push({ key: href, publicPath, rect: mapRect(image.rect, region) })
+  }
+
+  const slideCallouts = slideCalloutsFor(cs, region, annotations, emittedImages)
+  draft.callouts = slideCallouts.callouts
+
   for (const text of cs.texts) {
-    if (annotations.consumedTexts.has(text))
+    if (annotations.consumedTexts.has(text) || slideCallouts.consumedTexts.has(text))
       continue
     if (text.hasBorder || text.hasFill) {
       const preview = shapeText(text).replace(/\s+/g, ' ').trim()
@@ -160,31 +195,10 @@ export function draftSlide(cs: ClassifiedSlide, ctx: DraftContext): SlideDraft {
       draft.blocks.push({ kind: 'markdown', y: Number.POSITIVE_INFINITY, markdown: md })
   }
 
-  const tableRects = cs.tables.flatMap(t => (t.rect ? [t.rect] : []))
-  for (const image of [...cs.images].sort((a, b) => (a.rect?.y ?? 0) - (b.rect?.y ?? 0) || (a.rect?.x ?? 0) - (b.rect?.x ?? 0))) {
-    const href = pickImageHref(image)
-    if (!href || !image.rect)
-      continue
-    if (tableRects.some(t => overlaps(t, image.rect!))) {
-      losses.push('image placed over a table omitted')
-      continue
-    }
-    if (!BROWSER_IMAGE_EXTENSIONS.has(extname(href).toLowerCase())) {
-      losses.push(`image in an unsupported format omitted (${extname(href) || href})`)
-      continue
-    }
-    const publicPath = publicImagePath(href, ctx)
-    if (!publicPath) {
-      losses.push('linked (not embedded) image omitted')
-      continue
-    }
-    draft.images.push({ key: href, publicPath, rect: mapRect(image.rect, region) })
-  }
-
   if (draft.images.length > 0 || cs.bodyShape)
     draft.contentGeometry = contentGeometryFor(cs.bodyShape?.rect, region)
 
-  const unusedConnectors = cs.connectors.filter(c => !annotations.consumedConnectors.has(c)).length
+  const unusedConnectors = cs.connectors.filter(c => !annotations.consumedConnectors.has(c) && !slideCallouts.consumedConnectors.has(c)).length
   if (unusedConnectors > 0)
     losses.push(unusedConnectors === 1 ? 'arrow or line omitted' : `${unusedConnectors} arrows or lines omitted`)
   losses.push(...countLosses([...cs.decorations.map(d => d.description), ...annotations.losses]))

@@ -89,7 +89,7 @@ function linesInside(geom: LineGeometry, r: Rect): { first: number, last: number
   return inside.length > 0 ? { first: inside[0], last: inside[inside.length - 1] } : undefined
 }
 
-function distanceToRect(px: number, py: number, r: Rect): number {
+export function distanceToRect(px: number, py: number, r: Rect): number {
   const dx = Math.max(r.x - px, 0, px - (r.x + r.w))
   const dy = Math.max(r.y - py, 0, py - (r.y + r.h))
   return Math.hypot(dx, dy)
@@ -106,8 +106,8 @@ function nearestNonBlankLine(geom: LineGeometry, index: number): number | undefi
   return undefined
 }
 
-/** Candidate endpoint pairs for a connector: real endpoints for lines, diagonals/midline for arrow shapes. */
-function endpointPairs(connector: OdpShape): [number, number, number, number][] {
+/** Candidate endpoint pairs for a connector: real endpoints for lines, diagonals/midline for arrow shapes. Shared with imageCallouts.ts. */
+export function endpointPairs(connector: OdpShape): [number, number, number, number][] {
   if (connector.endpoints) {
     const { x1, y1, x2, y2 } = connector.endpoints
     return [[x1, y1, x2, y2]]
@@ -131,7 +131,7 @@ function snapToTokens(line: string, start: number, end: number): { start: number
   return { start: covered[0].start, end: covered[covered.length - 1].end }
 }
 
-function oneLine(shape: OdpShape): string {
+export function oneLine(shape: OdpShape): string {
   return shapeText(shape).replace(/\s+/g, ' ').trim()
 }
 

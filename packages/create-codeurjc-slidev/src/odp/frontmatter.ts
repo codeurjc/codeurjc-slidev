@@ -1,6 +1,7 @@
 // Minimal YAML serializer for the frontmatter the importer writes: strings,
 // numbers, booleans, nested objects (block style) and lists of flat objects
-// (flow style, e.g. geometry rects). Strings are left plain when unambiguous,
+// (flow style, e.g. geometry rects) or of nested objects (block style, e.g.
+// callouts). Strings are left plain when unambiguous,
 // otherwise written as JSON strings (valid YAML double-quoted scalars).
 
 type Value = string | number | boolean | null | undefined | Value[] | { [key: string]: Value }
@@ -35,10 +36,20 @@ function lines(obj: { [key: string]: Value }, indent: string): string[] {
     if (Array.isArray(value)) {
       out.push(`${indent}${key}:`)
       for (const item of value) {
-        if (item && typeof item === 'object' && !Array.isArray(item))
-          out.push(`${indent}  - ${isFlat(item) ? flowMap(item) : JSON.stringify(item)}`)
-        else
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          if (isFlat(item)) {
+            out.push(`${indent}  - ${flowMap(item)}`)
+            continue
+          }
+          // A nested item (e.g. a callout: `at` plus text/box/step) is written
+          // as block YAML so it stays readable and hand-editable, with the
+          // dash carrying its first key.
+          const nested = lines(item, `${indent}    `)
+          out.push(`${indent}  - ${nested[0].trimStart()}`, ...nested.slice(1))
+        }
+        else {
           out.push(`${indent}  - ${scalar(item as string | number | boolean | null)}`)
+        }
       }
     }
     else if (value && typeof value === 'object') {

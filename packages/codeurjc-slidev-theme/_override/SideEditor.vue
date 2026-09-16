@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { throttledWatch, useEventListener } from '@vueuse/core'
-import { geometryContentKey, geometryKeyPrefix, useEditor } from '__USE_EDITOR_PATH__'
+import { geometryContentKey, geometryKeyPrefix, useCalloutTool, useEditor } from '__USE_EDITOR_PATH__'
 import { computed, ref, watch } from 'vue'
 import { useNav } from '../composables/useNav'
 import { useDynamicSlideInfo } from '../composables/useSlideInfo'
@@ -16,6 +16,7 @@ const props = defineProps<{
 const { currentSlideNo, openInEditor } = useNav()
 
 const editor = useEditor()
+const calloutTool = useCalloutTool()
 const tab = editor.activeTab
 const content = ref('')
 const note = ref('')
@@ -352,6 +353,17 @@ throttledWatch(
               {{ editor.aspectLocked[item.key] ? '🔒' : '🔓' }}
             </button>
           </div>
+        </div>
+        <div class="lep-actions" style="margin-bottom: 8px">
+          <button
+            type="button"
+            class="lep-btn"
+            :class="{ 'lep-btn-primary': calloutTool.armed.value }"
+            :title="calloutTool.armed.value ? 'Click an image, a line of content, or empty space' : 'Add a callout by pointing at the slide'"
+            @click="calloutTool.toggle()"
+          >
+            {{ calloutTool.armed.value ? 'Click a target…' : '+ Callout' }}
+          </button>
         </div>
         <div v-if="editor.selected.value" class="lep-props-section">
           <div class="lep-section-label">

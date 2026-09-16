@@ -47,6 +47,7 @@ export default defineConfig({
         'code-snippet-import.spec.ts',
         'code-source-links.spec.ts',
         'slide-geometry.spec.ts',
+        'slide-callouts.spec.ts',
         'callout-click-steps.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'] },

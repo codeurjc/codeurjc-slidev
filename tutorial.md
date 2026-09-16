@@ -150,6 +150,36 @@ geometry:
 
 ---
 
+# Slide callouts
+##
+- Point a callout at anything on a slide -- a spot on an image, a line of content, or a bare point -- from the slide's own `callouts` frontmatter
+- `at` says what it points at: `{image: N, x, y}` (fractions of that image), `{x, y}` (slide pixels) or `{text: ...}` (the element containing that text)
+- No `text` gives an arrow with no box; a `box` placed over its own anchor gives a label with no arrow
+- `step: N` reveals it at click N, like `{N}` on code marks
+- In edit mode, **+ Callout** in the Layout tab (or Alt+click) creates one: click what it should point at, then type
+
+---
+geometry:
+  content: {x: 31, y: 98, w: 380, h: 424}
+  images:
+    - {x: 440, y: 150, w: 500, h: 222}
+callouts:
+  - at: {image: 0, x: 0.15, y: 0.5}
+    text: The URJC logo
+    box: {x: 470, y: 420}
+  - at: {image: 0, x: 0.62, y: 0.35}
+    step: 1
+---
+
+## Example
+- This slide's text is narrowed with `geometry.content`, and its image placed with `geometry.images`
+- The first callout points at the logo, a fraction of the way into the picture, so it follows the image if it moves
+- Click once: the second callout, which has no text, appears as a bare arrow
+
+![URJC](/images/URJC.jpg)
+
+---
+
 # Centered mermaid diagrams
 ##
 - ` ```mermaid ` blocks are centered and use a readable default width in the `default` layout, with no extra markup needed on each slide

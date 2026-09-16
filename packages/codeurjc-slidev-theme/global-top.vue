@@ -8,7 +8,7 @@ import { appendImageMarkdown, buildImageMarkdown, findPastedImage, insertAtCurso
 import { computeBelowPreset, computeRightPreset } from './composables/useImagePosition'
 import { resolveBlockRange } from './composables/useTextClickToEdit'
 
-const { currentSlideNo } = useNav()
+const { currentSlideNo, slides } = useNav()
 const { update } = useDynamicSlideInfo(currentSlideNo)
 const editor = useEditor()
 
@@ -211,7 +211,23 @@ async function onDblClick(e: MouseEvent) {
   textarea.setSelectionRange(bodyStart + range.start, bodyStart + range.end)
 }
 
+// Slide callouts (composables/useSlideCallouts.ts) are resolved and rendered by
+// `layouts/default.vue`, so a `callouts` list on any other layout silently does
+// nothing. The warning has to live here, globally: the layout that would report
+// it is precisely the one that never mounts for those slides.
+function warnAboutNonDefaultLayoutCallouts() {
+  for (const slide of slides.value) {
+    const frontmatter = slide.meta.slide?.frontmatter as Record<string, unknown> | undefined
+    if (frontmatter?.callouts == null)
+      continue
+    const layout = (frontmatter.layout as string | undefined) ?? 'default'
+    if (layout !== 'default')
+      console.warn(`[codeurjc-slidev-theme] slide ${slide.no}: callouts are only supported on the default layout (this slide uses "${layout}"), so they are ignored`)
+  }
+}
+
 onMounted(() => {
+  warnAboutNonDefaultLayoutCallouts()
   window.addEventListener('paste', onPaste)
   window.addEventListener('dblclick', onDblClick)
 })

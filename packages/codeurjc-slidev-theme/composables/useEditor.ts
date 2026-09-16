@@ -13,6 +13,10 @@ export const CONTENT_DEFAULT_WIDTH = 876
 
 // Re-exported so the SideEditor override (which can only import this module,
 // via its injected `__USE_EDITOR_PATH__`) can recognize per-slide geometry keys.
+// Re-exported so `_override/SideEditor.vue` can reach them: it imports from the
+// `__USE_EDITOR_PATH__` placeholder this theme's vite.config.ts rewrites, not by
+// relative path.
+export { useCalloutTool } from './useCalloutTool'
 export { geometryContentKey, geometryImageKey, geometryKeyPrefix } from './useSlideGeometry'
 
 const ELEMENTS: Record<string, {

@@ -1,13 +1,28 @@
 <script setup lang="ts">
 import type { Rect, Side } from '../composables/useHighlightLayout'
+import type { CalloutAnchor, CalloutPoint, SlideCallout } from '../composables/useSlideCallouts'
 import type { GeometryRect, GeometryTarget } from '../composables/useSlideGeometry'
 import { useSlideContext } from '@slidev/client'
+import { useDynamicSlideInfo } from '@slidev/client/composables/useSlideInfo.ts'
 import { computed, nextTick, onMounted, onUnmounted, ref, unref, watch } from 'vue'
 import logoUrl from '../assets/logo.png'
 import { findFitFontSize, TITLE_MAX_PT, TITLE_MIN_PT, useAutoFitText } from '../composables/useAutoFitText'
+import { useCalloutTool } from '../composables/useCalloutTool'
 import { CONTENT_DEFAULT_WIDTH, useEditor } from '../composables/useEditor'
 import { elbowPath, estimateCalloutSize, placeCallout, pointsToSvgPath } from '../composables/useHighlightLayout'
 import { computeBelowPreset } from '../composables/useImagePosition'
+import {
+  boxContainsAnchor,
+  calloutAnchorKey,
+  calloutBoxKey,
+  calloutKeyPrefix,
+  containedRect,
+  fractionsInRect,
+  parseSlideCallouts,
+  pointInRect,
+  withoutSlideCallout,
+  withSlideCallout,
+} from '../composables/useSlideCallouts'
 import {
   geometryContentKey,
   geometryContentVars,
@@ -59,6 +74,21 @@ const slideEnd = slideInfo?.source?.end ?? slideInfo?.end
 const slideNo = computed(() => Number(unref($page)) || 0)
 const geometry = computed(() => parseSlideGeometry($frontmatter as Record<string, unknown>))
 const geometryContentEditorKey = computed(() => geometryContentKey(slideNo.value))
+
+// A slide's own `callouts` frontmatter (see composables/useSlideCallouts.ts):
+// annotations that point at anything on the slide -- a spot on an image, a
+// piece of content, or a bare point -- rather than at a code fragment.
+//
+// Read from Slidev's slide-info ref rather than `$frontmatter`. When the editor
+// patches only frontmatter, Slidev's server applies it to its in-memory slide
+// before writing the file, so its file watcher then sees no change and sends
+// no HMR update: `$frontmatter` would keep the old callouts for the rest of the
+// session. The info ref is refreshed by `update()`'s response and by
+// `slidev:update-slide` for hand edits; until its first fetch lands (and in a
+// static build) `$frontmatter` is the fallback.
+const { info: liveSlideInfo, update: updateSlideInfo } = useDynamicSlideInfo(slideNo)
+const calloutsFrontmatter = computed(() => (liveSlideInfo.value?.frontmatter ?? $frontmatter) as Record<string, unknown>)
+const slideCallouts = computed(() => parseSlideCallouts(calloutsFrontmatter.value))
 
 function effectiveContentRect(): GeometryRect | null {
   const declared = geometry.value.content
@@ -328,6 +358,11 @@ onMounted(() => {
 
 watch(() => editor.editing.value, () => nextTick(computeCallouts))
 
+// Slide callouts come from frontmatter rather than from the rendered DOM, so
+// none of computeCallouts' other triggers (the content MutationObserver, the
+// resize observers, fonts.ready) fires when one is added, edited or deleted.
+watch(slideCallouts, () => nextTick(computeCallouts), { deep: true })
+
 // --- Code-highlight callouts -------------------------------------------
 // One draggable callout box per highlighted code fragment that carries a
 // comment (see composables/useCodeHighlights.ts for the marker syntax and
@@ -342,6 +377,20 @@ interface CalloutItem {
   rect: Rect
   path: string
   overrideKey: string
+  /**
+   * Where this callout is authored, which decides where a drag is written
+   * back: `code` callouts live in a `// [!mark]` marker, `slide` callouts in
+   * the slide's `callouts` frontmatter.
+   */
+  source: 'code' | 'slide'
+  /** Index into the slide's `callouts` frontmatter (slide callouts only). */
+  calloutIndex?: number
+  /** The point this callout points at, in slide-canvas pixels (slide callouts only). */
+  anchorPoint?: CalloutPoint
+  /** Which anchor form it was declared with, since only some are draggable. */
+  anchorKind?: CalloutAnchor['kind']
+  /** A callout with no comment text: the arrow is drawn, the box is not. */
+  boxless: boolean
   sourceLine: string
   /** Which marker of `sourceLine` this callout belongs to (a line can carry several). */
   markerIndex: number
@@ -362,6 +411,217 @@ function setCalloutRef(id: string, el: Element | null) {
   if (el)
     calloutEls.set(id, el as HTMLElement)
   else calloutEls.delete(id)
+}
+
+// --- Authoring slide callouts in the editor ------------------------------
+// Creating one is a click: arm the tool in the Layout tab (or hold Alt), click
+// what it should point at, type. Everything here writes back into this slide's
+// `callouts` frontmatter, never into a layout file.
+
+const ANCHOR_HANDLE_SIZE = 12
+/** Content elements a click can anchor to by text; wrappers like <div> are deliberately absent. */
+const ANCHOR_ELEMENT_SELECTOR = 'li, p, td, th, h1, h2, h3, h4, h5, h6, code, strong, em, a, blockquote'
+
+const calloutTool = useCalloutTool()
+/**
+ * A callout being typed. It isn't written to the frontmatter until it's
+ * committed, so the entry is created in one write with its text, and a
+ * cancelled callout never touches the file at all.
+ */
+const pendingCallout = ref<{ anchor: CalloutAnchor, point: CalloutPoint, text: string } | null>(null)
+const pendingInputEl = ref<HTMLInputElement | null>(null)
+/** Callout boxes the author actually moved: only those are written back, so a render never rewrites an auto-placed box. */
+const movedCalloutBoxes = new Set<number>()
+
+const anchorHandles = computed(() => calloutItems.value.flatMap((item) => {
+  // Text anchors follow the element they name, so there's nothing to drag.
+  if (item.source !== 'slide' || !item.anchorPoint || item.anchorKind === 'text' || item.calloutIndex === undefined)
+    return []
+  return [{ id: item.id, key: calloutAnchorKey(slideNo.value, item.calloutIndex), point: item.anchorPoint, index: item.calloutIndex }]
+}))
+
+watch(pendingCallout, (pending) => {
+  if (pending)
+    nextTick(() => pendingInputEl.value?.focus())
+})
+
+/** The authored `callouts` value, from the same source the rendering reads (see `slideCallouts`). */
+function rawCallouts(): unknown {
+  return calloutsFrontmatter.value.callouts
+}
+
+/** Writes the whole `callouts` key; `null` removes it, which is how Slidev's frontmatter patch drops a field. */
+async function writeCallouts(next: Record<string, unknown>[]) {
+  if (!slideNo.value || !__SLIDEV_HAS_SERVER__)
+    return
+  try {
+    await updateSlideInfo({ frontmatter: { callouts: next.length > 0 ? next : null } })
+  }
+  catch {
+    // best-effort: a failed write just means the change stays session-only
+  }
+}
+
+/** The anchor a click produces: the image under the pointer, else the content element, else the bare point. */
+function anchorForClick(e: MouseEvent, point: CalloutPoint): CalloutAnchor {
+  const container = contentInnerEl.value
+  const root = rootEl.value
+  // In editor mode the content box and image overlays sit above the slide, so
+  // a plain elementFromPoint would report an overlay instead of the picture or
+  // paragraph under the pointer. Walk the hit stack for the first element that
+  // is really part of the slide's content.
+  // When the point has no hit stack at all (coordinates outside the viewport,
+  // as with a synthetic event on an off-screen slide), fall back to the
+  // event's own target if it is part of the content.
+  const eventTarget = e.target instanceof Element && container?.contains(e.target) ? e.target : null
+  const hit = document.elementsFromPoint(e.clientX, e.clientY).find(el => container?.contains(el)) ?? eventTarget
+  if (container && root && hit) {
+    const img = hit.closest('img') as HTMLImageElement | null
+    const index = img ? Array.from(container.querySelectorAll('img')).indexOf(img) : -1
+    if (img && index >= 0) {
+      const rendered = containedRect(rectOf(img, root.getBoundingClientRect(), getScale()), img.naturalWidth, img.naturalHeight)
+      return { kind: 'image', index, ...fractionsInRect(rendered, point) }
+    }
+    const el = hit.closest(ANCHOR_ELEMENT_SELECTOR)
+    const text = (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
+    if (text)
+      return { kind: 'text', text: text.slice(0, 40) }
+  }
+  return { kind: 'point', x: Math.round(point.x), y: Math.round(point.y) }
+}
+
+function onRootMouseDownCapture(e: MouseEvent) {
+  if (!editor.editing.value || (!calloutTool.armed.value && !e.altKey))
+    return
+  const root = rootEl.value
+  if (!root)
+    return
+  // Taken in the capture phase so `.content-overlay` (which covers the content
+  // area in editor mode) can't start a content drag with this same click.
+  e.preventDefault()
+  e.stopPropagation()
+  const originRect = root.getBoundingClientRect()
+  const scale = getScale()
+  const point = { x: (e.clientX - originRect.left) / scale, y: (e.clientY - originRect.top) / scale }
+  calloutTool.disarm()
+  pendingCallout.value = { anchor: anchorForClick(e, point), point, text: '' }
+}
+
+async function commitPendingCallout() {
+  const pending = pendingCallout.value
+  if (!pending)
+    return
+  pendingCallout.value = null
+  const raw = rawCallouts()
+  const index = Array.isArray(raw) ? raw.length : 0
+  // Committing empty text is meaningful: it leaves a bare arrow.
+  await writeCallouts(withSlideCallout(raw, index, { anchor: pending.anchor, text: pending.text.trim(), box: null, step: null }))
+}
+
+function cancelPendingCallout() {
+  pendingCallout.value = null
+}
+
+async function deleteCallout(index: number) {
+  movedCalloutBoxes.delete(index)
+  await writeCallouts(withoutSlideCallout(rawCallouts(), index))
+}
+
+function startAnchorDrag(e: MouseEvent, handle: { key: string, point: CalloutPoint, index: number }) {
+  if (!editor.editing.value)
+    return
+  editor.ensurePosition(handle.key, { x: handle.point.x, y: handle.point.y, w: ANCHOR_HANDLE_SIZE, h: ANCHOR_HANDLE_SIZE })
+  editor.startDrag(e, handle.key)
+  const onUp = () => {
+    window.removeEventListener('mouseup', onUp)
+    void persistCalloutAnchor(handle.index)
+  }
+  window.addEventListener('mouseup', onUp)
+}
+
+/** Moves an anchor while keeping its kind: an image anchor stays fractions of its own image. */
+function movedAnchor(anchor: CalloutAnchor, point: CalloutPoint): CalloutAnchor | null {
+  if (anchor.kind === 'text')
+    return null
+  if (anchor.kind === 'point')
+    return { kind: 'point', x: Math.round(point.x), y: Math.round(point.y) }
+  const container = contentInnerEl.value
+  const root = rootEl.value
+  const img = container ? Array.from(container.querySelectorAll('img'))[anchor.index] as HTMLImageElement | undefined : undefined
+  if (!img || !root)
+    return null
+  const rendered = containedRect(rectOf(img, root.getBoundingClientRect(), getScale()), img.naturalWidth, img.naturalHeight)
+  return { kind: 'image', index: anchor.index, ...fractionsInRect(rendered, point) }
+}
+
+async function persistCalloutAnchor(index: number) {
+  const declared = slideCallouts.value.callouts[index]
+  const live = editor.positions[calloutAnchorKey(slideNo.value, index)]
+  if (!declared || !live || ![live.x, live.y].every(Number.isFinite))
+    return
+  const anchor = movedAnchor(declared.anchor, { x: live.x, y: live.y })
+  if (!anchor)
+    return
+  await writeCallouts(withSlideCallout(rawCallouts(), index, { ...declared, anchor }))
+}
+
+// Mirrors declared callout positions into the editor's per-slide entries, the
+// same way syncGeometryEditorKeys does, so a frontmatter change (a hand edit,
+// or our own write returning through HMR) doesn't fight an in-progress drag.
+const lastDeclaredCallouts = new Map<string, string>()
+watch(slideCallouts, () => {
+  slideCallouts.value.callouts.forEach((declared, index) => {
+    if (!declared)
+      return
+    const key = calloutAnchorKey(slideNo.value, index)
+    const serialized = JSON.stringify(declared.anchor)
+    if (lastDeclaredCallouts.get(key) !== serialized) {
+      lastDeclaredCallouts.set(key, serialized)
+      if (!editor.isInteracting.value)
+        delete editor.positions[key]
+    }
+  })
+}, { immediate: true })
+
+watch(() => slideCallouts.value.warnings.join('\n'), (joined) => {
+  if (joined)
+    console.warn(`[codeurjc-slidev-theme] slide ${slideNo.value}: ignoring invalid callouts frontmatter\n${joined}`)
+}, { immediate: true })
+
+// A moved box settles into frontmatter on the same debounce geometry uses.
+let calloutPersistTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => (editor.editing.value
+    ? JSON.stringify([...movedCalloutBoxes].map(i => editor.positions[calloutBoxKey(slideNo.value, i)]))
+    : ''),
+  (snapshot) => {
+    clearTimeout(calloutPersistTimer)
+    if (snapshot && movedCalloutBoxes.size > 0)
+      calloutPersistTimer = setTimeout(persistCalloutBoxes, 400)
+  },
+)
+onUnmounted(() => clearTimeout(calloutPersistTimer))
+
+async function persistCalloutBoxes() {
+  if (editor.isInteracting.value) {
+    calloutPersistTimer = setTimeout(persistCalloutBoxes, 400)
+    return
+  }
+  let raw = rawCallouts()
+  let changed = false
+  for (const index of movedCalloutBoxes) {
+    const declared: SlideCallout | null | undefined = slideCallouts.value.callouts[index]
+    const live = editor.positions[calloutBoxKey(slideNo.value, index)]
+    if (!declared || !live || ![live.x, live.y].every(Number.isFinite))
+      continue
+    const box = { x: Math.round(live.x), y: Math.round(live.y) }
+    if (declared.box && declared.box.x === box.x && declared.box.y === box.y)
+      continue
+    raw = withSlideCallout(raw, index, { ...declared, box })
+    changed = true
+  }
+  if (changed)
+    await writeCallouts(raw as Record<string, unknown>[])
 }
 
 // --- Bottom-row source links --------------------------------------------
@@ -492,6 +752,54 @@ watch(
   { flush: 'post', immediate: true },
 )
 
+// Anchor resolution is the only DOM-aware part of slide callouts; the geometry
+// itself (contain-fit, fraction <-> point, the contains rule) is pure and lives
+// in composables/useSlideCallouts.ts.
+const warnedAnchors = new Set<string>()
+function warnAnchorOnce(message: string) {
+  if (warnedAnchors.has(message))
+    return
+  warnedAnchors.add(message)
+  console.warn(`[codeurjc-slidev-theme] slide ${slideNo.value}: ${message}`)
+}
+
+/** The element a content anchor names: the first match that doesn't itself contain another match, so the deepest wins over its wrappers. */
+function findAnchorElement(container: Element, text: string): Element | null {
+  const matches = Array.from(container.querySelectorAll('li, p, td, th, h1, h2, h3, h4, h5, h6, code, strong, em, a, blockquote'))
+    .filter(el => (el.textContent ?? '').includes(text))
+  return matches.find(el => !matches.some(other => other !== el && el.contains(other))) ?? null
+}
+
+/**
+ * Resolves a callout's anchor to the point it marks, plus the rect placement
+ * should treat as an obstacle (the image or element it belongs to; nothing for
+ * a bare point, which has no body to avoid).
+ */
+function resolveCalloutAnchor(container: Element, originRect: DOMRect, scale: number, anchor: CalloutAnchor): { point: CalloutPoint, obstacle: Rect | null } | null {
+  if (anchor.kind === 'point')
+    return { point: { x: anchor.x, y: anchor.y }, obstacle: null }
+
+  if (anchor.kind === 'image') {
+    const img = Array.from(container.querySelectorAll('img'))[anchor.index] as HTMLImageElement | undefined
+    if (!img) {
+      warnAnchorOnce(`callout anchored to image ${anchor.index}, which this slide doesn't have`)
+      return null
+    }
+    // Fractions address the picture, not its box: an image is drawn with
+    // `object-fit: contain`, so it can sit letterboxed inside the box.
+    const rendered = containedRect(rectOf(img, originRect, scale), img.naturalWidth, img.naturalHeight)
+    return { point: pointInRect(rendered, anchor.x, anchor.y), obstacle: rendered }
+  }
+
+  const el = findAnchorElement(container, anchor.text)
+  if (!el) {
+    warnAnchorOnce(`callout anchored to text "${anchor.text}", which no element on this slide contains`)
+    return null
+  }
+  const rect = rectOf(el, originRect, scale)
+  return { point: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, obstacle: rect }
+}
+
 function computeCallouts() {
   computeBottomSourceLinks()
   const root = rootEl.value
@@ -580,10 +888,100 @@ function computeCallouts() {
     // slot in `placed`), so revealing a later step never moves earlier callouts.
     const clickAttr = first.getAttribute('data-highlight-click')
     const click = clickAttr ? Number(clickAttr) : undefined
-    items.push({ id, comment, rect, path, overrideKey, sourceLine, markerIndex, lineOccurrence, highlightRect, side, click })
+    items.push({ id, comment, rect, path, overrideKey, source: 'code', boxless: false, sourceLine, markerIndex, lineOccurrence, highlightRect, side, click })
   }
+
+  // Slide callouts join the same `items`/`placed` arrays, so placement avoids
+  // the code callouts already on the slide (and vice versa on the next pass).
+  const calloutKeys = new Set<string>()
+  slideCallouts.value.callouts.forEach((callout, index) => {
+    if (!callout)
+      return
+    const resolved = resolveCalloutAnchor(container, originRect, scale, callout.anchor)
+    if (!resolved)
+      return
+    const { obstacle } = resolved
+    // While its handle is being dragged the live editor position wins, so the
+    // arrow follows the pointer before the frontmatter write lands.
+    const anchorKey = calloutAnchorKey(slideNo.value, index)
+    const liveAnchor = editor.editing.value ? editor.positions[anchorKey] : undefined
+    const point = liveAnchor ? { x: liveAnchor.x, y: liveAnchor.y } : resolved.point
+    if (editor.editing.value && callout.anchor.kind !== 'text')
+      editor.ensurePosition(anchorKey, { x: point.x, y: point.y, w: ANCHOR_HANDLE_SIZE, h: ANCHOR_HANDLE_SIZE })
+    // A zero-size rect at the anchor: what the connector points at, and the
+    // fallback obstacle for a bare point that belongs to no element.
+    const anchorRect: Rect = { x: point.x, y: point.y, w: 0, h: 0 }
+    const boxKey = calloutBoxKey(slideNo.value, index)
+    calloutKeys.add(`${index}:box`)
+    calloutKeys.add(`${index}:anchor`)
+
+    // An empty comment normally means "bare arrow, no box", but while the text
+    // is being typed the box has to render: it hosts the input.
+    const boxless = callout.text === ''
+    const calloutSize = boxless ? { w: 0, h: 0 } : estimateCalloutSize(callout.text)
+    const live = editor.editing.value ? editor.positions[boxKey] : undefined
+
+    let rect: Rect
+    let side: Side
+    if (live) {
+      rect = { x: live.x, y: live.y, w: calloutSize.w, h: calloutSize.h }
+      side = deriveSide(rect, obstacle ?? anchorRect)
+    }
+    else if (callout.box) {
+      rect = { x: callout.box.x, y: callout.box.y, w: calloutSize.w, h: calloutSize.h }
+      side = deriveSide(rect, obstacle ?? anchorRect)
+    }
+    else if (boxless) {
+      // Nothing to route to, so the arrow gets a short stub for direction,
+      // kept inside the slide.
+      rect = {
+        x: Math.max(0, Math.min(point.x - 60, slideRect.w - 1)),
+        y: Math.max(0, Math.min(point.y - 48, slideRect.h - 1)),
+        w: 0,
+        h: 0,
+      }
+      side = 'left'
+    }
+    else {
+      const placement = placeCallout({ codeRect: obstacle ?? anchorRect, highlightRect: anchorRect, calloutSize, slideRect, placed })
+      rect = placement.rect
+      side = placement.side
+    }
+    editor.ensurePosition(boxKey, rect)
+    if (!live)
+      Object.assign(editor.positions[boxKey], rect)
+    if (!boxless)
+      placed.push(rect)
+
+    // The box covering its own anchor means "label on the thing it names", so
+    // no connector is drawn (see useSlideCallouts' boxContainsAnchor).
+    const path = !boxless && boxContainsAnchor(rect, point)
+      ? ''
+      : pointsToSvgPath(boxless ? [point, { x: rect.x, y: rect.y }] : elbowPath(anchorRect, rect, side))
+
+    items.push({
+      id: `slide-callout-${index}`,
+      comment: callout.text,
+      rect,
+      path,
+      overrideKey: boxKey,
+      source: 'slide',
+      calloutIndex: index,
+      anchorPoint: point,
+      anchorKind: callout.anchor.kind,
+      boxless,
+      sourceLine: '',
+      markerIndex: 0,
+      lineOccurrence: 0,
+      highlightRect: anchorRect,
+      side,
+      click: callout.step ?? undefined,
+    })
+  })
+
   calloutItems.value = items
   editor.pruneDynamicKeys('callout:', new Set(groups.keys()))
+  editor.pruneDynamicKeys(calloutKeyPrefix(slideNo.value), calloutKeys)
   nextTick(remeasureCallouts)
 }
 
@@ -607,7 +1005,12 @@ function remeasureCallouts() {
       continue
     item.rect.w = real.w
     item.rect.h = real.h
-    item.path = pointsToSvgPath(elbowPath(item.highlightRect, item.rect, item.side))
+    // The real box can be bigger than the estimate, so re-apply the same rule
+    // computeCallouts used: a box covering its own anchor is a label and draws
+    // no connector. (Boxless items render no element, so they never get here.)
+    item.path = item.source === 'slide' && item.anchorPoint && boxContainsAnchor(item.rect, item.anchorPoint)
+      ? ''
+      : pointsToSvgPath(elbowPath(item.highlightRect, item.rect, item.side))
   }
 }
 
@@ -618,7 +1021,15 @@ function startCalloutDrag(e: MouseEvent, item: CalloutItem) {
   editor.startDrag(e, item.overrideKey)
   const onUp = () => {
     window.removeEventListener('mouseup', onUp)
-    saveCalloutPosition(item)
+    // A slide callout's box lives in frontmatter, a code callout's in its
+    // marker, so the two persist through different paths.
+    if (item.source === 'slide' && item.calloutIndex !== undefined) {
+      movedCalloutBoxes.add(item.calloutIndex)
+      void persistCalloutBoxes()
+    }
+    else {
+      saveCalloutPosition(item)
+    }
   }
   window.addEventListener('mouseup', onUp)
 }
@@ -774,10 +1185,11 @@ watch(editor.aspectLocked, (v) => {
   <div
     ref="rootEl"
     class="slidev-layout default relative h-full w-full bg-white text-black"
-    :class="{ editing: editor.editing.value }"
+    :class="{ 'editing': editor.editing.value, 'callout-tool-armed': editor.editing.value && calloutTool.armed.value }"
     style="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 98px; --ed-content-x: 31px; --ed-content-w: 901px; --ed-content-h: 424px; --ed-image-y: 80px; --ed-image-x: 438px; --ed-image-w: 400px; --ed-image-h: 300px"
     data-styles="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 98px; --ed-content-x: 31px; --ed-content-w: 901px; --ed-content-h: 424px; --ed-image-y: 80px; --ed-image-x: 438px; --ed-image-w: 400px; --ed-image-h: 300px"
     :style="rootInlineStyle"
+    @mousedown.capture="onRootMouseDownCapture"
   >
     <!-- ed:red-bar:start -->
     <div
@@ -918,16 +1330,38 @@ watch(editor.aspectLocked, (v) => {
     </template>
 
     <svg class="code-callout-svg" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <!-- elbowPath returns [anchor, bend, boxEdge], so the connector's path
+             *starts* at what it points at: the head therefore goes on
+             `marker-start`, and `auto-start-reverse` is what aims it at the
+             anchor instead of back along the path. The marker carries its own
+             fill because `.code-callout-connector` sets `fill: none`, which a
+             marker child would otherwise inherit and render invisible. Slidev
+             keeps neighbouring slides mounted, so this id repeats across them;
+             every copy is identical, so resolving to the first is harmless. -->
+        <marker
+          id="callout-arrowhead"
+          markerWidth="7"
+          markerHeight="7"
+          refX="7"
+          refY="3.5"
+          orient="auto-start-reverse"
+          markerUnits="strokeWidth"
+        >
+          <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#cb0017" />
+        </marker>
+      </defs>
       <path
-        v-for="item in calloutItems"
+        v-for="item in calloutItems.filter(i => i.path)"
         :key="`path-${item.id}`"
         class="code-callout-connector"
         :class="{ 'step-hidden': isStepHidden(item.click) }"
         :d="item.path"
+        marker-start="url(#callout-arrowhead)"
       />
     </svg>
     <div
-      v-for="item in calloutItems"
+      v-for="item in calloutItems.filter(i => !i.boxless)"
       :key="item.id"
       :ref="(el) => setCalloutRef(item.id, el as Element | null)"
       class="code-callout"
@@ -936,7 +1370,38 @@ watch(editor.aspectLocked, (v) => {
       @mousedown.stop="startCalloutDrag($event, item)"
     >
       {{ item.comment }}
+      <div
+        v-if="editor.editing.value && item.source === 'slide' && item.calloutIndex !== undefined && editor.selected.value === item.overrideKey"
+        class="delete-btn"
+        title="Delete this callout"
+        @mousedown.stop="deleteCallout(item.calloutIndex)"
+      >
+        ✕
+      </div>
     </div>
+
+    <div
+      v-for="handle in (editor.editing.value ? anchorHandles : [])"
+      :key="`anchor-${handle.id}`"
+      class="callout-anchor-handle"
+      :class="{ 'el-active': editor.selected.value === handle.key }"
+      :style="{ left: `${handle.point.x}px`, top: `${handle.point.y}px` }"
+      title="Drag to move what this callout points at"
+      @mousedown.stop="startAnchorDrag($event, handle)"
+    />
+
+    <input
+      v-if="pendingCallout"
+      ref="pendingInputEl"
+      v-model="pendingCallout.text"
+      class="code-callout callout-pending-input"
+      placeholder="Callout text…"
+      :style="{ left: `${pendingCallout.point.x + 16}px`, top: `${pendingCallout.point.y + 16}px` }"
+      @mousedown.stop
+      @keydown.enter.prevent="commitPendingCallout()"
+      @keydown.esc.prevent="cancelPendingCallout()"
+      @blur="commitPendingCallout()"
+    >
 
     <div v-if="bottomSourceLinks.length > 0" class="source-link-bottom-row">
       <a
@@ -1293,6 +1758,40 @@ watch(editor.aspectLocked, (v) => {
   width: max-content;
   max-width: 220px;
   height: auto;
+}
+
+/* While the callout tool is armed the whole slide is a target, so the cursor
+   says so everywhere -- including over content, which has its own cursors. */
+.slidev-layout.default.callout-tool-armed,
+.slidev-layout.default.callout-tool-armed * {
+  cursor: crosshair !important;
+}
+
+/* The draggable tip of a slide callout's arrow (editor mode only). */
+.callout-anchor-handle {
+  position: absolute;
+  z-index: 60;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid #cb0017;
+  border-radius: 50%;
+  background: #fff;
+  cursor: move;
+}
+
+.callout-anchor-handle.el-active {
+  background: #cb0017;
+}
+
+/* The transient input a new callout is typed into, before it exists in the
+   slide's frontmatter. Carries .code-callout too, so what you type reads the
+   way it will render. */
+.callout-pending-input {
+  position: absolute;
+  z-index: 61;
+  width: 200px;
+  outline: none;
 }
 
 .editing .code-callout {

@@ -126,6 +126,21 @@ describe('toYaml', () => {
       '    - { x: 1, y: 2, w: 3, h: 4 }',
     ].join('\n'))
   })
+
+  it('writes a list of nested objects as block YAML, not as JSON blobs', () => {
+    expect(toYaml({
+      callouts: [
+        { at: { image: 0, x: 0.45, y: 0.51 }, text: 'Le damos un nombre', box: { x: 620, y: 300 } },
+        { at: { x: 480, y: 210 } },
+      ],
+    })).toBe([
+      'callouts:',
+      '  - at: { image: 0, x: 0.45, y: 0.51 }',
+      '    text: Le damos un nombre',
+      '    box: { x: 620, y: 300 }',
+      '  - at: { x: 480, y: 210 }',
+    ].join('\n'))
+  })
 })
 
 describe('comparison deck with the real LibreOffice', () => {

@@ -55,6 +55,43 @@ geometry:
   - Drags, resizes, numeric inputs and undo are written back to that slide's frontmatter once they settle, never mid-drag. The write goes through Slidev's slide `update({ frontmatter })`, into whichever markdown file the slide came from.
   - They never reach a layout file: "Save" / "Save as new layout" (and the save-layout middleware) only persist the five fixed layout elements.
 
+## Slide callouts
+
+A `default`-layout slide can annotate anything on it -- a spot on an image, a piece of content, or a bare point -- through its own `callouts` frontmatter. Code keeps its annotations in `// [!mark]` markers next to the code; this is the home for annotations of the *slide*, which is why it sits beside `geometry`. Parsing/validation and the pure geometry live in `composables/useSlideCallouts.ts`; anchor resolution, rendering and authoring live in `layouts/default.vue`.
+
+```yaml
+---
+callouts:
+  - at: {image: 0, x: 0.45, y: 0.51} # fraction of that image
+    text: Le damos un nombre al grupo
+    box: {x: 620, y: 300} # optional; auto-placed when absent
+  - at: {x: 480, y: 210} # free point, slide-canvas pixels
+  - at: {text: Verificar} # follows the content it names
+    step: 2
+---
+```
+
+### Anchors
+
+| Form | Resolves to | Survives |
+|---|---|---|
+| `{ image: N, x, y }` | Fractions (0-1) of the Nth image's **rendered** area | the image being moved or resized |
+| `{ x, y }` | A point in slide-canvas pixels, the same space as `geometry` | nothing -- it drifts if content reflows |
+| `{ text: "..." }` | The first content element containing that text, preferring the deepest match over its wrappers | edits elsewhere, autofit rescaling |
+
+Image fractions resolve against the picture, not its `geometry.images` box: an image is drawn with `object-fit: contain`, so one whose aspect ratio differs from its box renders letterboxed inside it (`containedRect`). An anchor naming a missing image or unfindable text is skipped with a console warning, as is an invalid entry -- its siblings still render, since entries keep their index.
+
+### What gets drawn
+
+- **A connector is drawn only when the box does not contain its anchor** (`boxContainsAnchor`). That one rule yields all three shapes: a box beside its anchor is connected, an entry with no `text` is a bare arrow with no box, and a box sitting over its own anchor is a label with no arrow.
+- Every connector -- slide callouts *and* code callouts -- ends in an arrowhead at the thing it points at. `elbowPath` returns `[anchor, bend, boxEdge]`, so the head goes on `marker-start` with `orient="auto-start-reverse"`; the `<marker>` carries its own fill because `.code-callout-connector` sets `fill: none`.
+- Placement, shelf-stacking, `{N}`-style click steps (`step: N`) and drag-to-move are the existing code-callout machinery: the obstacle is simply the anchor's own element (the `<img>`, the matched node) instead of always a `<pre>`, and nothing at all for a bare point.
+- Callouts are ignored on any layout other than `default`, with a console warning from `global-top.vue` -- the layout that would report it is precisely the one that never mounts for those slides.
+
+### Authoring
+
+In the Layout tab, "+ Callout" arms the tool; the next click on the slide places one (`Alt`+click does it without arming). The click is taken in the capture phase, before `.content-overlay` can start a content drag, and hit-tests *through* the editor overlays so it sees the picture or paragraph underneath. What was clicked picks the anchor form: an image gives fractions, a content element gives a text anchor, empty canvas gives a point. The new callout opens with a focused input -- committing empty text leaves a bare arrow. Afterwards the box drags like any callout, the arrow's tip has its own handle (absent for text anchors, which follow their element), and a selected callout can be deleted. Every one of those writes back into that slide's `callouts` frontmatter on the same debounce `geometry` uses, never into a layout file. Callouts are read from `useDynamicSlideInfo(slideNo).info` rather than `$frontmatter`: a frontmatter-only patch never HMRs the mounted slide (Slidev applies it in memory before writing, so its watcher sees no change), so `$frontmatter` would stay stale until a reload, while `update()` refreshes the info ref with the server's response.
+
 ## Code-highlight callouts
 
 Mark a line, line range, or substring inside a fenced code block, optionally with a comment that renders as a draggable callout box connected to the highlight by an elbow connector. Marks are written as a trailing comment on the target source line and are stripped from the rendered code (never shown to the audience). Parsing/rendering lives in `composables/useCodeHighlights.ts`; placement/routing lives in `composables/useHighlightLayout.ts`.

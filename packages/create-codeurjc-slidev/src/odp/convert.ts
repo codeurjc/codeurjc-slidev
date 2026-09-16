@@ -6,6 +6,7 @@ import type { DesiredHeadings } from './headings'
 import type { OfficeRunner } from './office'
 import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
+import { serializeSlideCallouts } from 'codeurjc-slidev-theme/composables/useSlideCallouts'
 import { serializeSlideGeometry } from 'codeurjc-slidev-theme/composables/useSlideGeometry'
 import { realGitRunner } from 'codeurjc-slidev-theme/composables/useSourceLink'
 import { mergeBuildUps } from './buildups'
@@ -88,6 +89,9 @@ function slideFrontmatter(draft: SlideDraft): Record<string, unknown> {
     const geometry = serializeSlideGeometry({ content: draft.contentGeometry, images: draft.images.map(i => i.rect) })
     if (geometry)
       fm.geometry = geometry
+    const callouts = serializeSlideCallouts(draft.callouts)
+    if (callouts)
+      fm.callouts = callouts
   }
   return fm
 }

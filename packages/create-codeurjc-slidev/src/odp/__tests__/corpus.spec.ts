@@ -81,4 +81,28 @@ describe('oDP corpus', () => {
     // Marks sharing a line are no longer dropped.
     expect(reports.flatMap(r => r.losses).join('\n')).not.toContain('another marker already uses that line')
   })
+
+  it.skipIf(!deckPath('Anexo – Despliegue de aplicaciones en Azure'))('azure: arrows over portal screenshots become slide callouts, not losses', async () => {
+    const { slidesMarkdown, reports } = await convert('Anexo – Despliegue de aplicaciones en Azure')
+    // An arrow from a text box into a screenshot: an image-anchored callout
+    // carrying the text and the box position it was drawn at.
+    expect(slidesMarkdown).toMatch(/callouts:\n {2}- at: \{ image: \d+, x: [\d.]+, y: [\d.]+ \}\n {4}text: .+\n {4}box: \{ x: \d+, y: \d+ \}/)
+    // An arrow with nothing at its other end: anchor only, so the theme draws
+    // the arrow and no box.
+    expect(slidesMarkdown).toMatch(/ {2}- at: \{ image: \d+, x: [\d.]+, y: [\d.]+ \}\n(?! {4}text:)/)
+    // Those arrows used to be reported as losses; now nothing is left to report.
+    expect(reports.flatMap(r => r.losses).join('\n')).not.toContain('arrow or line omitted')
+  })
+
+  it.skipIf(!deckPath('2.2 Código de calidad'))('2.2: a label drawn on a diagram image becomes a callout instead of a flattened paragraph', async () => {
+    const { slidesMarkdown } = await convert('2.2 Código de calidad')
+    expect(slidesMarkdown).toContain('text: MODELO DE DOMINIO')
+    expect(slidesMarkdown).toMatch(/- at: \{ image: \d+, x: [\d.]+, y: [\d.]+ \}\n {4}text: MODELO DE DOMINIO/)
+  })
+
+  it.skipIf(!deckPath('2.5 Análisis estático de código'))('2.5: bare pointers into screenshots become text-less callouts', async () => {
+    const { slidesMarkdown, reports } = await convert('2.5 Análisis estático de código')
+    expect(slidesMarkdown).toMatch(/ {2}- at: \{ image: \d+, x: [\d.]+, y: [\d.]+ \}\n(?! {4}text:)/)
+    expect(reports.flatMap(r => r.losses).join('\n')).not.toContain('arrow or line omitted')
+  })
 })
