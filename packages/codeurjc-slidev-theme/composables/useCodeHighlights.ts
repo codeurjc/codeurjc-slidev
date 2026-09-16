@@ -34,16 +34,32 @@ export interface CodeHighlight {
   click?: number
   /** Exact original source line the marker was parsed from (for round-tripping position overrides). */
   sourceLine: string
+  /**
+   * Which marker of `sourceLine` this highlight came from (0-based), since a
+   * line's comment can carry several. A range takes its `:start` marker's
+   * index, matching how its comment and click step are resolved.
+   */
+  markerIndex: number
+  /**
+   * How many identical `sourceLine`s precede this one within the slide it came
+   * from. Filled in by the transformer (which has the slide's raw markdown);
+   * absent when it can't be determined, which the write-back treats as 0.
+   */
+  lineOccurrence?: number
 }
 
 // `{N}` (click step) sits after the role/substring range and before the
 // `@x,y` override, so the editor's "append/replace the trailing @x,y" rewrite
 // never has to reason about it. Only a positive integer is accepted -- `{0}`,
 // `{}` or `{x}` make the whole marker unrecognized, like any malformed marker.
-const MARKER_RE = /^(.*?)(?:\/\/|#)\s*\[!mark(?::(start|end))?(?:\((\d+)-(\d+)\))?(?:\{([1-9]\d*)\})?(?:@(-?\d+),(-?\d+))?\]\s*(.*)$/
+// Anchored at a marker's own start: a line's comment can hold several markers,
+// each parsed in turn.
+const MARKER_RE = /^\[!mark(?::(start|end))?(?:\((\d+)-(\d+)\))?(?:\{([1-9]\d*)\})?(?:@(-?\d+),(-?\d+))?\]/
+/** A `//`/`#` comment token that opens a marker region (i.e. a marker follows it). */
+const COMMENT_TOKEN_RE = /(?:\/\/|#)\s*(?=\[!mark)/g
+const MARKER_START = '[!mark'
 
-interface ParsedMarkerLine {
-  codePrefix: string
+interface ParsedMarker {
   role?: 'start' | 'end'
   substringRange?: { start: number, end: number }
   click?: number
@@ -51,40 +67,83 @@ interface ParsedMarkerLine {
   comment: string
 }
 
+interface ParsedMarkerLine {
+  codePrefix: string
+  /** Offset of the comment token that opens the marker region, for `findMarkerSpan`. */
+  commentStart: number
+  markers: ParsedMarker[]
+}
+
 /**
- * Finds the character span of a `// [!mark...]`/`# [!mark...]` marker comment
- * within a raw source line (from the comment prefix through end of line), or
- * null if the line has no marker. Exposed for external consumers (e.g. an
- * editor integration) that need to decorate/dim the marker text itself
- * without re-deriving the marker grammar.
+ * Parses the markers of one comment region (text starting at its first
+ * `[!mark`). Each marker's comment body runs to the next `[!mark` on the line,
+ * so a comment can't itself contain that text -- it splits there instead. An
+ * occurrence that doesn't parse as a marker (e.g. `[!mark{0}]`) is skipped,
+ * like any other malformed marker.
  */
-export function findMarkerSpan(line: string): { start: number, end: number } | null {
-  const m = line.match(MARKER_RE)
-  if (!m)
-    return null
-  return { start: m[1].length, end: line.length }
+function parseMarkerRegion(region: string): ParsedMarker[] {
+  const markers: ParsedMarker[] = []
+  let cursor = 0
+  while (cursor < region.length) {
+    const at = region.indexOf(MARKER_START, cursor)
+    if (at === -1)
+      break
+    const m = MARKER_RE.exec(region.slice(at))
+    if (!m) {
+      cursor = at + MARKER_START.length
+      continue
+    }
+    const [, role, rangeStart, rangeEnd, click, ox, oy] = m
+    const bodyStart = at + m[0].length
+    const next = region.indexOf(MARKER_START, bodyStart)
+    markers.push({
+      role: role as 'start' | 'end' | undefined,
+      substringRange: rangeStart !== undefined ? { start: Number(rangeStart), end: Number(rangeEnd) } : undefined,
+      click: click !== undefined ? Number(click) : undefined,
+      override: ox !== undefined ? { x: Number(ox), y: Number(oy) } : undefined,
+      comment: region.slice(bodyStart, next === -1 ? undefined : next).trim(),
+    })
+    cursor = bodyStart
+  }
+  return markers
 }
 
 function parseMarkerLine(line: string): ParsedMarkerLine | null {
-  const m = line.match(MARKER_RE)
-  if (!m)
-    return null
-  const [, codePrefix, role, rangeStart, rangeEnd, click, ox, oy, comment] = m
-  return {
-    codePrefix: codePrefix.replace(/\s+$/, ''),
-    role: role as 'start' | 'end' | undefined,
-    substringRange: rangeStart !== undefined ? { start: Number(rangeStart), end: Number(rangeEnd) } : undefined,
-    click: click !== undefined ? Number(click) : undefined,
-    override: ox !== undefined ? { x: Number(ox), y: Number(oy) } : undefined,
-    comment: comment.trim(),
+  COMMENT_TOKEN_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  // eslint-disable-next-line no-cond-assign
+  while ((m = COMMENT_TOKEN_RE.exec(line))) {
+    const markers = parseMarkerRegion(line.slice(m.index + m[0].length))
+    if (markers.length > 0)
+      return { codePrefix: line.slice(0, m.index).replace(/\s+$/, ''), commentStart: m.index, markers }
   }
+  return null
+}
+
+/**
+ * Finds the character span of a `// [!mark...]`/`# [!mark...]` marker comment
+ * within a raw source line (from the comment prefix through end of line), or
+ * null if the line has no marker. A line carrying several markers still has
+ * one span: the whole region from its comment token onward is marker text.
+ * Exposed for external consumers (e.g. an editor integration) that need to
+ * decorate/dim the marker text itself without re-deriving the marker grammar.
+ */
+export function findMarkerSpan(line: string): { start: number, end: number } | null {
+  const parsed = parseMarkerLine(line)
+  if (!parsed)
+    return null
+  return { start: parsed.commentStart, end: line.length }
+}
+
+function overlaps(a: { start: number, end: number }, b: { start: number, end: number }): boolean {
+  return a.start < b.end && b.start < a.end
 }
 
 export function parseCodeHighlights(code: string): { code: string, highlights: CodeHighlight[] } {
   const lines = code.split('\n')
   const strippedLines: string[] = []
   const highlights: CodeHighlight[] = []
-  const pendingStarts: { line: number, comment: string, click?: number, override?: { x: number, y: number }, sourceLine: string }[] = []
+  const pendingStarts: { line: number, markerIndex: number, comment: string, click?: number, override?: { x: number, y: number }, sourceLine: string }[] = []
   let nextId = 0
 
   lines.forEach((line, index) => {
@@ -95,38 +154,54 @@ export function parseCodeHighlights(code: string): { code: string, highlights: C
     }
     strippedLines.push(parsed.codePrefix)
 
-    if (parsed.role === 'start') {
-      pendingStarts.push({ line: index, comment: parsed.comment, click: parsed.click, override: parsed.override, sourceLine: line })
-      return
-    }
-    if (parsed.role === 'end') {
-      const start = pendingStarts.pop()
-      if (!start)
-        return // malformed: end with no matching start, ignore
+    // Markers are processed left to right, sharing the range-pairing stack, so
+    // several ranges can end (innermost first) or start on the same line.
+    const substringsOnLine: { start: number, end: number }[] = []
+    parsed.markers.forEach((marker, markerIndex) => {
+      if (marker.role === 'start') {
+        pendingStarts.push({ line: index, markerIndex, comment: marker.comment, click: marker.click, override: marker.override, sourceLine: line })
+        return
+      }
+      if (marker.role === 'end') {
+        const start = pendingStarts.pop()
+        if (!start)
+          return // malformed: end with no matching start, ignore
+        highlights.push({
+          id: String(nextId++),
+          kind: 'range',
+          startLine: start.line,
+          endLine: index,
+          comment: start.comment || marker.comment,
+          override: start.override || marker.override,
+          // Same precedence as the comment: the `:start` marker's step wins.
+          click: start.click ?? marker.click,
+          sourceLine: start.sourceLine,
+          markerIndex: start.markerIndex,
+        })
+        return
+      }
+      if (marker.substringRange) {
+        // Overlapping substrings on one line would produce tangled markup, so
+        // only the first of an overlapping pair is kept.
+        if (substringsOnLine.some(r => overlaps(r, marker.substringRange!))) {
+          console.warn(`[code-highlight] substring range ${marker.substringRange.start}-${marker.substringRange.end} overlaps an earlier highlight on the same line; skipping: ${line.trim()}`)
+          return
+        }
+        substringsOnLine.push(marker.substringRange)
+      }
+      // single-line (whole line or substring) highlight
       highlights.push({
         id: String(nextId++),
-        kind: 'range',
-        startLine: start.line,
+        kind: marker.substringRange ? 'substring' : 'line',
+        startLine: index,
         endLine: index,
-        comment: start.comment || parsed.comment,
-        override: start.override || parsed.override,
-        // Same precedence as the comment: the `:start` marker's step wins.
-        click: start.click ?? parsed.click,
-        sourceLine: start.sourceLine,
+        substringRange: marker.substringRange,
+        comment: marker.comment,
+        override: marker.override,
+        click: marker.click,
+        sourceLine: line,
+        markerIndex,
       })
-      return
-    }
-    // single-line (whole line or substring) highlight
-    highlights.push({
-      id: String(nextId++),
-      kind: parsed.substringRange ? 'substring' : 'line',
-      startLine: index,
-      endLine: index,
-      substringRange: parsed.substringRange,
-      comment: parsed.comment,
-      override: parsed.override,
-      click: parsed.click,
-      sourceLine: line,
     })
   })
 
@@ -149,15 +224,69 @@ function findTopLevelCloseBracket(line: string): number {
 }
 
 /** Rewrites a highlight's original source line to carry (or update) an `@x,y` position override. */
-export function serializeMarkerOverride(sourceLine: string, x: number, y: number): string {
+/** Inserts or replaces one marker's `@x,y`, keeping its role, substring range and `{N}` step. */
+function withOverride(marker: string, x: number, y: number): string {
+  // Any `{N}` click step stays in the preserved prefix, so the override
+  // always lands after it (the grammar's `...{N}@x,y]` order).
+  return marker.replace(
+    /(\[!mark(?::(?:start|end))?(?:\(\d+-\d+\))?(?:\{[1-9]\d*\})?)(?:@-?\d+,-?\d+)?(\])/,
+    `$1@${x},${y}$2`,
+  )
+}
+
+/**
+ * Finds the line a dragged callout's marker lives on, within a markdown file's
+ * lines. `slideStart`/`slideEnd` bound the slide the callout is on and
+ * `lineOccurrence` says how many identical lines precede it inside that slide,
+ * so a line repeated across slides (or twice in one slide) still resolves to
+ * the right one. Falls back to the first match anywhere in the file when those
+ * don't resolve: the ranges come from the last parse, so an edit between render
+ * and drag can invalidate them, and an older client sends no addressing fields.
+ * Returns -1 when the line isn't in the file at all.
+ */
+export function resolveMarkerLine(
+  lines: string[],
+  sourceLine: string,
+  { slideStart, slideEnd, lineOccurrence }: { slideStart?: unknown, slideEnd?: unknown, lineOccurrence?: unknown } = {},
+): number {
+  const from = typeof slideStart === 'number' ? Math.max(0, slideStart) : 0
+  const to = typeof slideEnd === 'number' ? Math.min(lines.length, slideEnd + 1) : lines.length
+  const wanted = typeof lineOccurrence === 'number' ? lineOccurrence : 0
+  let seen = 0
+  for (let i = from; i < to; i++) {
+    if (lines[i] !== sourceLine)
+      continue
+    if (seen === wanted)
+      return i
+    seen++
+  }
+  return lines.indexOf(sourceLine)
+}
+
+export function serializeMarkerOverride(sourceLine: string, x: number, y: number, markerIndex = 0): string {
   const rounded = { x: Math.round(x), y: Math.round(y) }
-  if (MARKER_RE.test(sourceLine)) {
-    // Any `{N}` click step stays in the preserved prefix, so the override
-    // always lands after it (the grammar's `...{N}@x,y]` order).
-    return sourceLine.replace(
-      /(\[!mark(?::(?:start|end))?(?:\(\d+-\d+\))?(?:\{[1-9]\d*\})?)(?:@-?\d+,-?\d+)?(\])/,
-      `$1@${rounded.x},${rounded.y}$2`,
-    )
+  const parsed = parseMarkerLine(sourceLine)
+  if (parsed) {
+    // A line's comment can carry several markers, so rewrite the addressed one
+    // rather than the first: counting skips malformed `[!mark` occurrences the
+    // same way parsing does, keeping both in step.
+    let cursor = parsed.commentStart
+    let seen = 0
+    while (cursor < sourceLine.length) {
+      const at = sourceLine.indexOf(MARKER_START, cursor)
+      if (at === -1)
+        break
+      const m = MARKER_RE.exec(sourceLine.slice(at))
+      if (!m) {
+        cursor = at + MARKER_START.length
+        continue
+      }
+      if (seen === markerIndex)
+        return sourceLine.slice(0, at) + withOverride(m[0], rounded.x, rounded.y) + sourceLine.slice(at + m[0].length)
+      seen++
+      cursor = at + m[0].length
+    }
+    return sourceLine
   }
   if (ANCHOR_LINE_RE.test(sourceLine)) {
     // Anchor-declaration lines end with `]` right after their selector body
@@ -184,7 +313,9 @@ function toBase64(s: string): string {
 }
 
 function highlightAttrs(h: CodeHighlight): string {
-  let attrs = ` data-highlight-id="${escapeAttr(h.id)}" data-source-line="${toBase64(h.sourceLine)}"`
+  let attrs = ` data-highlight-id="${escapeAttr(h.id)}" data-source-line="${toBase64(h.sourceLine)}" data-marker-index="${h.markerIndex}"`
+  if (h.lineOccurrence !== undefined)
+    attrs += ` data-line-occurrence="${h.lineOccurrence}"`
   if (h.comment)
     attrs += ` data-comment="${escapeAttr(h.comment)}"`
   if (h.override)
@@ -544,7 +675,7 @@ export function parseExternalHighlightAnchors(
         onWarn(`[code-highlight] anchor line ${spec.line} is out of range`)
         continue
       }
-      highlights.push({ id: String(nextId++), kind: 'line', startLine: idx, endLine: idx, comment: spec.comment, override: spec.override, click: spec.click, sourceLine: spec.sourceLine })
+      highlights.push({ id: String(nextId++), kind: 'line', startLine: idx, endLine: idx, comment: spec.comment, override: spec.override, click: spec.click, sourceLine: spec.sourceLine, markerIndex: 0 })
       continue
     }
 
@@ -555,7 +686,7 @@ export function parseExternalHighlightAnchors(
         onWarn(`[code-highlight] anchor line range ${spec.line}..${spec.endLine} is out of range`)
         continue
       }
-      highlights.push({ id: String(nextId++), kind: 'range', startLine: start, endLine: end, comment: spec.comment, override: spec.override, click: spec.click, sourceLine: spec.sourceLine })
+      highlights.push({ id: String(nextId++), kind: 'range', startLine: start, endLine: end, comment: spec.comment, override: spec.override, click: spec.click, sourceLine: spec.sourceLine, markerIndex: 0 })
       continue
     }
 
@@ -577,6 +708,7 @@ export function parseExternalHighlightAnchors(
           override: spec.override,
           click: spec.click,
           sourceLine: spec.sourceLine,
+          markerIndex: 0,
         })
       }
       continue
@@ -602,7 +734,7 @@ export function parseExternalHighlightAnchors(
       else {
         endIdx = Math.min(startIdx + spec.offset!, lines.length - 1)
       }
-      highlights.push({ id: String(nextId++), kind: 'range', startLine: startIdx, endLine: endIdx, comment: spec.comment, override: spec.override, click: spec.click, sourceLine: spec.sourceLine })
+      highlights.push({ id: String(nextId++), kind: 'range', startLine: startIdx, endLine: endIdx, comment: spec.comment, override: spec.override, click: spec.click, sourceLine: spec.sourceLine, markerIndex: 0 })
     }
   }
 

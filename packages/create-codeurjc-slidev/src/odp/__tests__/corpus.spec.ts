@@ -70,11 +70,15 @@ describe('oDP corpus', () => {
   })
 
   it.skipIf(!deckPath('Integración Continua con GitHub Actions'))('gitHub Actions: highlight boxes, labels and callouts over the workflow become code highlights', async () => {
-    const { slidesMarkdown } = await convert('Integración Continua con GitHub Actions')
+    const { slidesMarkdown, reports } = await convert('Integración Continua con GitHub Actions')
     // A labeled frame around the whole workflow, and a labeled box around the job.
     expect(slidesMarkdown).toContain('name: Continuous integration example # [!mark:start] WORKFLOW')
     expect(slidesMarkdown).toContain('test: # [!mark:start] JOB')
+    // Both ranges end on the same line, which now carries both end markers.
+    expect(slidesMarkdown).toMatch(/- run: mvn test # \[!mark:end\] \[!mark:end\]/)
     // A narrow box plus an arrow to an explanation box: a positioned substring callout.
-    expect(slidesMarkdown).toMatch(/runs-on: ubuntu-latest # \[!mark\(\d+-\d+\)@\d+,\d+\] Cada Job se ejecuta en un runner/)
+    expect(slidesMarkdown).toMatch(/runs-on: ubuntu-latest #.*\[!mark\(\d+-\d+\)(?:\{\d+\})?@\d+,\d+\] Cada Job se ejecuta en un runner/)
+    // Marks sharing a line are no longer dropped.
+    expect(reports.flatMap(r => r.losses).join('\n')).not.toContain('another marker already uses that line')
   })
 })

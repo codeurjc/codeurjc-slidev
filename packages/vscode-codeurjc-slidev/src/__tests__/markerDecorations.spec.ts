@@ -69,6 +69,34 @@ describe('computeMarkerDecorations', () => {
   })
 })
 
+describe('computeMarkerDecorations with several markers on one line', () => {
+  const text = [
+    '```yaml',
+    'name: CI # [!mark:start] WORKFLOW',
+    'jobs:',
+    '  test: # [!mark:start] JOB',
+    '    steps: # [!mark(4-10)] Los pasos [!mark:end] [!mark:end]',
+    '```',
+  ].join('\n')
+
+  it('dims the whole marker region as one span', () => {
+    const { dims } = computeMarkerDecorations(text)
+    const onSharedLine = dims.filter(d => d.line === 4)
+    expect(onSharedLine).toHaveLength(1)
+    const line = text.split('\n')[4]
+    expect(line.slice(onSharedLine[0].startChar, onSharedLine[0].endChar)).toBe('# [!mark(4-10)] Los pasos [!mark:end] [!mark:end]')
+  })
+
+  it('reports every highlight the line contributes to', () => {
+    const { highlights } = computeMarkerDecorations(text)
+    expect(highlights).toEqual([
+      { startLine: 1, endLine: 4, substringRange: undefined, comment: 'WORKFLOW' },
+      { startLine: 3, endLine: 4, substringRange: undefined, comment: 'JOB' },
+      { startLine: 4, endLine: 4, substringRange: { start: 4, end: 10 }, comment: 'Los pasos' },
+    ])
+  })
+})
+
 describe('computeMarkerDecorations with click-step suffixes', () => {
   it('dims and highlights a marker carrying a {N} step like any other marker', () => {
     const text = [

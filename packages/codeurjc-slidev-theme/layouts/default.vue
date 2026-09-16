@@ -29,13 +29,25 @@ const VAR_MAP: Record<string, Record<string, string>> = {
 
 const editor = useEditor()
 
-// The markdown file *this* slide was parsed from -- not necessarily
-// `slides.md`, since the deck entry can be named anything and a deck can pull
-// slides in from other files via `src:`. Sent along when persisting a dragged
-// callout so the `@x,y` is written back into the right file. (Slidev flattens
-// `source.filepath` onto the slide itself in the client-side bundle.)
+// Where *this* slide came from -- not necessarily `slides.md`, since the deck
+// entry can be named anything and a deck can pull slides in from other files
+// via `src:`. Sent along when persisting a dragged callout so the `@x,y` is
+// written back into the right file, and into the right line of it: the slide's
+// own line range narrows the search, which matters when the same marked line
+// appears on more than one slide. Read from `source` when present and from the
+// flattened fields otherwise, since Slidev's client bundle flattens some of
+// them onto the slide itself.
 const { $route, $frontmatter, $page, $clicks } = useSlideContext()
-const slideSourcePath = $route?.meta?.slide?.filepath
+interface SlideSourceFields {
+  filepath?: string
+  start?: number
+  end?: number
+  source?: { filepath?: string, start?: number, end?: number }
+}
+const slideInfo = $route?.meta?.slide as SlideSourceFields | undefined
+const slideSourcePath = slideInfo?.source?.filepath ?? slideInfo?.filepath
+const slideStart = slideInfo?.source?.start ?? slideInfo?.start
+const slideEnd = slideInfo?.source?.end ?? slideInfo?.end
 
 // --- Per-slide geometry frontmatter ---------------------------------------
 // A slide's own `geometry` frontmatter (see composables/useSlideGeometry.ts)
@@ -331,6 +343,10 @@ interface CalloutItem {
   path: string
   overrideKey: string
   sourceLine: string
+  /** Which marker of `sourceLine` this callout belongs to (a line can carry several). */
+  markerIndex: number
+  /** How many identical `sourceLine`s precede it within the slide. */
+  lineOccurrence: number
   // Retained so the post-render remeasure pass (see remeasureCallouts) can
   // recompute the connector path against the box's real auto-sized rect
   // without re-running placement/collision detection.
@@ -528,6 +544,8 @@ function computeCallouts() {
 
     const sourceLineB64 = first.getAttribute('data-source-line')
     const sourceLine = sourceLineB64 ? decodeBase64(sourceLineB64) : ''
+    const markerIndex = Number(first.getAttribute('data-marker-index') ?? 0)
+    const lineOccurrence = Number(first.getAttribute('data-line-occurrence') ?? 0)
     const pre = first.closest('pre')
     const codeRect = pre ? codeRectFor(pre) : slideRect
     const highlightRect = unionRects(els.map(el => rectOf(el, originRect, scale)))
@@ -562,7 +580,7 @@ function computeCallouts() {
     // slot in `placed`), so revealing a later step never moves earlier callouts.
     const clickAttr = first.getAttribute('data-highlight-click')
     const click = clickAttr ? Number(clickAttr) : undefined
-    items.push({ id, comment, rect, path, overrideKey, sourceLine, highlightRect, side, click })
+    items.push({ id, comment, rect, path, overrideKey, sourceLine, markerIndex, lineOccurrence, highlightRect, side, click })
   }
   calloutItems.value = items
   editor.pruneDynamicKeys('callout:', new Set(groups.keys()))
@@ -600,20 +618,29 @@ function startCalloutDrag(e: MouseEvent, item: CalloutItem) {
   editor.startDrag(e, item.overrideKey)
   const onUp = () => {
     window.removeEventListener('mouseup', onUp)
-    saveCalloutPosition(item.overrideKey, item.sourceLine)
+    saveCalloutPosition(item)
   }
   window.addEventListener('mouseup', onUp)
 }
 
-async function saveCalloutPosition(overrideKey: string, sourceLine: string) {
-  const pos = editor.positions[overrideKey]
-  if (!pos || !sourceLine || !slideSourcePath)
+async function saveCalloutPosition(item: CalloutItem) {
+  const pos = editor.positions[item.overrideKey]
+  if (!pos || !item.sourceLine || !slideSourcePath)
     return
   try {
     await fetch('/api/save-code-highlight-position', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceLine, filepath: slideSourcePath, x: pos.x, y: pos.y }),
+      body: JSON.stringify({
+        sourceLine: item.sourceLine,
+        filepath: slideSourcePath,
+        markerIndex: item.markerIndex,
+        lineOccurrence: item.lineOccurrence,
+        slideStart,
+        slideEnd,
+        x: pos.x,
+        y: pos.y,
+      }),
     })
   }
   catch {

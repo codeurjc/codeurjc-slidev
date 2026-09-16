@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
 import { defineConfig } from 'vite'
-import { serializeMarkerOverride } from './composables/useCodeHighlights.ts'
+import { resolveMarkerLine, serializeMarkerOverride } from './composables/useCodeHighlights.ts'
 
 const VAR_MAP: Record<string, Record<string, string>> = {
   'red-bar': { y: '--ed-red-y', x: '--ed-red-x', w: '--ed-red-w', h: '--ed-red-h' },
@@ -296,7 +296,7 @@ export default defineConfig({
           const chunks: Buffer[] = []
           for await (const chunk of req) chunks.push(chunk)
           const body = JSON.parse(Buffer.concat(chunks).toString())
-          const { sourceLine, filepath, x, y } = body
+          const { sourceLine, filepath, x, y, markerIndex, lineOccurrence, slideStart, slideEnd } = body
           if (typeof sourceLine !== 'string' || typeof x !== 'number' || typeof y !== 'number') {
             res.statusCode = 400
             res.end()
@@ -318,16 +318,19 @@ export default defineConfig({
             return
           }
           const content = readFileSync(slidesPath, 'utf-8')
-          const idx = content.indexOf(sourceLine)
-          if (idx === -1) {
+          const lines = content.split('\n')
+          const lineIndex = resolveMarkerLine(lines, sourceLine, { slideStart, slideEnd, lineOccurrence })
+          if (lineIndex === -1) {
             res.statusCode = 404
             res.end()
             return
           }
-          const newLine = serializeMarkerOverride(sourceLine, x, y)
-          const newContent = content.slice(0, idx) + newLine + content.slice(idx + sourceLine.length)
+          // A line's comment can carry several markers, so rewrite the one this
+          // callout came from rather than the first.
+          const newLine = serializeMarkerOverride(lines[lineIndex], x, y, typeof markerIndex === 'number' ? markerIndex : 0)
+          lines[lineIndex] = newLine
           const { writeFileSync } = await import('node:fs')
-          writeFileSync(slidesPath, newContent, 'utf-8')
+          writeFileSync(slidesPath, lines.join('\n'), 'utf-8')
           res.statusCode = 200
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify({ sourceLine: newLine }))

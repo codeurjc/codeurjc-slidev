@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { extractInlineSourceLink, findMarkerSpan, injectHighlightSpans, isInlineSourceMarkerLine, parseCodeHighlights, serializeMarkerOverride } from '../useCodeHighlights'
+import { describe, expect, it, vi } from 'vitest'
+import { extractInlineSourceLink, findMarkerSpan, injectHighlightSpans, isInlineSourceMarkerLine, parseCodeHighlights, resolveMarkerLine, serializeMarkerOverride } from '../useCodeHighlights'
 
 describe('parseCodeHighlights', () => {
   it('parses a single-line marker with a comment and strips it from the code', () => {
@@ -108,6 +108,61 @@ describe('serializeMarkerOverride', () => {
     const line = 'plain code'
     expect(serializeMarkerOverride(line, 5, 6)).toBe(line)
   })
+
+  it('rewrites the addressed marker when a line carries several', () => {
+    const line = 'x(); // [!mark] a [!mark(0-4)] b [!mark:end]'
+    expect(serializeMarkerOverride(line, 5, 6, 1)).toBe('x(); // [!mark] a [!mark(0-4)@5,6] b [!mark:end]')
+    expect(serializeMarkerOverride(line, 5, 6, 2)).toBe('x(); // [!mark] a [!mark(0-4)] b [!mark:end@5,6]')
+    expect(serializeMarkerOverride(line, 5, 6)).toBe('x(); // [!mark@5,6] a [!mark(0-4)] b [!mark:end]')
+  })
+
+  it('replaces an existing override on the addressed marker only', () => {
+    const line = 'x(); // [!mark@1,2] a [!mark{3}@7,8] b'
+    expect(serializeMarkerOverride(line, 30, 40, 1)).toBe('x(); // [!mark@1,2] a [!mark{3}@30,40] b')
+  })
+
+  it('leaves the line unchanged when the marker index is out of range', () => {
+    const line = 'x(); // [!mark] a'
+    expect(serializeMarkerOverride(line, 5, 6, 3)).toBe(line)
+  })
+})
+
+describe('resolveMarkerLine', () => {
+  // Two slides, each with the same marked line; the second slide spans lines 5-8.
+  const lines = [
+    '# One',
+    '```java',
+    'a(); // [!mark] note',
+    '```',
+    '---',
+    '# Two',
+    '```java',
+    'a(); // [!mark] note',
+    '```',
+  ]
+
+  it('resolves within the slide that owns the callout', () => {
+    expect(resolveMarkerLine(lines, 'a(); // [!mark] note', { slideStart: 5, slideEnd: 8 })).toBe(7)
+    expect(resolveMarkerLine(lines, 'a(); // [!mark] note', { slideStart: 0, slideEnd: 3 })).toBe(2)
+  })
+
+  it('picks the requested occurrence when a slide repeats the line', () => {
+    const repeated = ['# One', 'x(); // [!mark] a', 'y();', 'x(); // [!mark] a']
+    expect(resolveMarkerLine(repeated, 'x(); // [!mark] a', { slideStart: 0, slideEnd: 3, lineOccurrence: 1 })).toBe(3)
+    expect(resolveMarkerLine(repeated, 'x(); // [!mark] a', { slideStart: 0, slideEnd: 3, lineOccurrence: 0 })).toBe(1)
+  })
+
+  it('falls back to the first match when the range no longer holds the line', () => {
+    expect(resolveMarkerLine(lines, 'a(); // [!mark] note', { slideStart: 40, slideEnd: 50 })).toBe(2)
+  })
+
+  it('falls back to the first match when no addressing fields are sent', () => {
+    expect(resolveMarkerLine(lines, 'a(); // [!mark] note')).toBe(2)
+  })
+
+  it('returns -1 when the line is not in the file', () => {
+    expect(resolveMarkerLine(lines, 'z(); // [!mark] gone', { slideStart: 0, slideEnd: 3 })).toBe(-1)
+  })
 })
 
 describe('injectHighlightSpans', () => {
@@ -152,7 +207,7 @@ describe('injectHighlightSpans', () => {
     const code = 'List<Float> notas = alumnos.getNotasAlumno(idAlumno);'
     const start = code.indexOf('getNotasAlumno(idAlumno)')
     const end = start + 'getNotasAlumno(idAlumno)'.length
-    const highlight = { id: '0', kind: 'substring' as const, startLine: 0, endLine: 0, substringRange: { start, end }, comment: 'note', sourceLine: 'x' }
+    const highlight = { id: '0', kind: 'substring' as const, startLine: 0, endLine: 0, substringRange: { start, end }, comment: 'note', sourceLine: 'x', markerIndex: 0 }
     const out = injectHighlightSpans(html, [highlight])
     // every mark fragment concatenated together (in document order) should
     // reconstruct the full matched text, not just its first token
@@ -167,7 +222,7 @@ describe('injectHighlightSpans', () => {
     const html = shikiHtml([
       '<span style="color:d">getNotasAlumno</span>(<span style="color:e">idAlumno</span>)',
     ])
-    const highlight = { id: '0', kind: 'substring' as const, startLine: 0, endLine: 0, substringRange: { start: 0, end: 24 }, comment: 'note', sourceLine: 'x' }
+    const highlight = { id: '0', kind: 'substring' as const, startLine: 0, endLine: 0, substringRange: { start: 0, end: 24 }, comment: 'note', sourceLine: 'x', markerIndex: 0 }
     const out = injectHighlightSpans(html, [highlight])
     const classes = Array.from(out.matchAll(/<span class="(code-hl-mark[^"]*)"/g)).map(m => m[1])
     expect(classes.length).toBeGreaterThan(1)
@@ -244,6 +299,87 @@ describe('findMarkerSpan', () => {
 
   it('returns null for a line with no marker', () => {
     expect(findMarkerSpan('int x = 1;')).toBeNull()
+  })
+})
+
+describe('several markers on one line', () => {
+  it('parses two markers on one line and strips the whole comment region', () => {
+    const code = [
+      'jobs:',
+      '    steps:      # [!mark(4-10)] Los pasos [!mark:end]',
+    ].join('\n')
+    const { code: stripped, highlights } = parseCodeHighlights(`a(); // [!mark:start] Job\n${code}`)
+    expect(stripped).toBe(['a();', 'jobs:', '    steps:'].join('\n'))
+    expect(highlights).toEqual([
+      expect.objectContaining({ kind: 'range', startLine: 0, endLine: 2, comment: 'Job', markerIndex: 0 }),
+      expect.objectContaining({ kind: 'substring', startLine: 2, endLine: 2, substringRange: { start: 4, end: 10 }, comment: 'Los pasos', markerIndex: 0 }),
+    ])
+  })
+
+  it('ends a comment body at the next marker', () => {
+    const { highlights } = parseCodeHighlights('x(); # [!mark] First note [!mark(0-4)] Second note')
+    expect(highlights.map(h => [h.comment, h.markerIndex])).toEqual([['First note', 0], ['Second note', 1]])
+  })
+
+  it('closes nested ranges innermost-first when two end markers share a line', () => {
+    const code = [
+      'name: CI // [!mark:start] WORKFLOW',
+      'jobs:',
+      '  test: // [!mark:start] JOB',
+      '    runs-on: ubuntu-latest',
+      '      - run: mvn test // [!mark:end] [!mark:end]',
+    ].join('\n')
+    const { code: stripped, highlights } = parseCodeHighlights(code)
+    expect(stripped.split('\n')[4]).toBe('      - run: mvn test')
+    expect(highlights.map(h => [h.startLine, h.endLine, h.comment])).toEqual([
+      [0, 4, 'WORKFLOW'],
+      [2, 4, 'JOB'],
+    ])
+  })
+
+  it('lets one line end a range and start another', () => {
+    const code = [
+      'a(); // [!mark:start] first',
+      'b(); // [!mark:end] [!mark:start] second',
+      'c(); // [!mark:end]',
+    ].join('\n')
+    const { highlights } = parseCodeHighlights(code)
+    expect(highlights.map(h => [h.startLine, h.endLine, h.comment, h.markerIndex])).toEqual([
+      [0, 1, 'first', 0],
+      [1, 2, 'second', 1],
+    ])
+  })
+
+  it('highlights disjoint substring ranges on one line', () => {
+    const { highlights } = parseCodeHighlights('const a = 1; // [!mark(0-5)] A [!mark(6-7)] B')
+    expect(highlights.map(h => [h.substringRange, h.comment])).toEqual([
+      [{ start: 0, end: 5 }, 'A'],
+      [{ start: 6, end: 7 }, 'B'],
+    ])
+  })
+
+  it('warns and skips an overlapping substring range on the same line', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { highlights } = parseCodeHighlights('const a = 1; // [!mark(0-10)] A [!mark(5-15)] B')
+    expect(highlights.map(h => h.comment)).toEqual(['A'])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('overlaps an earlier highlight'))
+    warn.mockRestore()
+  })
+
+  it('splits a comment that contains the literal marker text', () => {
+    const { highlights } = parseCodeHighlights('x(); // [!mark] write [!mark] to mark a line')
+    expect(highlights.map(h => h.comment)).toEqual(['write', 'to mark a line'])
+  })
+
+  it('keeps a malformed marker unrecognized, leaving the line untouched', () => {
+    const { code: stripped, highlights } = parseCodeHighlights('x(); // [!mark{0}] Note')
+    expect(stripped).toBe('x(); // [!mark{0}] Note')
+    expect(highlights).toEqual([])
+  })
+
+  it('records marker index 0 for an ordinary single-marker line', () => {
+    const { highlights } = parseCodeHighlights('x(); // [!mark] Note')
+    expect(highlights[0].markerIndex).toBe(0)
   })
 })
 

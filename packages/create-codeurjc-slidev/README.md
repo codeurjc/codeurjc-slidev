@@ -31,7 +31,7 @@ The import is a best effort:
   - A block that exactly matches a file in the code folder becomes a `<<< @/code/...` import, with a source link.
   - Code that differs from its file (elided or changed since) stays inline, with a link to the file.
   - Anything else stays inline.
-  - Highlight boxes and callouts over code become code-highlight callouts.
+  - Highlight boxes and callouts over code become code-highlight callouts, including several that land on the same line (nested boxes ending together, or a callout beside a box's last line).
 - **Build-ups:** consecutive slides that each add a callout, bullet or image become a single slide with click steps. The project's `export` script uses `slidev export --with-clicks`, so the PDF keeps every step.
 
 Everything that couldn't be converted (arrows, diagrams, grouped shapes, callouts over screenshots, ...) is listed in the console. `slides.md` itself never contains warnings.

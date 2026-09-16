@@ -193,6 +193,7 @@ graph LR
     - Multi-line range: `// [!mark:start]` ... `// [!mark:end]`
     - Substring: `// [!mark(<start>-<end>)] comment`, with `<start>`/`<end>` as character indices (0-based, end-exclusive) into the code line
     - Click step: `{N}`, e.g. `// [!mark{2}] comment` (see "click steps" below)
+    - Several markers in one comment: each comment ends where the next marker starts, so `// [!mark:end] [!mark:end]` closes two ranges (the inner one first)
     - Fixed position: `@x,y` right before the `]` (written automatically when you drag the callout in the editor)
 
 ---
@@ -212,6 +213,23 @@ public float calculaNotaMedia(long idAlumno) {
 	return suma / notas.size(); // [!mark:end]
 }
 ```
+
+---
+
+# Code annotations: several markers on one line
+```yaml
+name: Continuous integration example # [!mark:start] The whole workflow
+on: push
+jobs:
+  test: # [!mark:start] One job of it
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: mvn test # [!mark:end] [!mark:end]
+```
+- Both ranges end on the same line, so that line carries two `:end` markers
+- They close innermost-first, exactly like closing brackets
+- A comment ends where the next marker starts, so it can't itself contain `[!mark`
 
 ---
 

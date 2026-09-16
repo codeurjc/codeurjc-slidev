@@ -1,8 +1,4 @@
-## Purpose
-
-TBD - defines the inline marker syntax presenters use inside fenced code blocks to mark lines, ranges, or substrings for persistent highlight styling, independent of Slidev's native click-step highlighting, with markers stripped from rendered output.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Inline marker syntax identifies a highlight
 A presenter SHALL be able to mark a fragment of code inside a fenced code block by adding a trailing marker comment `// [!mark]` (or the language's equivalent comment syntax) to the target line. Highlights carry no presenter-chosen id — the transformer assigns one internally, by encounter order within the code block, purely for DOM grouping and position bookkeeping.
@@ -38,26 +34,7 @@ A presenter SHALL be able to highlight a contiguous range of lines by placing `/
 - **WHEN** a block opens a range on line 0, opens a second range on line 4, and line 8 reads `      - run: mvn test    # [!mark:end] [!mark:end]`
 - **THEN** two range highlights are produced, lines 4–8 (closed by the first `:end`) and lines 0–8 (closed by the second), and neither is discarded
 
-### Requirement: Sub-line substring marking
-A presenter SHALL be able to highlight only a portion of a line by including a parenthesized character range in the marker: `// [!mark(<start>-<end>)]`, where `<start>` and `<end>` are 0-based, end-exclusive character indexes into the source line (counting the line's own characters, including leading whitespace, not the rendered/Shiki-wrapped HTML). The transformer highlights exactly that character range rather than the whole line.
-
-#### Scenario: Substring highlighted instead of full line
-- **WHEN** a line reads `alumnos.getNotasAlumno(idAlumno); // [!mark(8-32)] Fetches raw scores`
-- **THEN** only the text `getNotasAlumno(idAlumno)` (characters 8 through 31) is rendered with the highlight style, not the full line
-
-### Requirement: Highlighted fragments render with a distinct persistent style
-Marked fragments (whole-line, ranged, or substring) SHALL render with a background/emphasis style that is visually distinct from Slidev's native `{n-m}` click-step dim/undim highlighting, and SHALL remain visible regardless of click-step state (it is not step-gated).
-
-#### Scenario: Highlight visible without any click steps
-- **WHEN** a slide with a marked highlight is shown before any click-step interaction
-- **THEN** the marked fragment already displays its highlight style
-
-### Requirement: Marker syntax is stripped from rendered output
-The marker comment SHALL never appear in the rendered slide, regardless of highlight type (line, range, or substring).
-
-#### Scenario: Marker text not visible in output
-- **WHEN** a code block contains `// [!mark] Injects the DB dependency`
-- **THEN** the rendered line shows the original code content only, with no visible `[!mark...]` text
+## ADDED Requirements
 
 ### Requirement: Overlapping substring ranges on one line are skipped
 When two substring markers on the same line specify character ranges that overlap, only the first SHALL produce a highlight; the second SHALL be skipped and a console warning SHALL name the line and the skipped range. Substring ranges on the same line that do not overlap SHALL both produce highlights.

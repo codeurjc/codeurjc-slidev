@@ -32,7 +32,19 @@ public class GestorNotas {
     for (float nota : notas) {
       suma += nota;
     }
-    return suma / notas.size(); // [!mark:end]
+    return suma / notas.size(); // [!mark:end] [!mark(11-15)] The result
+  }
+}
+\`\`\`
+
+---
+
+# Repeated line
+
+\`\`\`java
+public class GestorNotas {
+  public GestorNotas(DBAlumno alumnos) { // [!mark] Injects the DB dependency
+    this.alumnos = alumnos;
   }
 }
 \`\`\`
@@ -93,11 +105,11 @@ test.describe('Code Highlight Callouts E2E', () => {
 
   test('each highlight with a comment renders a connected callout', async ({ page }) => {
     const callouts = page.locator('.slidev-page-1 .code-callout:visible')
-    await expect(callouts).toHaveCount(3)
+    await expect(callouts).toHaveCount(4)
     await expect(page.locator('.slidev-page-1 .code-callout:visible', { hasText: 'Injects the DB dependency' })).toBeVisible()
     await expect(page.locator('.slidev-page-1 .code-callout:visible', { hasText: 'Loops over notes' })).toBeVisible()
     const connectors = page.locator('.slidev-page-1 .code-callout-connector:visible')
-    await expect(connectors).toHaveCount(3)
+    await expect(connectors).toHaveCount(4)
   })
 
   test('a multi-line range highlight wraps every line in its range with the same id', async ({ page }) => {
@@ -176,5 +188,58 @@ test.describe('Code Highlight Callouts E2E', () => {
     await page.waitForTimeout(500)
     const updated = readFileSync(slidesPath, 'utf-8')
     expect(updated).toMatch(/\[!mark@-?\d+,-?\d+\]/)
+  })
+
+  test('dragging the second callout of a line writes the override into that marker only', async ({ page }) => {
+    await page.locator('button:has-text("Show editor")').click()
+    await page.locator('button:has-text("Switch to layout tab")').click()
+    await page.waitForTimeout(300)
+
+    const callout = page.locator('.slidev-page-1 .code-callout:visible', { hasText: 'The result' })
+    const box = await callout.boundingBox()
+    expect(box).toBeTruthy()
+    if (!box)
+      return
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 - 80, box.y + box.height / 2 + 30, { steps: 10 })
+    await page.mouse.up()
+    await page.waitForTimeout(500)
+
+    // The range's `:end` marker shares this line and must stay untouched.
+    const updated = readFileSync(slidesPath, 'utf-8')
+    expect(updated).toMatch(/\[!mark:end\] \[!mark\(11-15\)@-?\d+,-?\d+\] The result/)
+  })
+
+  test('dragging a callout whose marked line is duplicated on another slide writes into its own slide', async ({ page }) => {
+    const before = readFileSync(slidesPath, 'utf-8').split('\n')
+    const duplicated = before.reduce<number[]>((acc, line, i) => line.includes('Injects the DB dependency') ? [...acc, i] : acc, [])
+    expect(duplicated).toHaveLength(2)
+
+    await page.goto('/2')
+    await page.waitForSelector('.slidev-page-2 [data-highlight-id]')
+    await page.locator('button:has-text("Show editor")').click()
+    await page.locator('button:has-text("Switch to layout tab")').click()
+    await page.waitForTimeout(300)
+
+    const callout = page.locator('.slidev-page-2 .code-callout:visible', { hasText: 'Injects the DB dependency' })
+    const box = await callout.boundingBox()
+    expect(box).toBeTruthy()
+    if (!box)
+      return
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 + 50, box.y + box.height / 2 + 50, { steps: 10 })
+    await page.mouse.up()
+    await page.waitForTimeout(500)
+
+    // Compared line by line, since an earlier test in this file may already
+    // have written an override into slide 1's copy of the same line.
+    const after = readFileSync(slidesPath, 'utf-8').split('\n')
+    expect(after[duplicated[0]]).toBe(before[duplicated[0]])
+    expect(after[duplicated[1]]).not.toBe(before[duplicated[1]])
+    expect(after[duplicated[1]]).toMatch(/\[!mark@-?\d+,-?\d+\]/)
   })
 })

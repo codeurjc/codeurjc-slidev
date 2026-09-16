@@ -1,3 +1,4 @@
+import type { CodeHighlight } from '../composables/useCodeHighlights'
 import type { CombinedSourceLink } from '../composables/useSnippetImport'
 import { readFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
@@ -62,6 +63,34 @@ function wrapCodeBlock(info: string, html: string, sourceLink: CombinedSourceLin
   const linkAttrs = ` data-source-link-url="${escapeAttr(sourceLink.url)}" data-source-link-placement="${placedAtTitle ? 'title' : 'bottom'}"`
   const icon = placedAtTitle ? sourceLinkIconHtml(sourceLink.url) : ''
   return `<CodeBlockWrapper title=${JSON.stringify(title)}${linkAttrs}>${escaped}${icon}</CodeBlockWrapper>`
+}
+
+/**
+ * Records, per highlight, how many identical source lines precede it within
+ * the slide. The dev server's position write-back uses it to rewrite the right
+ * line when a slide repeats one (two identical marked lines, or the same line
+ * in two fences). Needs the fence's own position in the slide, so it only
+ * applies to hand-typed fences, whose text appears verbatim in the markdown --
+ * a `<<<` import's code lives in another file, and its anchor lines are left
+ * at occurrence 0.
+ */
+function withLineOccurrences(highlights: CodeHighlight[], raw: string, rawFence: string | undefined): CodeHighlight[] {
+  const at = rawFence ? raw.indexOf(rawFence) : -1
+  if (at === -1)
+    return highlights
+  const rawLines = raw.split('\n')
+  const fenceLine = raw.slice(0, at).split('\n').length - 1
+  return highlights.map((h) => {
+    const absolute = fenceLine + h.startLine
+    if (rawLines[absolute] !== h.sourceLine)
+      return h
+    let lineOccurrence = 0
+    for (let i = 0; i < absolute; i++) {
+      if (rawLines[i] === h.sourceLine)
+        lineOccurrence++
+    }
+    return { ...h, lineOccurrence }
+  })
 }
 
 /**
@@ -213,6 +242,9 @@ export default defineTransformersSetup(() => ({
       let sourceLink = importSourceLink
       let code = afterAnchorSplit
       let highlights
+      // The fence exactly as it sits in the slide's markdown (markers still in
+      // place), used below to locate it within the slide's raw text.
+      let rawFence: string | undefined
 
       if (anchorLines.length > 0) {
         highlights = parseExternalHighlightAnchors(code, anchorLines)
@@ -231,9 +263,11 @@ export default defineTransformersSetup(() => ({
           }
         }
         const parsed = parseCodeHighlights(code)
+        rawFence = code
         code = parsed.code
         highlights = parsed.highlights
       }
+      highlights = withLineOccurrences(highlights, ctx.slide?.source?.raw ?? '', rawFence)
 
       if (highlights.length === 0 && !sourceLink)
         return undefined

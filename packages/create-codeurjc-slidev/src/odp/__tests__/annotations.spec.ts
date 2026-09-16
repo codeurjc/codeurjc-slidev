@@ -115,14 +115,34 @@ describe('rendering marks', () => {
     { kind: 'substring', startLine: 6, endLine: 6, substring: { start: 4, end: 10 }, comment: 'Steps', override: { x: 500, y: 200 }, click: 2 },
   ]
 
-  it('renders inline markers the theme parses back, preferring narrower marks when two need the same line', () => {
+  it('renders every mark inline, several on one line, and the theme parses them back', () => {
     const { lines, losses } = renderInlineMarks(YAML, marks, '#')
-    expect(losses).toEqual(['code highlight omitted (another marker already uses that line)'])
+    expect(losses).toEqual([])
+    // Both ranges end here: innermost (JOB) closes first.
+    expect(lines[8]).toBe('      - run: mvn test # [!mark:end] [!mark:end]')
+    expect(lines[0]).toBe('name: Continuous integration example # [!mark:start] WORKFLOW')
+    expect(lines[4]).toBe('  test: # [!mark:start{1}] JOB')
     const parsed = parseCodeHighlights(lines.join('\n'))
     expect(parsed.code).toBe(YAML.join('\n'))
-    expect(parsed.highlights.map(h => [h.kind, h.startLine, h.endLine, h.comment, h.click, h.override]).sort((a, b) => (a[1] as number) - (b[1] as number))).toEqual([
+    expect(parsed.highlights.map(h => [h.kind, h.startLine, h.endLine, h.comment, h.click, h.override])).toEqual([
+      ['range', 0, 8, 'WORKFLOW', undefined, undefined],
       ['range', 4, 8, 'JOB', 1, undefined],
       ['substring', 6, 6, 'Steps', 2, { x: 500, y: 200 }],
+    ])
+  })
+
+  it('writes a substring mark and a range end on the same line', () => {
+    const { lines, losses } = renderInlineMarks(YAML, [
+      { kind: 'range', startLine: 4, endLine: 6, comment: 'JOB' },
+      { kind: 'substring', startLine: 6, endLine: 6, substring: { start: 4, end: 9 }, comment: 'Steps' },
+    ], '#')
+    expect(losses).toEqual([])
+    expect(lines[6]).toBe('    steps: # [!mark:end] [!mark(4-9)] Steps')
+    const parsed = parseCodeHighlights(lines.join('\n'))
+    expect(parsed.code).toBe(YAML.join('\n'))
+    expect(parsed.highlights.map(h => [h.kind, h.startLine, h.endLine, h.comment])).toEqual([
+      ['range', 4, 6, 'JOB'],
+      ['substring', 6, 6, 'Steps'],
     ])
   })
 

@@ -283,42 +283,43 @@ function withComment(marker: string, comment: string): string {
 
 /**
  * Appends inline `// [!mark...]` (or `#`) markers to a hand-typed fence's
- * lines. Only one marker fits per line, so a mark needing an already-used
- * line is reported as a loss. Narrower marks are placed first: a box around a
- * few lines says more than a frame around the whole block it shares a line with.
+ * lines. Marks that need the same line are all written to it, as consecutive
+ * markers in that line's trailing comment.
  */
 export function renderInlineMarks(lines: string[], marks: CodeMark[], token: '//' | '#' | undefined): { lines: string[], losses: string[] } {
   if (marks.length === 0)
     return { lines, losses: [] }
   if (!token)
     return { lines, losses: marks.map(() => 'code highlight omitted (this language has no line comments for inline markers)') }
-  const out = [...lines]
-  const used = new Set<number>()
-  const losses: string[] = []
-  const put = (index: number, marker: string) => {
-    out[index] = `${out[index]} ${token} ${marker}`
-    used.add(index)
+
+  // A line's comment can carry several markers, so every mark is written. Within
+  // a line they go: range ends first (innermost first, so the theme's
+  // nearest-unclosed-start pairing unwinds correctly), then single-line and
+  // substring marks, then range starts (outermost first, so the ranges opened
+  // here nest the same way).
+  const perLine = new Map<number, { rank: number, key: number, text: string }[]>()
+  const add = (line: number, rank: number, key: number, text: string) => {
+    const at = perLine.get(line) ?? []
+    at.push({ rank, key, text })
+    perLine.set(line, at)
   }
-  const bySpan = [...marks].sort((a, b) => (a.endLine - a.startLine) - (b.endLine - b.startLine))
-  for (const mark of bySpan) {
+
+  for (const mark of marks) {
     if (mark.kind === 'range') {
-      if (used.has(mark.startLine) || used.has(mark.endLine)) {
-        losses.push('code highlight omitted (another marker already uses that line)')
-        continue
-      }
-      put(mark.startLine, withComment(`[!mark:start${suffix(mark)}]`, mark.comment))
-      put(mark.endLine, '[!mark:end]')
+      add(mark.startLine, 2, -mark.endLine, withComment(`[!mark:start${suffix(mark)}]`, mark.comment))
+      add(mark.endLine, 0, -mark.startLine, '[!mark:end]')
+      continue
     }
-    else {
-      if (used.has(mark.startLine)) {
-        losses.push('code highlight omitted (another marker already uses that line)')
-        continue
-      }
-      const range = mark.kind === 'substring' && mark.substring ? `(${mark.substring.start}-${mark.substring.end})` : ''
-      put(mark.startLine, withComment(`[!mark${range}${suffix(mark)}]`, mark.comment))
-    }
+    const range = mark.kind === 'substring' && mark.substring ? `(${mark.substring.start}-${mark.substring.end})` : ''
+    add(mark.startLine, 1, mark.substring?.start ?? 0, withComment(`[!mark${range}${suffix(mark)}]`, mark.comment))
   }
-  return { lines: out, losses }
+
+  const out = [...lines]
+  for (const [index, markers] of perLine) {
+    markers.sort((a, b) => a.rank - b.rank || a.key - b.key)
+    out[index] = `${out[index]} ${token} ${markers.map(m => m.text).join(' ')}`
+  }
+  return { lines: out, losses: [] }
 }
 
 function quoteAnchor(text: string): string {
