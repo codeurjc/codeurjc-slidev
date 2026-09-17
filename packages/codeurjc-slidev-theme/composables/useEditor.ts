@@ -8,7 +8,7 @@ interface Rect {
 }
 
 // The content box's full (non-narrowed) width, used both as its own default
-// and as the reset target for the image-position "Below" preset.
+// and as the content width the image-position "Below" preset resets to.
 export const CONTENT_DEFAULT_WIDTH = 876
 
 // Re-exported so the SideEditor override (which can only import this module,
@@ -16,6 +16,7 @@ export const CONTENT_DEFAULT_WIDTH = 876
 // Re-exported so `_override/SideEditor.vue` can reach them: it imports from the
 // `__USE_EDITOR_PATH__` placeholder this theme's vite.config.ts rewrites, not by
 // relative path.
+export { onSlideInfoPublished } from './slideInfoSync'
 export { useCalloutTool } from './useCalloutTool'
 export { geometryContentKey, geometryImageKey, geometryKeyPrefix } from './useSlideGeometry'
 
@@ -84,30 +85,7 @@ const ELEMENTS: Record<string, {
       `min-height: ${pos.h}px`,
     ].map(l => `  ${l};`).join('\n'),
   },
-  'image': {
-    label: 'Image',
-    color: '#9333ea',
-    initial: { x: 438, y: 80, w: 400, h: 300 },
-    cssOutput: pos => [
-      'position: absolute',
-      `top: ${pos.y}px`,
-      `left: ${pos.x}px`,
-      `width: ${pos.w}px`,
-      `height: ${pos.h}px`,
-      'object-fit: contain',
-      'z-index: 40',
-    ].map(l => `  ${l};`).join('\n'),
-  },
 }
-
-// Unlike the other elements (which always exist on every slide using a
-// layout), `image` only has meaning once a slide's content actually has a
-// trackable pasted image — its hidden/aspect-lock defaults are inverted
-// from the rest: hidden until one is detected, locked once it exists (an
-// arbitrarily-stretched photo looks broken in a way a stretched logo/red-bar
-// usually doesn't).
-const IMAGE_HIDDEN_DEFAULT = true
-const IMAGE_ASPECT_LOCKED_DEFAULT = true
 
 interface Snapshot {
   positions: Record<string, Rect>
@@ -126,8 +104,8 @@ const _sharedAspectLocked = reactive<Record<string, boolean>>({})
 const _sharedPositions = reactive<Record<string, Rect>>({})
 for (const key of Object.keys(ELEMENTS)) {
   _sharedPositions[key] = { ...ELEMENTS[key].initial }
-  _sharedHidden[key] = key === 'image' ? IMAGE_HIDDEN_DEFAULT : false
-  _sharedAspectLocked[key] = key === 'image' ? IMAGE_ASPECT_LOCKED_DEFAULT : false
+  _sharedHidden[key] = false
+  _sharedAspectLocked[key] = false
 }
 const _sharedUndoStack = ref<Snapshot[]>([])
 const _sharedUndoCheckpoint = ref<Snapshot | null>(null)
@@ -197,7 +175,7 @@ export function useEditor() {
     if (!prev)
       return
     for (const key of Object.keys(prev.positions)) {
-      if (prev.positions[key])
+      if (prev.positions[key] && positions[key])
         Object.assign(positions[key], prev.positions[key])
     }
     for (const key of Object.keys(prev.hidden)) {
@@ -341,7 +319,6 @@ export function useEditor() {
     const c = positions.content
     const l = positions.logo
     const r = positions['red-bar']
-    const i = positions.image
     return {
       '--ed-title-x': t ? `${t.x}px` : '24px',
       '--ed-title-y': t ? `${t.y}px` : '20px',
@@ -359,13 +336,8 @@ export function useEditor() {
       '--ed-red-x': r ? `${r.x}px` : '0px',
       '--ed-red-w': r ? `${r.w}px` : '100%',
       '--ed-red-h': r ? `${r.h}px` : '10px',
-      '--ed-image-y': i ? `${i.y}px` : '80px',
-      '--ed-image-x': i ? `${i.x}px` : '438px',
-      '--ed-image-w': i ? `${i.w}px` : '400px',
-      '--ed-image-h': i ? `${i.h}px` : '300px',
       '--ed-title-d': hidden.title ? 'none' : 'flex',
       '--ed-content-d': hidden.content ? 'none' : 'block',
-      '--ed-image-d': hidden.image ? 'none' : 'block',
     }
   })
 
@@ -452,7 +424,7 @@ export function useEditor() {
   function resetLayout() {
     for (const key of Object.keys(snapshot.value.positions)) {
       const s = snapshot.value.positions[key]
-      if (s)
+      if (s && positions[key])
         Object.assign(positions[key], s)
     }
     for (const key of Object.keys(snapshot.value.hidden)) {
@@ -522,14 +494,14 @@ export function useEditor() {
   }
 
   // Dynamic (non-fixed) position entries, e.g. one per code-highlight
-  // callout keyed as `callout:<highlight-id>`. Unlike the five fixed
+  // callout keyed as `callout:<highlight-id>`. Unlike the four fixed
   // ELEMENTS, these aren't seeded up front (their count varies per slide) --
   // callers register them on demand. Undo/snapshot/save already iterate
   // positions/hidden/aspectLocked generically by key, so once registered a
   // dynamic entry participates in drag, undo, and save exactly like a fixed
   // element, with no further changes needed to those code paths.
   // `aspectLocked` only seeds a newly registered entry (e.g. frontmatter
-  // geometry images default to locked, like the fixed `image` element); an
+  // geometry images default to locked, since a stretched picture looks broken); an
   // existing entry keeps whatever the user has toggled since.
   function ensurePosition(key: string, initial: Rect, options: { aspectLocked?: boolean } = {}) {
     if (!(key in _sharedPositions)) {

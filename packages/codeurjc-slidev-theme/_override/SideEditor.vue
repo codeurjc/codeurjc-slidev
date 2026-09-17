@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { throttledWatch, useEventListener } from '@vueuse/core'
-import { geometryContentKey, geometryKeyPrefix, useCalloutTool, useEditor } from '__USE_EDITOR_PATH__'
-import { computed, ref, watch } from 'vue'
+import { geometryContentKey, geometryKeyPrefix, onSlideInfoPublished, useCalloutTool, useEditor } from '__USE_EDITOR_PATH__'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useNav } from '../composables/useNav'
 import { useDynamicSlideInfo } from '../composables/useSlideInfo'
 import { parseSideEditorContent } from '../logic/sideEditor'
@@ -23,9 +23,16 @@ const note = ref('')
 const dirty = ref(false)
 
 const { info, update } = useDynamicSlideInfo(currentSlideNo)
+// Frontmatter written elsewhere (paste presets) refreshes the textarea too, so
+// its autosave never writes the old frontmatter back (see slideInfoSync.ts).
+onUnmounted(onSlideInfoPublished<typeof info.value>(({ no, info: published }) => {
+  if (no === currentSlideNo.value)
+    info.value = published
+}))
 
-const FIXED_ELEMENT_LABELS: Record<string, string> = { 'red-bar': 'Red Bar', 'logo': 'Logo', 'title': 'Title', 'content': 'Content', 'image': 'Image' }
-const FIXED_ELEMENT_COLORS: Record<string, string> = { 'red-bar': '#cb0017', 'logo': '#e8792b', 'title': '#2563eb', 'content': '#16a34a', 'image': '#9333ea' }
+const FIXED_ELEMENT_LABELS: Record<string, string> = { 'red-bar': 'Red Bar', 'logo': 'Logo', 'title': 'Title', 'content': 'Content' }
+const FIXED_ELEMENT_COLORS: Record<string, string> = { 'red-bar': '#cb0017', 'logo': '#e8792b', 'title': '#2563eb', 'content': '#16a34a' }
+const GEOMETRY_IMAGE_COLOR = '#9333ea'
 
 // The fixed layout elements, plus the current slide's per-slide `geometry`
 // frontmatter entries (registered by layouts/default.vue). A slide with
@@ -49,7 +56,7 @@ const elementItems = computed(() => {
     .filter(key => key.startsWith(imagePrefix))
     .sort((a, b) => Number(a.slice(imagePrefix.length)) - Number(b.slice(imagePrefix.length)))
   for (const key of imageKeys)
-    items.push({ key, label: `Image ${Number(key.slice(imagePrefix.length)) + 1} (this slide)`, color: FIXED_ELEMENT_COLORS.image })
+    items.push({ key, label: `Image ${Number(key.slice(imagePrefix.length)) + 1} (this slide)`, color: GEOMETRY_IMAGE_COLOR })
   return items
 })
 

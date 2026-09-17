@@ -61,6 +61,12 @@ geometry:
 # Draggable image
 
 <img class="fx-drag" src="${PNG}">
+
+---
+
+# No geometry
+
+<img class="fx-flow-a" src="${PNG}"> <img class="fx-flow-b" src="${PNG}">
 `
 
 let slidesPath: string
@@ -138,10 +144,9 @@ test.describe('Slide geometry frontmatter E2E', () => {
     expectBox(await boxInSlide(page, 1, '.content'), { x: 31, y: 98, w: 901 })
   })
 
-  test('two entries position two images, without a layout-level tracked image', async ({ page }) => {
+  test('two entries position two images', async ({ page }) => {
     await openSlide(page, 3, 'img.fx-b')
     await expect(page.locator('.slidev-page-3 img.geometry-image')).toHaveCount(2)
-    await expect(page.locator('.slidev-page-3 img.tracked-image')).toHaveCount(0)
     expectBox(await boxInSlide(page, 3, 'img.fx-a'), { x: 100, y: 120, w: 300, h: 200 })
     expectBox(await boxInSlide(page, 3, 'img.fx-b'), { x: 520, y: 140, w: 200, h: 200 })
   })
@@ -151,7 +156,16 @@ test.describe('Slide geometry frontmatter E2E', () => {
     expectBox(await boxInSlide(page, 4, 'img.fx-c1'), { x: 600, y: 100, w: 250, h: 250 })
     for (const cls of ['fx-c2', 'fx-c3']) {
       const img = page.locator(`.slidev-page-4 img.${cls}`)
-      await expect(img).not.toHaveClass(/geometry-image|tracked-image/)
+      await expect(img).not.toHaveClass(/geometry-image/)
+      expect(await img.evaluate(el => getComputedStyle(el).position)).toBe('static')
+    }
+  })
+
+  test('images on a slide without geometry stay in normal flow', async ({ page }) => {
+    await openSlide(page, 6, 'img.fx-flow-b')
+    for (const cls of ['fx-flow-a', 'fx-flow-b']) {
+      const img = page.locator(`.slidev-page-6 img.${cls}`)
+      await expect(img).not.toHaveClass(/geometry-image/)
       expect(await img.evaluate(el => getComputedStyle(el).position)).toBe('static')
     }
   })

@@ -47,15 +47,8 @@ An image positioned by `geometry.images` SHALL be scaled to fit inside its decla
 - **WHEN** a 400×400 image is positioned in a `{ w: 600, h: 300 }` box
 - **THEN** the image renders 300×300, centered horizontally within the 600×300 box
 
-### Requirement: Frontmatter image geometry replaces single tracked-image extraction
-On a slide whose frontmatter declares `geometry.images`, the layout's single tracked-image extraction (last `<img>` into the layout-level `image` element) SHALL NOT apply. Images on that slide are positioned only by `geometry.images`.
-
-#### Scenario: Last image is not extracted into the layout image element
-- **WHEN** a slide declares one `geometry.images` entry and its content contains two images
-- **THEN** only the first image is absolutely positioned (by the frontmatter entry), the second image stays in normal flow, and the layout-level `image` element is not shown for that slide
-
 ### Requirement: Frontmatter geometry uses the layout editor's coordinate space
-`geometry` coordinates SHALL be interpreted in the same slide-canvas pixel space that the layout editor uses for the `content` and `image` elements, so a value read from the editor's position readout reproduces the same on-screen placement.
+`geometry` coordinates SHALL be interpreted in the same slide-canvas pixel space that the layout editor uses for the `content` element, so a value read from the editor's position readout reproduces the same on-screen placement.
 
 #### Scenario: Editor readout round-trips
 - **WHEN** an element is dragged in the Layout tab to a readout of `x: 438, y: 80, w: 400, h: 300`, and that same rect is written by hand into a slide's `geometry.images[0]`
@@ -74,8 +67,15 @@ In editor mode, each element positioned by the current slide's `geometry` (the c
 
 #### Scenario: Positioned images default to aspect-locked in the editor
 - **WHEN** a frontmatter-positioned image's overlay is resized from a corner
-- **THEN** the resize keeps the box's aspect ratio unless the user unlocks it, matching the existing default for the layout-level `image` element
+- **THEN** the resize keeps the box's aspect ratio unless the user unlocks it
 
 #### Scenario: Editing a positional entry migrates the slide to src keys
 - **WHEN** a slide shows `/images/a.png` and `/images/b.png` and declares two positional `geometry.images` entries, and the user resizes the second image
 - **THEN** the frontmatter's entries become `{ src: /images/a.png, … }` and `{ src: /images/b.png, … }` with the second one resized, and both images stay where they were otherwise
+
+### Requirement: Images without geometry stay in normal content flow
+A `default`-layout slide's images SHALL only be taken out of normal content flow by `geometry.images` entries. On a slide with no `geometry.images`, every image SHALL render inline in the content, and no image SHALL be positioned by a layout-level element.
+
+#### Scenario: Slide with images and no geometry
+- **WHEN** a slide's content contains two images and its frontmatter declares no `geometry`
+- **THEN** both images render in normal content flow, and neither is absolutely positioned

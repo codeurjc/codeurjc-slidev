@@ -16,7 +16,7 @@ describe('useEditor', () => {
     const { editing, selected, elementNames } = useEditor()
     expect(editing.value).toBe(false)
     expect(selected.value).toBeNull()
-    expect(elementNames.value).toEqual(['red-bar', 'logo', 'title', 'content', 'image'])
+    expect(elementNames.value).toEqual(['red-bar', 'logo', 'title', 'content'])
   })
 
   it('toggle switches editing on and off', () => {
@@ -232,19 +232,18 @@ describe('useEditor', () => {
     expect(result).toBeNull()
   })
 
-  it('all elements except image start with aspectLocked false', () => {
+  it('every fixed element starts with aspectLocked false', () => {
     const { aspectLocked, elementNames } = useEditor()
-    for (const name of elementNames.value) {
-      if (name === 'image')
-        continue
+    for (const name of elementNames.value)
       expect(aspectLocked[name]).toBe(false)
-    }
   })
 
-  it('image starts hidden and aspect-locked, unlike the other elements', () => {
-    const { hidden, aspectLocked } = useEditor()
-    expect(hidden.image).toBe(true)
-    expect(aspectLocked.image).toBe(true)
+  it('has no layout-level image element', () => {
+    const { positions, rootStyle, editing } = useEditor()
+    expect(positions.image).toBeUndefined()
+    editing.value = true
+    expect(Object.keys(rootStyle.value).some(key => key.startsWith('--ed-image'))).toBe(false)
+    editing.value = false
   })
 
   it('toggleAspectLock flips the flag for a single element and enables undo', () => {
@@ -436,7 +435,7 @@ describe('useEditor dynamic entries and layout saves', () => {
     ensurePosition('callout:98', { x: 1, y: 1, w: 100, h: 100 })
     await saveLayout()
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
-    const fixed = ['red-bar', 'logo', 'title', 'content', 'image']
+    const fixed = ['red-bar', 'logo', 'title', 'content']
     expect(Object.keys(body.positions)).toEqual(fixed)
     expect(Object.keys(body.hidden)).toEqual(fixed)
     expect(Object.keys(body.aspectLocked)).toEqual(fixed)

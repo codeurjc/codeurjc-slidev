@@ -198,6 +198,24 @@ export function withGeometryRect(rawGeometry: unknown, target: GeometryTarget, r
   return next
 }
 
+/**
+ * The geometry a paste preset writes: `content` set to the preset's content
+ * rect, and the pasted image positioned by an entry keyed by its src -- the
+ * entry that already positions that image is replaced, otherwise one is
+ * appended. Every other entry is kept (positional ones migrated to src, as any
+ * geometry write does), so positioning one picture never disturbs another.
+ */
+export function withPositionedImage(rawGeometry: unknown, content: GeometryRect, image: ImageRef & { kind: 'src' }, rect: GeometryRect, srcs: (string | null | undefined)[]): Record<string, unknown> {
+  let next = withGeometryRect(rawGeometry, { kind: 'content' }, content, srcs)
+  const target = resolveImageRef(image, srcs).index
+  const { indexes } = resolveGeometryImages(parseSlideGeometry({ [GEOMETRY_FRONTMATTER_KEY]: next }), srcs)
+  const entry = target >= 0 ? indexes.indexOf(target) : -1
+  if (entry >= 0)
+    return withGeometryRect(next, { kind: 'image', index: entry }, rect, srcs)
+  next = { ...next, images: [...(Array.isArray(next.images) ? next.images : []), { src: formatImageRef(image), ...roundRect(rect) }] }
+  return next
+}
+
 export function sameRect(a: GeometryRect, b: GeometryRect): boolean {
   return a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h
 }

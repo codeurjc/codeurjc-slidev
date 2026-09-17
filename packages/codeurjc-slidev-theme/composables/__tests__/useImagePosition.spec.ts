@@ -2,36 +2,46 @@ import { describe, expect, it } from 'vitest'
 import { computeBelowPreset, computeRightPreset } from '../useImagePosition'
 
 const CONTENT = { x: 0, y: 80, w: 876, h: 400 }
-const SLIDE_WIDTH = 980
 
 describe('computeBelowPreset', () => {
-  it('resets content to full width at x=0', () => {
-    const { content } = computeBelowPreset(CONTENT, SLIDE_WIDTH, 1, CONTENT.w)
+  const CANVAS = { w: 980, h: 551.25 }
+  const inside = (r: { x: number, y: number, w: number, h: number }) => r.x >= 0 && r.y >= 0 && r.x + r.w <= CANVAS.w && r.y + r.h <= CANVAS.h
+
+  it('resets content to full width at x=0 and keeps its top', () => {
+    const { content } = computeBelowPreset({ ...CONTENT, w: 452 }, CANVAS, 1, 80, CONTENT.w)
     expect(content.x).toBe(0)
+    expect(content.y).toBe(CONTENT.y)
     expect(content.w).toBe(CONTENT.w)
-    expect(content.h).toBe(CONTENT.h)
   })
 
-  it('positions the image below the content box, horizontally centered', () => {
-    const { content, image } = computeBelowPreset(CONTENT, SLIDE_WIDTH, 1, CONTENT.w)
-    expect(image.y).toBeGreaterThan(content.y + content.h)
-    expect(image.x + image.w / 2).toBeCloseTo(SLIDE_WIDTH / 2, 0)
+  it('keeps a landscape image on the slide below a default 400px content box with short text', () => {
+    const { content, image } = computeBelowPreset(CONTENT, CANVAS, 1.5, 80, CONTENT.w)
+    // Available height below y=80 is ~455; short text is lifted to the 30% floor.
+    expect(content.h).toBe(Math.round((CANVAS.h - 80 - 16) * 0.3))
+    expect(image.y).toBe(content.y + content.h + 24)
+    expect(inside(image)).toBe(true)
+    expect(image.w / image.h).toBeCloseTo(1.5, 1)
+    expect(Math.abs(image.x + image.w / 2 - CANVAS.w / 2)).toBeLessThanOrEqual(1)
   })
 
-  it('derives image height from the given aspect ratio', () => {
-    const { image } = computeBelowPreset(CONTENT, SLIDE_WIDTH, 2, CONTENT.w)
-    expect(image.w / image.h).toBeCloseTo(2, 1)
+  it('caps long content at 60% of the available height so the image keeps room', () => {
+    const { content, image } = computeBelowPreset(CONTENT, CANVAS, 1, 1000, CONTENT.w)
+    expect(content.h).toBe(Math.round((CANVAS.h - 80 - 16) * 0.6))
+    expect(inside(image)).toBe(true)
   })
 
-  it('does not overlap the content box vertically', () => {
-    const { content, image } = computeBelowPreset(CONTENT, SLIDE_WIDTH, 1, CONTENT.w)
-    expect(image.y).toBeGreaterThanOrEqual(content.y + content.h)
+  it('fits a panoramic image by width (at most 80% of the canvas) and a portrait one by height', () => {
+    const wide = computeBelowPreset(CONTENT, CANVAS, 10, 80, CONTENT.w).image
+    expect(wide.w).toBeLessThanOrEqual(CANVAS.w * 0.8)
+    expect(inside(wide)).toBe(true)
+    const tall = computeBelowPreset(CONTENT, CANVAS, 0.5, 80, CONTENT.w).image
+    expect(tall.w / tall.h).toBeCloseTo(0.5, 1)
+    expect(inside(tall)).toBe(true)
   })
 
-  it('resets a previously narrowed content box back to the full width, not the narrowed one', () => {
-    const narrowed = { ...CONTENT, w: 452 }
-    const { content } = computeBelowPreset(narrowed, SLIDE_WIDTH, 1, CONTENT.w)
-    expect(content.w).toBe(CONTENT.w)
+  it('uses the measured text height when it lies between the bounds', () => {
+    const { content } = computeBelowPreset(CONTENT, CANVAS, 1, 200, CONTENT.w)
+    expect(content.h).toBe(200)
   })
 })
 

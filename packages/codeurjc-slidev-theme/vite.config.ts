@@ -11,7 +11,6 @@ const VAR_MAP: Record<string, Record<string, string>> = {
   'logo': { y: '--ed-logo-y', x: '--ed-logo-rx', w: '--ed-logo-w', h: '--ed-logo-h' },
   'title': { y: '--ed-title-y', x: '--ed-title-x', w: '--ed-title-w', h: '--ed-title-h' },
   'content': { y: '--ed-content-y', x: '--ed-content-x', w: '--ed-content-w', h: '--ed-content-h' },
-  'image': { y: '--ed-image-y', x: '--ed-image-x', w: '--ed-image-w', h: '--ed-image-h' },
 }
 
 const customSideEditorPath = resolve(import.meta.dirname, '_override/SideEditor.vue')
@@ -170,9 +169,6 @@ export default defineConfig({
           if (hidden.content) {
             styleParts.push('--ed-content-d: none')
           }
-          if (hidden.image) {
-            styleParts.push('--ed-image-d: none')
-          }
 
           if (styleParts.length > 0) {
             const newStyle = styleParts.join('; ')
@@ -182,16 +178,11 @@ export default defineConfig({
             content = content.replace(/style="[^"]*"/, `style="${newStyle}"`)
           }
 
-          // Persist hidden state as data-hidden attribute on root div.
-          // `image` is excluded: unlike the other four elements (which
-          // default to shown, so only need recording when explicitly
-          // hidden), `image` defaults to hidden -- recording it here would
-          // pollute every ordinary save with a spurious "image" entry even
-          // when the slide has nothing to do with images. Its shown/hidden
-          // state is instead derived at runtime from whether content
-          // actually has a trackable image (see layouts/default.vue).
+          // Persist hidden state as data-hidden attribute on root div. Only
+          // the layout's own elements are recorded: an older client may still
+          // send the retired `image` element.
           const hiddenNames = Object.entries(hidden)
-            .filter(([name, v]) => v && name !== 'image')
+            .filter(([name, v]) => v && name in VAR_MAP)
             .map(([k]) => k)
           content = content.replace(/\s*data-hidden="[^"]*"/, '')
           if (hiddenNames.length > 0) {

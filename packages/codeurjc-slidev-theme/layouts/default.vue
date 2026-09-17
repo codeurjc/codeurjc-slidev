@@ -6,11 +6,11 @@ import { useSlideContext } from '@slidev/client'
 import { useDynamicSlideInfo } from '@slidev/client/composables/useSlideInfo.ts'
 import { computed, nextTick, onMounted, onUnmounted, ref, unref, watch } from 'vue'
 import logoUrl from '../assets/logo.png'
+import { onSlideInfoPublished } from '../composables/slideInfoSync'
 import { findFitFontSize, TITLE_MAX_PT, TITLE_MIN_PT, useAutoFitText } from '../composables/useAutoFitText'
 import { useCalloutTool } from '../composables/useCalloutTool'
-import { CONTENT_DEFAULT_WIDTH, useEditor } from '../composables/useEditor'
+import { useEditor } from '../composables/useEditor'
 import { elbowPath, estimateCalloutSize, placeCallout, pointsToSvgPath } from '../composables/useHighlightLayout'
-import { computeBelowPreset } from '../composables/useImagePosition'
 import { authoredSrc, imageRefFor, resolveImageRef } from '../composables/useImageRefs'
 import {
   boxContainsAnchor,
@@ -41,7 +41,6 @@ const VAR_MAP: Record<string, Record<string, string>> = {
   'logo': { y: '--ed-logo-y', x: '--ed-logo-rx', w: '--ed-logo-w', h: '--ed-logo-h' },
   'title': { y: '--ed-title-y', x: '--ed-title-x', w: '--ed-title-w', h: '--ed-title-h' },
   'content': { y: '--ed-content-y', x: '--ed-content-x', w: '--ed-content-w', h: '--ed-content-h' },
-  'image': { y: '--ed-image-y', x: '--ed-image-x', w: '--ed-image-w', h: '--ed-image-h' },
 }
 
 const editor = useEditor()
@@ -69,7 +68,7 @@ const slideEnd = slideInfo?.source?.end ?? slideInfo?.end
 // --- Per-slide geometry frontmatter ---------------------------------------
 // A slide's own `geometry` frontmatter (see composables/useSlideGeometry.ts)
 // overrides this layout's content-box position for that slide only, and
-// positions its content images by document order -- no layout fork. While the
+// positions its content images (by src, see useImageRefs.ts) -- no layout fork. While the
 // layout editor is open, the live editor entry (keyed per slide number, since
 // the editor state is shared by every mounted slide) takes over so drags
 // render immediately; edits are written back into the slide's frontmatter.
@@ -90,6 +89,11 @@ const slideNo = computed(() => Number(unref($page)) || 0)
 // are frontmatter-only patches too.
 const { info: liveSlideInfo, update: updateSlideInfo } = useDynamicSlideInfo(slideNo)
 const liveFrontmatter = computed(() => (liveSlideInfo.value?.frontmatter ?? $frontmatter) as Record<string, unknown>)
+// Writes made outside this layout (paste presets) arrive through slideInfoSync.ts.
+onUnmounted(onSlideInfoPublished<typeof liveSlideInfo.value>(({ no, info }) => {
+  if (no === slideNo.value)
+    liveSlideInfo.value = info
+}))
 const slideCallouts = computed(() => parseSlideCallouts(liveFrontmatter.value))
 const geometry = computed(() => parseSlideGeometry(liveFrontmatter.value))
 const geometryContentEditorKey = computed(() => geometryContentKey(slideNo.value))
@@ -273,15 +277,6 @@ function fitTitle() {
   title.style.setProperty('--title-font-size', `${size}pt`)
 }
 
-// Whether this layout has ever had an image explicitly positioned/saved
-// (distinct from the other four elements, which always exist): only trust
-// the saved hidden/position state for `image` when it does. Otherwise
-// `hidden.image` is derived live from whether content currently has a
-// trackable image at all (see updateTrackedImage below), since a shared
-// layout that predates this feature (or was never used with a pasted image)
-// has no meaningful saved state for it.
-let imageEverSaved = false
-
 // Diagram shadow roots being watched for callout placement (see watchDiagrams).
 let diagramObserver: MutationObserver | undefined
 const observedShadowRoots = new WeakSet<ShadowRoot>()
@@ -295,7 +290,6 @@ onMounted(() => {
   const style = el.getAttribute('data-styles') || el.getAttribute('style') || ''
   const hiddenStr = el.getAttribute('data-hidden') || ''
   const lockedStr = el.getAttribute('data-aspect-locked') || ''
-  imageEverSaved = /--ed-image-[xywh]:/.test(style)
 
   // Restore positions from static style CSS custom properties
   for (const [key, vars] of Object.entries(VAR_MAP)) {
@@ -312,13 +306,8 @@ onMounted(() => {
 
   // Restore hidden state
   if (hiddenStr) {
-    // `image` is excluded here: its hidden/shown state is derived at
-    // runtime by updateTrackedImage() below, not from this list (see its
-    // exclusion from data-hidden in the save middleware).
     const h: Record<string, boolean> = {}
     for (const key of Object.keys(editor.positions)) {
-      if (key === 'image')
-        continue
       h[key] = hiddenStr.split(',').includes(key)
     }
     editor.setHidden(h)
@@ -333,7 +322,7 @@ onMounted(() => {
   }
   editor.setAspectLocked(al)
 
-  updateTrackedImage()
+  updateGeometryImages()
   nextTick(computeCallouts)
   nextTick(fitTitle)
   // Callout placement measures real rendered rects (code line widths, in
@@ -349,7 +338,7 @@ onMounted(() => {
   })
   diagramObserver = new MutationObserver(() => computeCallouts())
   const observer = new MutationObserver(() => {
-    updateTrackedImage()
+    updateGeometryImages()
     computeCallouts()
     fitTitle()
   })
@@ -1143,11 +1132,6 @@ async function saveCalloutPosition(item: CalloutItem) {
   }
 }
 
-// Finds the last <img> in document order within the slide's content (a
-// plain CSS :last-of-type selector can't express this correctly once images
-// sit at different nesting depths -- see design.md), marks it as the single
-// tracked/draggable image, and derives hidden.image + a live default position
-// (when none was ever explicitly saved for this layout).
 const warnedGeometry = new Set<string>()
 function warnGeometryOnce(message: string) {
   if (warnedGeometry.has(message))
@@ -1162,30 +1146,27 @@ function clearGeometryImage(img: HTMLElement) {
     img.style.removeProperty(prop)
 }
 
-// On a slide declaring `geometry.images`, positions each content image by the
-// frontmatter entry that references it (by src, or by position for entries
-// without one) and skips single tracked-image extraction entirely -- images
-// without an entry stay in normal flow. Returns whether it handled the slide.
-function updateGeometryImages(): boolean {
+// Positions each content image by the `geometry.images` entry that references
+// it (by src, or by position for entries without one). Images without an entry
+// stay in normal flow.
+function updateGeometryImages() {
   const container = contentInnerEl.value
   if (!container)
-    return true
+    return
   const imgs = Array.from(container.querySelectorAll('img'))
   if (!hasGeometryImages(geometry.value)) {
     for (const img of imgs) {
       if (img.classList.contains('geometry-image'))
         clearGeometryImage(img)
     }
-    return false
+    return
   }
-  editor.hidden.image = true
   // Which entry positions each image: src entries by src, positional ones by
   // their own list position (see resolveGeometryImages).
   const { indexes, warnings } = resolveGeometryImages(geometry.value, imgs.map(authoredSrc))
   for (const warning of warnings)
     warnGeometryOnce(warning)
   imgs.forEach((img, index) => {
-    img.classList.remove('tracked-image')
     const entry = indexes.indexOf(index)
     const rect = entry >= 0 ? effectiveImageRect(entry) : null
     if (!rect) {
@@ -1198,7 +1179,6 @@ function updateGeometryImages(): boolean {
     img.style.width = `${rect.w}px`
     img.style.height = `${rect.h}px`
   })
-  return true
 }
 
 // Re-apply image positions when the declared geometry changes or, while the
@@ -1206,47 +1186,9 @@ function updateGeometryImages(): boolean {
 // reactive on their own).
 watch(
   () => JSON.stringify([editor.editing.value, geometry.value.images.map((_, index) => effectiveImageRect(index))]),
-  () => updateTrackedImage(),
+  () => updateGeometryImages(),
   { flush: 'post' },
 )
-
-function updateTrackedImage() {
-  if (updateGeometryImages())
-    return
-  const container = contentInnerEl.value
-  if (!container)
-    return
-  const imgs = Array.from(container.querySelectorAll('img'))
-  for (const img of imgs) img.classList.remove('tracked-image')
-  const last = imgs[imgs.length - 1] as HTMLImageElement | undefined
-
-  if (!last) {
-    editor.hidden.image = true
-    return
-  }
-  last.classList.add('tracked-image')
-
-  if (imageEverSaved) {
-    // Saved state (including a user's manual hide via the delete button)
-    // is authoritative once this layout has ever positioned an image.
-    return
-  }
-
-  const applyLiveDefault = () => {
-    if (!last.naturalWidth || !last.naturalHeight)
-      return
-    const ratio = last.naturalWidth / last.naturalHeight
-    const content = editor.positions.content
-    const slideWidth = rootEl.value?.getBoundingClientRect().width || 980
-    const { content: newContent, image } = computeBelowPreset(content, slideWidth, ratio, CONTENT_DEFAULT_WIDTH)
-    Object.assign(editor.positions.content, newContent)
-    Object.assign(editor.positions.image, image)
-    editor.hidden.image = false
-  }
-  if (last.complete)
-    applyLiveDefault()
-  else last.addEventListener('load', applyLiveDefault, { once: true })
-}
 
 watch(editor.hidden, (v) => {
   const el = rootEl.value
@@ -1284,8 +1226,8 @@ watch(editor.aspectLocked, (v) => {
     ref="rootEl"
     class="slidev-layout default relative h-full w-full bg-white text-black"
     :class="{ 'editing': editor.editing.value, 'callout-tool-armed': editor.editing.value && calloutTool.armed.value }"
-    style="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 98px; --ed-content-x: 31px; --ed-content-w: 901px; --ed-content-h: 424px; --ed-image-y: 80px; --ed-image-x: 438px; --ed-image-w: 400px; --ed-image-h: 300px"
-    data-styles="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 98px; --ed-content-x: 31px; --ed-content-w: 901px; --ed-content-h: 424px; --ed-image-y: 80px; --ed-image-x: 438px; --ed-image-w: 400px; --ed-image-h: 300px"
+    style="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 98px; --ed-content-x: 31px; --ed-content-w: 901px; --ed-content-h: 424px"
+    data-styles="--ed-red-y: 0px; --ed-red-x: 0px; --ed-red-w: 980px; --ed-red-h: 10px; --ed-logo-y: 20px; --ed-logo-rx: 24px; --ed-logo-w: 80px; --ed-logo-h: 48px; --ed-title-y: 20px; --ed-title-x: 24px; --ed-title-w: 843px; --ed-title-h: 48px; --ed-content-y: 98px; --ed-content-x: 31px; --ed-content-w: 901px; --ed-content-h: 424px"
     :style="rootInlineStyle"
     @mousedown.capture="onRootMouseDownCapture"
   >
@@ -1382,28 +1324,6 @@ watch(editor.aspectLocked, (v) => {
         v-if="editor.selected.value === 'title'"
         class="delete-btn"
         @mousedown.stop="editor.removeElement('title')"
-      >
-        ✕
-      </div>
-    </div>
-
-    <div
-      v-if="editor.editing.value && !editor.hidden.image"
-      class="image-overlay"
-      :style="{ top: `${editor.positions.image.y}px`, left: `${editor.positions.image.x}px`, width: `${editor.positions.image.w}px`, height: `${editor.positions.image.h}px` }"
-      :class="{ 'el-active': editor.selected.value === 'image' }"
-      @mousedown.stop="editor.startDrag($event, 'image')"
-    >
-      <span class="el-tag">Image</span>
-      <div
-        v-if="editor.selected.value === 'image'"
-        class="resize-handle se"
-        @mousedown.stop="editor.startResize($event, 'image')"
-      />
-      <div
-        v-if="editor.selected.value === 'image'"
-        class="delete-btn"
-        @mousedown.stop="editor.removeElement('image')"
       >
         ✕
       </div>
@@ -1564,26 +1484,9 @@ watch(editor.aspectLocked, (v) => {
   font-weight: 800;
 }
 
-/* Pulls the tracked image out of normal content flow, same technique as
-   h1:first-child above. Uses a JS-assigned class rather than a structural
-   pseudo-class (e.g. :last-of-type) because the latter only compares
-   siblings under the same parent -- it can't express "last image in the
-   whole subtree" once images sit at different nesting depths. */
-.content-inner .tracked-image {
-  display: var(--ed-image-d, block);
-  position: absolute;
-  top: var(--ed-image-y, 80px);
-  left: var(--ed-image-x, 438px);
-  width: var(--ed-image-w, 400px);
-  height: var(--ed-image-h, 300px);
-  object-fit: contain;
-  z-index: 40;
-}
-
 /* Images positioned by the slide's own `geometry.images` frontmatter (see
-   updateGeometryImages): same out-of-flow treatment as the tracked image, but
-   each box comes from inline left/top/width/height set per image rather than
-   from the single layout-level --ed-image-* vars. object-fit: contain keeps
+   updateGeometryImages) are taken out of normal content flow, each box coming
+   from inline left/top/width/height set per image. object-fit: contain keeps
    the image's aspect ratio, centered inside its declared box. */
 .content-inner .geometry-image {
   display: block;

@@ -10,6 +10,7 @@ import {
   resolveGeometryImages,
   serializeSlideGeometry,
   withGeometryRect,
+  withPositionedImage,
 } from '../useSlideGeometry'
 
 describe('parseSlideGeometry', () => {
@@ -168,5 +169,33 @@ describe('editor keys and CSS vars', () => {
       '--ed-content-w': '560px',
       '--ed-content-h': '424px',
     })
+  })
+})
+
+describe('withPositionedImage', () => {
+  const content = { x: 0, y: 80, w: 876, h: 137 }
+  const rect = { x: 245, y: 241, w: 490, h: 290 }
+  const pasted = { kind: 'src' as const, src: '/images/paste-2.png' }
+
+  it('writes content and a src-keyed entry on a slide without geometry', () => {
+    expect(withPositionedImage(undefined, content, pasted, rect, ['/images/paste-2.png'])).toEqual({
+      content,
+      images: [{ src: '/images/paste-2.png', ...rect }],
+    })
+  })
+
+  it('appends next to other entries, keeping (and migrating) them', () => {
+    const raw = { images: [{ x: 600, y: 120, w: 300, h: 200 }] }
+    const next = withPositionedImage(raw, content, pasted, rect, ['/images/screenshot.png', '/images/paste-2.png'])
+    expect(next.images).toEqual([
+      { src: '/images/screenshot.png', x: 600, y: 120, w: 300, h: 200 },
+      { src: '/images/paste-2.png', ...rect },
+    ])
+  })
+
+  it('replaces the entry that already positions the pasted image', () => {
+    const raw = { content: { x: 0, y: 80, w: 452, h: 400 }, images: [{ src: '/images/paste-2.png', x: 476, y: 80, w: 400, h: 400 }] }
+    const next = withPositionedImage(raw, content, pasted, rect, ['/images/paste-2.png'])
+    expect(next).toEqual({ content, images: [{ src: '/images/paste-2.png', ...rect }] })
   })
 })

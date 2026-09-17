@@ -111,9 +111,10 @@ pnpm create codeurjc-slidev tema-1-2 --from-odp "Tema 1.2 - Pruebas unitarias.od
 - Paste an image (Ctrl+V) directly onto a slide in edit mode
 - The image is uploaded automatically and inserted as `![](path)` in the slide's markdown — no manual asset pipeline
 - You can choose the image's position relative to the content:
-    - **Below** the text (`below`): the image is centered under the content
-    - **To the right** of the text (`right`): the content narrows to make room for the image
-- The image is just another element in the layout editor: it can be dragged, resized, and its position is saved like everything else
+    - **Below** the text: the content shrinks towards its text and the image is centered under it, always inside the slide
+    - **To the right** of the text: the content narrows to make room for the image
+- The choice is written to the slide's own `geometry` frontmatter (next slide), so it works for any number of pasted images and never creates a new layout
+- Until you choose, the image stays in the normal flow of the text; afterwards it can be dragged and resized from the Layout tab
 
 ---
 
