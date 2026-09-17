@@ -7,7 +7,7 @@
     "node": ">=20.12.0"
   },
   "scripts": {
-    "dev": "slidev --open --remote",
+    "dev": "slidev --remote --open",
     "build": "slidev build",
     "export": "slidev export",
     "lint": "eslint . --cache",
