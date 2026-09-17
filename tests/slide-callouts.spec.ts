@@ -149,14 +149,22 @@ test.describe('Slide callouts E2E', () => {
     await expect(page.locator('.slidev-page-1 .code-callout-connector')).toHaveCount(0)
   })
 
-  test('a callout with text renders a box and a connector carrying the arrowhead', async ({ page }) => {
+  test('a callout with text renders a box and a connector carrying the arrowhead into the box', async ({ page }) => {
     await openSlide(page, 2)
     const box = page.locator('.slidev-page-2 .code-callout')
     await expect(box).toHaveCount(1)
     await expect(box).toHaveText('Esquina de la imagen')
     const connector = page.locator('.slidev-page-2 .code-callout-connector')
     await expect(connector).toHaveCount(1)
-    expect(await connector.getAttribute('marker-start')).toBe('url(#callout-arrowhead)')
+    // The default `arrow` style: the head is on the box end (see callout-arrow-style.spec.ts).
+    // Resolved like the browser does, and required to be in this slide:
+    // neighbouring slides stay mounted but hidden, and a marker there doesn't render.
+    const marker = await connector.evaluate((el) => {
+      const id = /^url\(#(.+)\)$/.exec(el.getAttribute('marker-end') ?? '')?.[1]
+      const found = id ? document.getElementById(id) : null
+      return found && found.closest('[data-slidev-no]') === el.closest('[data-slidev-no]') ? found.getAttribute('data-marker') : null
+    })
+    expect(marker).toBe('box')
   })
 
   test('an image anchor resolves against the picture, not its geometry box', async ({ page }) => {

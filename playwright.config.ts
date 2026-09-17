@@ -53,6 +53,7 @@ export default defineConfig({
         'callout-click-steps.spec.ts',
         'click-model-ground-truth.spec.ts',
         'callout-step-ranges.spec.ts',
+        'callout-arrow-style.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'] },
     },

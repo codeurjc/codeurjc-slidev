@@ -1,18 +1,18 @@
 <script setup lang="ts">
 import type { StepRange } from '../composables/stepRange'
-import type { PlacedRect, Rect, Side } from '../composables/useHighlightLayout'
+import type { PlacedRect, Point, Rect, Side, StackEntry } from '../composables/useHighlightLayout'
 import type { CalloutAnchor, CalloutPoint, SlideCallout } from '../composables/useSlideCallouts'
 import type { GeometryRect, GeometryTarget } from '../composables/useSlideGeometry'
 import { useSlideContext } from '@slidev/client'
 import { useDynamicSlideInfo } from '@slidev/client/composables/useSlideInfo.ts'
-import { computed, nextTick, onMounted, onUnmounted, ref, unref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, unref, useId, watch } from 'vue'
 import logoUrl from '../assets/logo.png'
 import { onSlideInfoPublished } from '../composables/slideInfoSync'
 import { isVisibleAt, parseStepRange } from '../composables/stepRange'
 import { findFitFontSize, TITLE_MAX_PT, TITLE_MIN_PT, useAutoFitText } from '../composables/useAutoFitText'
 import { useCalloutTool } from '../composables/useCalloutTool'
 import { useEditor } from '../composables/useEditor'
-import { elbowPath, estimateCalloutSize, placeCallout, pointsToSvgPath } from '../composables/useHighlightLayout'
+import { anchorPoint, ARROW_OBSTACLE_GAP, arrowPath, elbowPath, estimateCalloutSize, MIN_ARROWHEAD_CONNECTOR, pathLength, placeCallout, pointsToSvgPath, stackCallouts } from '../composables/useHighlightLayout'
 import { authoredSrc, imageRefFor, resolveImageRef } from '../composables/useImageRefs'
 import {
   boxContainsAnchor,
@@ -410,6 +410,64 @@ interface CalloutItem {
   side: Side
   /** Click step or range from the marker's suffix or the callout's `step`; undefined means always visible. */
   click?: StepRange
+  /** Length of the connector in `path`, which decides whether an `arrow` connector keeps its head. */
+  connectorLength: number
+}
+
+// --- Callout connector style ----------------------------------------------
+// `calloutStyle` in a slide's frontmatter: `arrow` (the default) draws a
+// straight line from the anchor into the box, with the head on the box, and
+// stacks boxes in their anchors' order; `elbow` keeps the L-shaped connector
+// with its head on the anchor, and greedy placement. Read from `$frontmatter`,
+// which (unlike the slide-info ref) includes the headmatter's `defaults:`; the
+// editor never writes it, so a hand edit re-renders the slide.
+type CalloutStyle = 'arrow' | 'elbow'
+let warnedCalloutStyle = false
+const calloutStyle = computed<CalloutStyle>(() => {
+  const value = ($frontmatter as Record<string, unknown> | undefined)?.calloutStyle
+  if (value === 'elbow')
+    return 'elbow'
+  if (value !== undefined && value !== 'arrow' && !warnedCalloutStyle) {
+    warnedCalloutStyle = true
+    console.warn(`[codeurjc-slidev-theme] slide ${slideNo.value}: calloutStyle must be "arrow" or "elbow" (got ${JSON.stringify(value)}); using "arrow"`)
+  }
+  return 'arrow'
+})
+
+// Marker ids unique to this layout instance: Slidev keeps neighbouring slides
+// mounted but hidden (`display: none`), and `url(#id)` resolves to the first
+// element with that id in the document. A shared id would point connectors at
+// a hidden slide's marker, which the browser doesn't render.
+const markerIdBase = `callout-arrowhead-${useId()}`
+const anchorMarkerId = `${markerIdBase}-anchor`
+const boxMarkerId = `${markerIdBase}-box`
+
+/** `arrow` connectors carry their head on the box, unless they're too short for it (then they're a plain line). */
+function boxHead(item: CalloutItem): boolean {
+  return calloutStyle.value === 'arrow' && !item.boxless && item.connectorLength >= MIN_ARROWHEAD_CONNECTOR
+}
+
+/** `elbow` connectors and bare arrows carry their head on the anchor. */
+function anchorHead(item: CalloutItem): boolean {
+  return calloutStyle.value === 'elbow' || item.boxless
+}
+
+/** An item's connector in the slide's style: none for a box covering its own anchor, a stub for a bare arrow. */
+function connectorPoints(item: Pick<CalloutItem, 'rect' | 'highlightRect' | 'side' | 'boxless' | 'anchorPoint' | 'source'>): Point[] {
+  if (item.boxless && item.anchorPoint)
+    return [item.anchorPoint, { x: item.rect.x, y: item.rect.y }]
+  if (item.source === 'slide' && item.anchorPoint && boxContainsAnchor(item.rect, item.anchorPoint))
+    return []
+  return calloutStyle.value === 'arrow'
+    ? arrowPath(anchorPoint(item.highlightRect, item.side), item.rect)
+    : elbowPath(item.highlightRect, item.rect, item.side)
+}
+
+/** Recomputes an item's connector path and its length. */
+function setConnector(item: CalloutItem): void {
+  const points = connectorPoints(item)
+  item.path = pointsToSvgPath(points)
+  item.connectorLength = pathLength(points)
 }
 
 const calloutItems = ref<CalloutItem[]>([])
@@ -913,6 +971,16 @@ function computeCallouts() {
   // Each placed box with the clicks it's visible at: callouts that are never
   // visible together don't push each other away (see placeCallout).
   const placed: PlacedRect[] = []
+  // What `arrow` slides need to stack boxes in their anchors' order afterwards
+  // (see stackCallouts), per item with a box.
+  const stackEntries: { item: CalloutItem, entry: StackEntry, positionKey?: string }[] = []
+  const groupIds = new Map<unknown, string>()
+  const groupOf = (key: unknown) => {
+    if (!groupIds.has(key))
+      groupIds.set(key, `group-${groupIds.size}`)
+    return groupIds.get(key)!
+  }
+  const alongSide = (anchor: Rect, side: Side) => (side === 'right' || side === 'left' ? anchor.y : anchor.x)
   for (const [id, els] of groups) {
     const first = els[0]
     const comment = first.getAttribute('data-comment')
@@ -941,14 +1009,15 @@ function computeCallouts() {
 
     let rect: Rect
     let side: Side
-    if (manualIds.value.has(overrideKey)) {
+    const pinned = manualIds.value.has(overrideKey)
+    if (pinned) {
       editor.ensurePosition(overrideKey, { x: highlightRect.x, y: highlightRect.y, ...calloutSize })
       const p = editor.positions[overrideKey]
       rect = { x: p.x, y: p.y, w: calloutSize.w, h: calloutSize.h }
       side = deriveSide(rect, codeRect)
     }
     else {
-      const placement = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed, range: click })
+      const placement = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed, range: click, obstacleGap: calloutStyle.value === 'arrow' ? ARROW_OBSTACLE_GAP : undefined })
       rect = placement.rect
       side = placement.side
       editor.ensurePosition(overrideKey, rect)
@@ -958,8 +1027,14 @@ function computeCallouts() {
     // occupy their slot for the clicks they're visible at), so revealing or
     // hiding a step never moves another callout.
     placed.push({ ...rect, range: click })
-    const path = pointsToSvgPath(elbowPath(highlightRect, rect, side))
-    items.push({ id, comment, rect, path, overrideKey, source: 'code', boxless: false, sourceLine, markerIndex, lineOccurrence, highlightRect, side, click })
+    const item: CalloutItem = { id, comment, rect, path: '', connectorLength: 0, overrideKey, source: 'code', boxless: false, sourceLine, markerIndex, lineOccurrence, highlightRect, side, click }
+    setConnector(item)
+    items.push(item)
+    stackEntries.push({
+      item,
+      entry: { rect, side, group: groupOf(pre ?? 'slide'), anchor: alongSide(highlightRect, side), range: click, fixed: pinned },
+      positionKey: pinned ? undefined : overrideKey,
+    })
   }
 
   // Slide callouts join the same `items`/`placed` arrays, so placement avoids
@@ -1014,7 +1089,7 @@ function computeCallouts() {
       side = 'left'
     }
     else {
-      const placement = placeCallout({ codeRect: obstacle ?? anchorRect, highlightRect: anchorRect, calloutSize, slideRect, placed, range: callout.step ?? undefined })
+      const placement = placeCallout({ codeRect: obstacle ?? anchorRect, highlightRect: anchorRect, calloutSize, slideRect, placed, range: callout.step ?? undefined, obstacleGap: calloutStyle.value === 'arrow' ? ARROW_OBSTACLE_GAP : undefined })
       rect = placement.rect
       side = placement.side
     }
@@ -1024,17 +1099,12 @@ function computeCallouts() {
     if (!boxless)
       placed.push({ ...rect, range: callout.step ?? undefined })
 
-    // The box covering its own anchor means "label on the thing it names", so
-    // no connector is drawn (see useSlideCallouts' boxContainsAnchor).
-    const path = !boxless && boxContainsAnchor(rect, point)
-      ? ''
-      : pointsToSvgPath(boxless ? [point, { x: rect.x, y: rect.y }] : elbowPath(anchorRect, rect, side))
-
-    items.push({
+    const item: CalloutItem = {
       id: `slide-callout-${index}`,
       comment: callout.text,
       rect,
-      path,
+      path: '',
+      connectorLength: 0,
       overrideKey: boxKey,
       source: 'slide',
       calloutIndex: index,
@@ -1047,8 +1117,34 @@ function computeCallouts() {
       highlightRect: anchorRect,
       side,
       click: callout.step ?? undefined,
-    })
+    }
+    // The box covering its own anchor means "label on the thing it names", so
+    // no connector is drawn (see useSlideCallouts' boxContainsAnchor).
+    setConnector(item)
+    items.push(item)
+    if (!boxless) {
+      const fixed = !!live || !!callout.box
+      stackEntries.push({
+        item,
+        entry: { rect, side, group: groupOf(obstacle ? `${obstacle.x},${obstacle.y},${obstacle.w},${obstacle.h}` : item.id), anchor: alongSide(anchorRect, side), range: callout.step ?? undefined, fixed },
+        positionKey: fixed ? undefined : boxKey,
+      })
+    }
   })
+
+  // On `arrow` slides, boxes on one side of one obstacle follow their anchors'
+  // order, so the straight connectors don't cross.
+  if (calloutStyle.value === 'arrow' && stackEntries.length > 1) {
+    const stacked = stackCallouts(stackEntries.map(s => s.entry), slideRect)
+    stackEntries.forEach(({ item, entry, positionKey }, i) => {
+      if (entry.fixed)
+        return
+      Object.assign(item.rect, stacked[i])
+      if (positionKey)
+        Object.assign(editor.positions[positionKey], stacked[i])
+      setConnector(item)
+    })
+  }
 
   calloutItems.value = items
   editor.pruneDynamicKeys('callout:', new Set(groups.keys()))
@@ -1079,9 +1175,7 @@ function remeasureCallouts() {
     // The real box can be bigger than the estimate, so re-apply the same rule
     // computeCallouts used: a box covering its own anchor is a label and draws
     // no connector. (Boxless items render no element, so they never get here.)
-    item.path = item.source === 'slide' && item.anchorPoint && boxContainsAnchor(item.rect, item.anchorPoint)
-      ? ''
-      : pointsToSvgPath(elbowPath(item.highlightRect, item.rect, item.side))
+    setConnector(item)
   }
 }
 
@@ -1352,11 +1446,11 @@ watch(editor.aspectLocked, (v) => {
              `marker-start`, and `auto-start-reverse` is what aims it at the
              anchor instead of back along the path. The marker carries its own
              fill because `.code-callout-connector` sets `fill: none`, which a
-             marker child would otherwise inherit and render invisible. Slidev
-             keeps neighbouring slides mounted, so this id repeats across them;
-             every copy is identical, so resolving to the first is harmless. -->
+             marker child would otherwise inherit and render invisible. Its id is
+             unique to this layout instance (see anchorMarkerId). -->
         <marker
-          id="callout-arrowhead"
+          :id="anchorMarkerId"
+          data-marker="anchor"
           markerWidth="7"
           markerHeight="7"
           refX="7"
@@ -1366,6 +1460,20 @@ watch(editor.aspectLocked, (v) => {
         >
           <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#cb0017" />
         </marker>
+        <!-- The `arrow` style's head: larger, at the path's end (the box border),
+             pointing into the box. -->
+        <marker
+          :id="boxMarkerId"
+          data-marker="box"
+          markerWidth="10"
+          markerHeight="10"
+          refX="10"
+          refY="5"
+          orient="auto"
+          markerUnits="strokeWidth"
+        >
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#cb0017" />
+        </marker>
       </defs>
       <path
         v-for="item in calloutItems.filter(i => i.path)"
@@ -1373,7 +1481,8 @@ watch(editor.aspectLocked, (v) => {
         class="code-callout-connector"
         :class="{ 'step-hidden': isStepHidden(item.click) }"
         :d="item.path"
-        marker-start="url(#callout-arrowhead)"
+        :marker-start="anchorHead(item) ? `url(#${anchorMarkerId})` : undefined"
+        :marker-end="boxHead(item) ? `url(#${boxMarkerId})` : undefined"
       />
     </svg>
     <div

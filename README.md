@@ -47,6 +47,8 @@ pnpm dev tutorial.md
 - ODP import: `create-codeurjc-slidev --from-odp` turns a LibreOffice Impress deck into a project, with a side-by-side comparison deck for whatever couldn't be converted
 - Layout editor integrated into Slidev's built-in SideEditor panel: drag/resize slide elements (red bar, logo, title, content) with undo support, and save layouts as new `.vue` files or overwrite the current one
 
+**Behaviour change (callout arrows).** Callouts (on code and slides) are now drawn as straight arrows pointing into their box, and boxes on one side of a block follow their highlights' order. `calloutStyle: elbow` in a slide's frontmatter, or `defaults: { calloutStyle: elbow }` in the deck's first slide, restores the previous L-shaped connectors and placement.
+
 **Behaviour change (image positioning).** Images now stay in the normal flow of the slide unless the slide's `geometry.images` positions them. The paste presets (Below/Right) write that frontmatter instead of creating a `layouts/layout-<timestamp>.vue` copy, and the layout editor no longer has a layout-level "Image" element. Slides already pointing at such a copy keep working as before. To position an image on any other slide, paste it again and pick a preset, or add a `geometry.images` entry (`{src, x, y, w, h}`).
 
 See `CLAUDE.md` for the full grammar/behavior reference (marker syntax, snippet-import selectors, title carry-over rules).

@@ -12,6 +12,12 @@ export type Side = 'right' | 'left' | 'below' | 'above'
 const SIDES: Side[] = ['right', 'left', 'below', 'above']
 const GAP = 12
 
+/** Space left between an obstacle (a code block, an element) and its callout boxes on `arrow` slides, so the arrow has room for its head. */
+export const ARROW_OBSTACLE_GAP = 36
+
+/** The shortest `arrow` connector that still gets an arrowhead; a shorter one is drawn as a plain line, since the head would cover it. */
+export const MIN_ARROWHEAD_CONNECTOR = 30
+
 export function rectsOverlap(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
 }
@@ -40,21 +46,24 @@ export interface PlacementInput {
   placed: PlacedRect[]
   /** The clicks the callout being placed is visible at (absent: always). Only callouts visible at a same click collide. */
   range?: StepRange
+  /** Space between the obstacle and the box (default 12); `arrow` slides use `ARROW_OBSTACLE_GAP`. */
+  obstacleGap?: number
 }
 
 export function candidateRect(side: Side, input: PlacementInput): Rect {
   const { codeRect, highlightRect, calloutSize, slideRect } = input
+  const gap = input.obstacleGap ?? GAP
   switch (side) {
     case 'right':
       return {
-        x: codeRect.x + codeRect.w + GAP,
+        x: codeRect.x + codeRect.w + gap,
         y: clamp(highlightRect.y, slideRect.y, slideRect.y + slideRect.h - calloutSize.h),
         w: calloutSize.w,
         h: calloutSize.h,
       }
     case 'left':
       return {
-        x: codeRect.x - GAP - calloutSize.w,
+        x: codeRect.x - gap - calloutSize.w,
         y: clamp(highlightRect.y, slideRect.y, slideRect.y + slideRect.h - calloutSize.h),
         w: calloutSize.w,
         h: calloutSize.h,
@@ -62,14 +71,14 @@ export function candidateRect(side: Side, input: PlacementInput): Rect {
     case 'below':
       return {
         x: clamp(highlightRect.x, slideRect.x, slideRect.x + slideRect.w - calloutSize.w),
-        y: codeRect.y + codeRect.h + GAP,
+        y: codeRect.y + codeRect.h + gap,
         w: calloutSize.w,
         h: calloutSize.h,
       }
     case 'above':
       return {
         x: clamp(highlightRect.x, slideRect.x, slideRect.x + slideRect.w - calloutSize.w),
-        y: codeRect.y - GAP - calloutSize.h,
+        y: codeRect.y - gap - calloutSize.h,
         w: calloutSize.w,
         h: calloutSize.h,
       }
@@ -149,6 +158,22 @@ export function placeCallout(placement: PlacementInput): PlacementResult {
   return { rect: { ...base, x, y }, side: 'right', stacked: true }
 }
 
+/** Where a connector touches its highlight: the middle of the highlight's edge that faces the callout's side. */
+export function anchorPoint(highlightRect: Rect, side: Side): Point {
+  const hlCenterY = highlightRect.y + highlightRect.h / 2
+  const hlCenterX = highlightRect.x + highlightRect.w / 2
+  switch (side) {
+    case 'right':
+      return { x: highlightRect.x + highlightRect.w, y: hlCenterY }
+    case 'left':
+      return { x: highlightRect.x, y: hlCenterY }
+    case 'below':
+      return { x: hlCenterX, y: highlightRect.y + highlightRect.h }
+    case 'above':
+      return { x: hlCenterX, y: highlightRect.y }
+  }
+}
+
 /**
  * A 2-segment axis-aligned elbow from the highlight's edge (facing the
  * callout's side) to the callout box's nearest edge. Because the callout
@@ -157,21 +182,124 @@ export function placeCallout(placement: PlacementInput): PlacementResult {
  * outside the code block.
  */
 export function elbowPath(highlightRect: Rect, calloutRect: Rect, side: Side): Point[] {
-  const hlCenterY = highlightRect.y + highlightRect.h / 2
-  const hlCenterX = highlightRect.x + highlightRect.w / 2
+  const anchor = anchorPoint(highlightRect, side)
   const boxCenterY = calloutRect.y + calloutRect.h / 2
   const boxCenterX = calloutRect.x + calloutRect.w / 2
 
   if (side === 'right' || side === 'left') {
-    const anchor: Point = { x: side === 'right' ? highlightRect.x + highlightRect.w : highlightRect.x, y: hlCenterY }
     const boxEdge: Point = { x: side === 'right' ? calloutRect.x : calloutRect.x + calloutRect.w, y: boxCenterY }
     const bend: Point = { x: boxEdge.x, y: anchor.y }
     return [anchor, bend, boxEdge]
   }
-  const anchor: Point = { x: hlCenterX, y: side === 'below' ? highlightRect.y + highlightRect.h : highlightRect.y }
   const boxEdge: Point = { x: boxCenterX, y: side === 'below' ? calloutRect.y : calloutRect.y + calloutRect.h }
   const bend: Point = { x: anchor.x, y: boxEdge.y }
   return [anchor, bend, boxEdge]
+}
+
+/**
+ * The `arrow` style's connector: one straight segment from `anchor` to the
+ * box's border, ending where the line from the box's centre towards the
+ * anchor leaves the box. Empty when the anchor lies inside the box.
+ */
+export function arrowPath(anchor: Point, box: Rect): Point[] {
+  const cx = box.x + box.w / 2
+  const cy = box.y + box.h / 2
+  const dx = anchor.x - cx
+  const dy = anchor.y - cy
+  const t = Math.min(
+    dx === 0 ? Number.POSITIVE_INFINITY : (box.w / 2) / Math.abs(dx),
+    dy === 0 ? Number.POSITIVE_INFINITY : (box.h / 2) / Math.abs(dy),
+  )
+  if (!Number.isFinite(t) || t >= 1)
+    return []
+  return [anchor, { x: cx + dx * t, y: cy + dy * t }]
+}
+
+/** One callout for `stackCallouts`. */
+export interface StackEntry {
+  /** Where placement put the box. */
+  rect: Rect
+  side: Side
+  /** Identifies the obstacle the callout is placed around (a code block, an element); only callouts of one group and side are stacked together. */
+  group: string
+  /** The anchor's position along the side: its top for right/left, its left for above/below. Also the box's level position. */
+  anchor: number
+  /** The clicks the callout is visible at (absent: always). */
+  range?: StepRange
+  /** A pinned box (a position override): kept where it is, and avoided. */
+  fixed: boolean
+}
+
+/**
+ * Stacks the auto-placed callouts on each side of each obstacle in the order
+ * of their anchors (top to bottom beside it, left to right above or below
+ * it), so their connectors don't cross. Each box goes level with its anchor,
+ * or just past the box before it (and past any other box it would overlap);
+ * a stack that runs past the slide's edge is pulled back inside. Callouts
+ * that are never visible at the same click don't constrain each other.
+ * Returns the adjusted rects, in the entries' order.
+ */
+export function stackCallouts(entries: StackEntry[], slideRect: Rect): Rect[] {
+  const out = entries.map(e => ({ ...e.rect }))
+  const groups = new Map<string, number[]>()
+  entries.forEach((e, i) => {
+    if (e.fixed)
+      return
+    const key = `${e.group}\u0000${e.side}`
+    groups.set(key, [...(groups.get(key) ?? []), i])
+  })
+
+  for (const members of groups.values()) {
+    const vertical = entries[members[0]].side === 'right' || entries[members[0]].side === 'left'
+    const pos = (r: Rect) => (vertical ? r.y : r.x)
+    const size = (r: Rect) => (vertical ? r.h : r.w)
+    const setPos = (r: Rect, v: number) => {
+      if (vertical)
+        r.y = v
+      else r.x = v
+    }
+    const min = vertical ? slideRect.y : slideRect.x
+    const max = vertical ? slideRect.y + slideRect.h : slideRect.x + slideRect.w
+    const order = [...members].sort((a, b) => entries[a].anchor - entries[b].anchor)
+    const inGroup = new Set(order)
+
+    // Forward: level with the anchor, past earlier boxes and anything it overlaps.
+    order.forEach((i, k) => {
+      const rect = out[i]
+      setPos(rect, clamp(entries[i].anchor, min, max - size(rect)))
+      for (const j of order.slice(0, k)) {
+        if (rangesOverlap(entries[i].range, entries[j].range))
+          setPos(rect, Math.max(pos(rect), pos(out[j]) + size(out[j]) + GAP))
+      }
+      const others = out.filter((_, j) => j !== i && !(inGroup.has(j) && order.indexOf(j) > k) && rangesOverlap(entries[i].range, entries[j].range))
+      for (let guard = 0; guard < others.length; guard++) {
+        const hit = others.find(o => rectsOverlap(rect, o))
+        if (!hit)
+          break
+        setPos(rect, pos(hit) + size(hit) + GAP)
+      }
+    })
+
+    // Backward: pull a stack that runs past the far edge back inside.
+    for (let k = order.length - 1; k >= 0; k--) {
+      const i = order[k]
+      let limit = max - size(out[i])
+      for (const j of order.slice(k + 1)) {
+        if (rangesOverlap(entries[i].range, entries[j].range))
+          limit = Math.min(limit, pos(out[j]) - GAP - size(out[i]))
+      }
+      setPos(out[i], Math.max(min, Math.min(pos(out[i]), limit)))
+    }
+  }
+  return out
+}
+
+/** The total length of a connector's segments. */
+export function pathLength(points: Point[]): number {
+  let length = 0
+  for (let i = 1; i < points.length; i++)
+    length += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)
+  return length
 }
 
 export function pointsToSvgPath(points: Point[]): string {

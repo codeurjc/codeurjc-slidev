@@ -1,6 +1,6 @@
-import type { Rect } from '../useHighlightLayout'
+import type { Rect, StackEntry } from '../useHighlightLayout'
 import { describe, expect, it } from 'vitest'
-import { elbowPath, estimateCalloutSize, placeCallout, pointsToSvgPath, rectsOverlap } from '../useHighlightLayout'
+import { anchorPoint, ARROW_OBSTACLE_GAP, arrowPath, elbowPath, estimateCalloutSize, MIN_ARROWHEAD_CONNECTOR, pathLength, placeCallout, pointsToSvgPath, rectsOverlap, stackCallouts } from '../useHighlightLayout'
 
 const slideRect: Rect = { x: 0, y: 0, w: 980, h: 552 }
 
@@ -174,5 +174,105 @@ describe('placeCallout with step ranges', () => {
     const always = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed: [] })
     const later = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed: [always.rect], range: { from: 5 } })
     expect(rectsOverlap(later.rect, always.rect)).toBe(false)
+  })
+})
+
+describe('arrowPath', () => {
+  const box: Rect = { x: 500, y: 100, w: 200, h: 60 }
+
+  it('ends on the box border facing a highlight to the left', () => {
+    expect(arrowPath({ x: 300, y: 130 }, box)).toEqual([{ x: 300, y: 130 }, { x: 500, y: 130 }])
+  })
+
+  it('ends on the border along the line from the box centre to a diagonal anchor', () => {
+    const [start, end] = arrowPath({ x: 400, y: 330 }, box)
+    expect(start).toEqual({ x: 400, y: 330 })
+    // Leaves through the bottom edge, on the centre → anchor line.
+    expect(end.y).toBeCloseTo(160)
+    const cx = 600
+    const cy = 130
+    expect((end.x - cx) / (400 - cx)).toBeCloseTo((end.y - cy) / (330 - cy))
+  })
+
+  it('has no connector when the anchor is inside the box', () => {
+    expect(arrowPath({ x: 600, y: 130 }, box)).toEqual([])
+    expect(arrowPath({ x: 550, y: 110 }, box)).toEqual([])
+  })
+})
+
+describe('anchorPoint', () => {
+  it('is the middle of the highlight edge facing the side', () => {
+    const hl: Rect = { x: 10, y: 20, w: 100, h: 20 }
+    expect(anchorPoint(hl, 'right')).toEqual({ x: 110, y: 30 })
+    expect(anchorPoint(hl, 'left')).toEqual({ x: 10, y: 30 })
+    expect(anchorPoint(hl, 'below')).toEqual({ x: 60, y: 40 })
+    expect(anchorPoint(hl, 'above')).toEqual({ x: 60, y: 20 })
+  })
+})
+
+describe('stackCallouts', () => {
+  const box = (y: number, h = 60): Rect => ({ x: 600, y, w: 200, h })
+  const entry = (rect: Rect, anchor: number, extra: Partial<StackEntry> = {}): StackEntry => ({ rect, side: 'right', group: 'code', anchor, fixed: false, ...extra })
+
+  it('orders boxes by their anchors and keeps them level when there is room', () => {
+    // Greedy placement put the lower highlight's box above the upper one's.
+    const out = stackCallouts([entry(box(300), 100), entry(box(40), 300)], slideRect)
+    expect(out.map(r => r.y)).toEqual([100, 300])
+  })
+
+  it('pushes a box past the previous one in the stack', () => {
+    const out = stackCallouts([entry(box(0), 100), entry(box(0), 120), entry(box(0), 130)], slideRect)
+    expect(out.map(r => r.y)).toEqual([100, 172, 244])
+  })
+
+  it('pulls a stack running past the bottom back inside the slide', () => {
+    const out = stackCallouts([entry(box(0), 450), entry(box(0), 460), entry(box(0), 470)], slideRect)
+    expect(out[2].y + out[2].h).toBeLessThanOrEqual(slideRect.h)
+    expect(out[0].y + out[0].h).toBeLessThanOrEqual(out[1].y)
+    expect(out[1].y + out[1].h).toBeLessThanOrEqual(out[2].y)
+  })
+
+  it('lets callouts that are never visible together sit level with their anchors', () => {
+    const out = stackCallouts([entry(box(0), 100, { range: { to: 0 } }), entry(box(0), 110, { range: { from: 1, to: 1 } })], slideRect)
+    expect(out.map(r => r.y)).toEqual([100, 110])
+  })
+
+  it('keeps pinned boxes and moves others past them', () => {
+    const pinned = entry(box(100), 500, { fixed: true })
+    const out = stackCallouts([pinned, entry(box(0), 120)], slideRect)
+    expect(out[0].y).toBe(100)
+    expect(out[1].y).toBe(172)
+  })
+
+  it('stacks boxes above or below a block left to right, and keeps groups apart', () => {
+    const below = (x: number): Rect => ({ x, y: 400, w: 150, h: 40 })
+    const out = stackCallouts([
+      entry(below(300), 200, { side: 'below' }),
+      entry(below(0), 250, { side: 'below' }),
+      entry(box(0), 100, { group: 'image' }),
+    ], slideRect)
+    expect(out[0].x).toBe(200)
+    expect(out[1].x).toBe(362)
+    expect(out[2].y).toBe(100)
+  })
+})
+
+describe('arrow spacing', () => {
+  const codeRect: Rect = { x: 40, y: 40, w: 400, h: 300 }
+  const highlightRect: Rect = { x: 60, y: 100, w: 380, h: 20 }
+  const calloutSize = { w: 150, h: 60 }
+
+  it('leaves a wider gap between the obstacle and the box when asked', () => {
+    const tight = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed: [] })
+    const roomy = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed: [], obstacleGap: ARROW_OBSTACLE_GAP })
+    expect(roomy.rect.x - tight.rect.x).toBe(ARROW_OBSTACLE_GAP - 12)
+    // A highlight ending at the block's edge still gets an arrow long enough for its head.
+    const arrow = arrowPath(anchorPoint(highlightRect, roomy.side), roomy.rect)
+    expect(pathLength(arrow)).toBeGreaterThanOrEqual(MIN_ARROWHEAD_CONNECTOR)
+  })
+
+  it('measures a connector by its segments', () => {
+    expect(pathLength([{ x: 0, y: 0 }, { x: 3, y: 4 }, { x: 3, y: 10 }])).toBe(11)
+    expect(pathLength([])).toBe(0)
   })
 })

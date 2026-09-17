@@ -272,6 +272,26 @@ jobs:
 
 ---
 
+# Callout styles
+- By default a callout is an **arrow**: a straight line from the highlight into its box, with the arrowhead on the box
+    - Boxes on the same side follow the order of their highlights, so the arrows don't cross
+- `calloutStyle: elbow` in a slide's frontmatter brings back the L-shaped line with the arrowhead on the code
+- For the whole deck, set it in the first slide's frontmatter: `defaults: { calloutStyle: elbow }`; a slide's own `calloutStyle` still wins
+- The style applies to code callouts and slide callouts alike
+
+---
+calloutStyle: elbow
+---
+
+## Elbow example
+```java
+public GestorNotas(DBAlumno alumnos) { // [!mark] The same callout, drawn as an elbow
+	this.alumnos = alumnos;
+}
+```
+
+---
+
 # Code annotations: click steps
 - Add `{N}` to a mark to reveal it step by step: the highlight, its callout and its connector appear at click `N` and stay visible
     - It goes after the range or substring and before `@x,y`: `// [!mark{2}]`, `// [!mark:start{3}]`, `// [!mark(2-16){2}@120,40]`
