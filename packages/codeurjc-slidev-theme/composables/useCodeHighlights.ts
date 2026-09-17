@@ -473,7 +473,7 @@ function mapShikiLines(inner: string, fn: (lineHtml: string, index: number) => s
 // Unlike inline markers, these are standalone lines (no `//`/`#` comment
 // prefix) -- they never touch the imported file, only slides.md.
 
-interface ExternalAnchorSpec {
+export interface ExternalAnchorSpec {
   kind: 'line' | 'lineRange' | 'content' | 'contentRange'
   line?: number
   endLine?: number
@@ -489,7 +489,7 @@ interface ExternalAnchorSpec {
 }
 
 /** Parses one `[!mark:...]` anchor-declaration line. Returns null if malformed. */
-function parseAnchorLine(line: string): ExternalAnchorSpec | null {
+export function parseAnchorLine(line: string): ExternalAnchorSpec | null {
   if (!line.startsWith('[!mark:'))
     return null
   const n = line.length

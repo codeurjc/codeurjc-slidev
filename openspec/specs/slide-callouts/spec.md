@@ -88,6 +88,10 @@ A callout with `step: N` SHALL stay hidden — box, connector and arrowhead — 
 - **WHEN** a slide has one unstepped callout and one with `step: 1`, and the presenter advances one click
 - **THEN** the first is visible from click 0 and the second appears at click 1
 
+#### Scenario: A callout step is the slide's only click
+- **WHEN** a slide's only click source is a callout with `step: 2`
+- **THEN** the slide has 2 clicks, and advancing twice reveals the callout before moving to the next slide
+
 ### Requirement: Callouts apply to default-layout slides only
 Callouts declared on a slide using any layout other than `default` SHALL be ignored, with a console warning naming the slide and its layout.
 

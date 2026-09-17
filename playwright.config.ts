@@ -51,6 +51,7 @@ export default defineConfig({
         'slide-callouts-diagrams.spec.ts',
         'slide-image-references.spec.ts',
         'callout-click-steps.spec.ts',
+        'click-model-ground-truth.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'] },
     },

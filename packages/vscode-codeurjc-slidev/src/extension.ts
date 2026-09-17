@@ -1,23 +1,26 @@
 // Thin vscode-API adapter wiring the pure logic modules (documentScan,
-// markerDecorations, importAnalysis, referenceIndex/*) to real editor
+// markerDecorations, clickModel, stepBadges, importAnalysis, referenceIndex/*) to real editor
 // behavior: decorations, hovers, diagnostics, and CodeLens. Deliberately kept
 // thin -- the logic it calls into is unit tested; this file's own correctness
 // is covered by the extension-host smoke tests in test-extension/.
 
+import type { ClickModelOptions } from './clickModel'
 import type { ResolveImport } from './importAnalysis'
 import type { ReferenceMention } from './referenceIndex/codeLens'
 import type { ReferenceIndex } from './referenceIndex/indexBuilder'
 import { readFileSync } from 'node:fs'
 import { parseSnippetImportLine, parseSnippetSelector, serializeSnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 import * as vscode from 'vscode'
+import { computeDocumentClicks } from './clickModel'
 import { analyzeImports } from './importAnalysis'
 import { computeMarkerDecorations } from './markerDecorations'
 import { computeImportPathContext, filterPathEntries } from './pathCompletion'
 import { computeCodeLensesForDocument } from './referenceIndex/codeLens'
 import { buildReferenceIndex, updateReferenceIndexForFile } from './referenceIndex/indexBuilder'
-import { findProjectRoot, listCodeRootDirectory, makeResolveImportPath, readThemeTaggedMarkdownFiles, resolveImportTarget } from './referenceIndex/scanner'
+import { findProjectRoot, listCodeRootDirectory, listProjectComponentNames, makeResolveImportPath, readThemeTaggedMarkdownFiles, resolveImportTarget } from './referenceIndex/scanner'
 import { computeSelectorForSelection } from './selectorFromSelection'
 import { makeResolveSourceLink } from './sourceLinkDiagnostics'
+import { computeStepHovers, formatStepBadge } from './stepBadges'
 import { usesCodeurjcSlidevTheme } from './themeGate'
 
 const dimDecorationType = vscode.window.createTextEditorDecorationType({ opacity: '0.4' })
@@ -26,6 +29,54 @@ const highlightDecorationType = vscode.window.createTextEditorDecorationType({
   border: '1px solid',
   borderColor: new vscode.ThemeColor('editor.findMatchBorder'),
 })
+
+// Click-step badges: virtual text after the end of a stepped line, in the
+// CodeLens colour, so no code moves.
+const badgeDecorationType = vscode.window.createTextEditorDecorationType({})
+
+/** The badges last painted per document URI, for the smoke tests' `stepBadgesFor` hook. */
+const appliedBadges = new Map<string, { line: number, text: string }[]>()
+
+export interface ExtensionApi {
+  /** Test hook: the click-step badges currently painted in the document with this URI. */
+  stepBadgesFor: (uri: string) => { line: number, text: string }[]
+}
+
+function showTotal(): boolean {
+  return vscode.workspace.getConfiguration('codeurjcSlidev').get<boolean>('stepBadges.showTotal', true)
+}
+
+const componentNamesByRoot = new Map<string, Set<string>>()
+
+function componentNames(projectRoot: string): Set<string> {
+  let names = componentNamesByRoot.get(projectRoot)
+  if (!names) {
+    names = listProjectComponentNames(projectRoot)
+    componentNamesByRoot.set(projectRoot, names)
+  }
+  return names
+}
+
+/** A `<<<` import's text for the click model of the markdown file at `mdPath`, preferring an open editor's unsaved text. */
+function resolveImportText(mdPath: string, importFilePath: string): string | null {
+  const { absPath } = resolveImportTarget(importFilePath, mdPath, findProjectRoot(mdPath))
+  const open = vscode.workspace.textDocuments.find(d => d.uri.fsPath === absPath)
+  if (open)
+    return open.getText()
+  try {
+    return readFileSync(absPath, 'utf-8')
+  }
+  catch {
+    return null
+  }
+}
+
+function clickOptionsFor(mdPath: string): ClickModelOptions {
+  return {
+    resolveImportText: path => resolveImportText(mdPath, path),
+    componentNames: componentNames(findProjectRoot(mdPath)),
+  }
+}
 
 function isRelevantDocument(document: vscode.TextDocument): boolean {
   return document.languageId === 'markdown' && usesCodeurjcSlidevTheme(document.getText())
@@ -39,9 +90,11 @@ function updateDecorations(editor: vscode.TextEditor): void {
   if (!isRelevantDocument(editor.document)) {
     editor.setDecorations(dimDecorationType, [])
     editor.setDecorations(highlightDecorationType, [])
+    editor.setDecorations(badgeDecorationType, [])
+    appliedBadges.delete(editor.document.uri.toString())
     return
   }
-  const { dims, highlights } = computeMarkerDecorations(editor.document.getText())
+  const { dims, highlights, badges } = computeMarkerDecorations(editor.document.getText(), clickOptionsFor(editor.document.uri.fsPath))
   editor.setDecorations(dimDecorationType, dims.map(d => toRange(d.line, d.startChar, d.line, d.endChar)))
   editor.setDecorations(highlightDecorationType, highlights.map((h) => {
     if (h.substringRange)
@@ -49,6 +102,17 @@ function updateDecorations(editor: vscode.TextEditor): void {
     const endLineLength = editor.document.lineAt(h.endLine).text.length
     return toRange(h.startLine, 0, h.endLine, endLineLength)
   }))
+
+  const withTotal = showTotal()
+  const painted = badges.map(b => ({ line: b.line, text: formatStepBadge(b.steps, b.total, withTotal) }))
+  editor.setDecorations(badgeDecorationType, painted.map((b) => {
+    const end = editor.document.lineAt(b.line).text.length
+    return {
+      range: toRange(b.line, end, b.line, end),
+      renderOptions: { after: { contentText: b.text, color: new vscode.ThemeColor('editorCodeLens.foreground'), margin: '0 0 0 1.5em' } },
+    }
+  }))
+  appliedBadges.set(editor.document.uri.toString(), painted)
 }
 
 /** Builds a `ResolveImport` (file-text-reading) callback scoped to a specific markdown document's project root. Escaping the code root is reported (via `escapesCodeRoot`), not treated as a resolution failure -- the theme still reads/renders the file in that case. */
@@ -67,7 +131,7 @@ function createFsResolveImport(mdDocumentPath: string): ResolveImport {
 
 const resolveSourceLink = makeResolveSourceLink()
 
-export function activate(context: vscode.ExtensionContext): void {
+export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const diagnostics = vscode.languages.createDiagnosticCollection('codeurjc-slidev')
   context.subscriptions.push(diagnostics)
 
@@ -94,19 +158,29 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.workspace.onDidOpenTextDocument(document => refreshDocument(document)),
     vscode.workspace.onDidChangeTextDocument((event) => {
-      const editor = vscode.window.visibleTextEditors.find(e => e.document === event.document)
-      if (editor)
-        updateDecorations(editor)
+      // Every visible deck: an edit to an imported file can change which of its anchors resolve.
+      for (const editor of vscode.window.visibleTextEditors) {
+        if (editor.document === event.document || isRelevantDocument(editor.document))
+          updateDecorations(editor)
+      }
       refreshDocument(event.document)
     }),
+    vscode.window.onDidChangeVisibleTextEditors((editors) => {
+      for (const editor of editors) updateDecorations(editor)
+    }),
   )
+
+  const componentWatcher = vscode.workspace.createFileSystemWatcher('**/components/**')
+  const forgetComponents = () => componentNamesByRoot.clear()
+  context.subscriptions.push(componentWatcher, componentWatcher.onDidCreate(forgetComponents), componentWatcher.onDidDelete(forgetComponents))
 
   const hoverProvider = vscode.languages.registerHoverProvider('markdown', {
     provideHover(document, position) {
       if (!isRelevantDocument(document))
         return undefined
       const { hovers } = analyzeImports(document.getText(), createFsResolveImport(document.uri.fsPath), resolveSourceLink)
-      const hits = hovers.filter(h => h.line === position.line)
+      const stepHovers = computeStepHovers(computeDocumentClicks(document.getText(), clickOptionsFor(document.uri.fsPath)), showTotal())
+      const hits = [...hovers, ...stepHovers].filter(h => h.line === position.line)
       if (hits.length === 0)
         return undefined
       return new vscode.Hover(hits.map(h => h.contents).join('\n\n'))
@@ -215,7 +289,11 @@ export function activate(context: vscode.ExtensionContext): void {
   const codeLensProvider: vscode.CodeLensProvider = {
     onDidChangeCodeLenses: codeLensChangeEmitter.event,
     provideCodeLenses(document) {
-      const lenses = computeCodeLensesForDocument(referenceIndex, document.uri.fsPath, document.getText(), slideTextByFile)
+      const lenses = computeCodeLensesForDocument(referenceIndex, document.uri.fsPath, document.getText(), slideTextByFile, {
+        showTotal: showTotal(),
+        resolveImportText,
+        componentNames: slideFile => componentNames(findProjectRoot(slideFile)),
+      })
       return lenses.map(l => new vscode.CodeLens(
         toRange(l.line, 0, l.line, 0),
         { title: l.title, command: 'codeurjc-slidev.openReference', arguments: [l.references] },
@@ -264,6 +342,13 @@ export function activate(context: vscode.ExtensionContext): void {
   }))
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => rebuildIndexForWorkspace()))
 
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
+    if (!event.affectsConfiguration('codeurjcSlidev.stepBadges'))
+      return
+    for (const editor of vscode.window.visibleTextEditors) updateDecorations(editor)
+    codeLensChangeEmitter.fire()
+  }))
+
   // --- Selector copy/paste commands ---------------------------------------
 
   context.subscriptions.push(vscode.commands.registerCommand('codeurjc-slidev.copySelectorForSelection', async () => {
@@ -311,6 +396,10 @@ export function activate(context: vscode.ExtensionContext): void {
       builder.replace(line.range, newLineText)
     })
   }))
+
+  return {
+    stepBadgesFor: uri => appliedBadges.get(uri) ?? [],
+  }
 }
 
 export function deactivate(): void {}

@@ -63,6 +63,9 @@ export default antfu({
     'packages/codeurjc-slidev-theme/composables/useCodeHighlights.ts',
     'packages/codeurjc-slidev-theme/composables/useSlideTitleCarryover.ts',
     'packages/codeurjc-slidev-theme/composables/useSnippetImport.ts',
+    'packages/codeurjc-slidev-theme/composables/fenceInfo.ts',
+    'packages/vscode-codeurjc-slidev/src/documentScan.ts',
+    'packages/vscode-codeurjc-slidev/src/clickModel.ts',
   ],
   rules: {
     'regexp/no-super-linear-backtracking': 'off',

@@ -3,12 +3,15 @@ import type { CombinedSourceLink } from '../composables/useSnippetImport'
 import { readFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { defineTransformersSetup } from '@slidev/types'
+import { parseFenceInfo } from '../composables/fenceInfo'
 import {
   extractInlineSourceLink,
   injectHighlightSpans,
   parseCodeHighlights,
   parseExternalHighlightAnchors,
 } from '../composables/useCodeHighlights'
+import { slideCalloutClickSteps } from '../composables/useSlideCallouts'
+import { isDefaultLayout } from '../composables/useSlideTitleCarryover'
 import {
   combineCodeAndAnchors,
 
@@ -53,16 +56,19 @@ function sourceLinkIconHtml(url: string): string {
  * Vue's automatic attribute inheritance) for `layouts/default.vue` to collect
  * into the slide's bottom row.
  */
-function wrapCodeBlock(info: string, html: string, sourceLink: CombinedSourceLink | null, clickSteps: number[] = []): string {
-  const title = /\[([^\]]*)\]/.exec(info)?.[1] ?? ''
+export function wrapCodeBlock(info: string, html: string, sourceLink: CombinedSourceLink | null, clickSteps: number[] = []): string {
+  const { title, ranges, options } = parseFenceInfo(info)
+  // Native `{1|3}` ranges and `{at: …}`-style options, forwarded the way
+  // Slidev's own wrapper does, so they keep working on fences wrapped here.
+  const nativeAttrs = `${options ? ` v-bind="${options}"` : ''} title=${JSON.stringify(title)} :ranges='${JSON.stringify(ranges)}'`
   const escaped = html.replace(/\{\{/g, '&lbrace;&lbrace;') + clickStepRegistrations(clickSteps)
   if (!sourceLink)
-    return `<CodeBlockWrapper title=${JSON.stringify(title)}>${escaped}</CodeBlockWrapper>`
+    return `<CodeBlockWrapper${nativeAttrs}>${escaped}</CodeBlockWrapper>`
 
   const placedAtTitle = !sourceLink.bottom && title !== ''
   const linkAttrs = ` data-source-link-url="${escapeAttr(sourceLink.url)}" data-source-link-placement="${placedAtTitle ? 'title' : 'bottom'}"`
   const icon = placedAtTitle ? sourceLinkIconHtml(sourceLink.url) : ''
-  return `<CodeBlockWrapper title=${JSON.stringify(title)}${linkAttrs}>${escaped}${icon}</CodeBlockWrapper>`
+  return `<CodeBlockWrapper${nativeAttrs}${linkAttrs}>${escaped}${icon}</CodeBlockWrapper>`
 }
 
 /**
@@ -101,11 +107,27 @@ function withLineOccurrences(highlights: CodeHighlight[], raw: string, rawFence:
  * slide's own compiled template, is what makes them count toward the slide's
  * total clicks (so the presenter reveals every step before advancing).
  */
-function clickStepRegistrations(clickSteps: number[]): string {
+export function clickStepRegistrations(clickSteps: number[]): string {
   return [...new Set(clickSteps)]
     .sort((a, b) => a - b)
     .map(step => `<span v-click="${step}" class="code-callout-step" data-click-step="${step}" aria-hidden="true"></span>`)
     .join('')
+}
+
+/**
+ * The same hidden placeholders for a slide's callout steps (its `callouts`
+ * frontmatter), as a block appended to the slide's markdown: the layout only
+ * reads callouts after mount, too late for Slidev to count their clicks.
+ * Empty when the slide isn't `default`-layout (callouts only render there) or
+ * has no stepped callout.
+ */
+export function slideCalloutStepBlock(frontmatter: Record<string, unknown> | undefined): string {
+  if (!isDefaultLayout(frontmatter))
+    return ''
+  const steps = slideCalloutClickSteps(frontmatter)
+  if (steps.length === 0)
+    return ''
+  return `\n\n<div class="slide-callout-steps" aria-hidden="true" hidden>${clickStepRegistrations(steps)}</div>\n`
 }
 
 export default defineTransformersSetup(() => ({
@@ -224,6 +246,13 @@ export default defineTransformersSetup(() => ({
       }
     },
   ],
+  post: [
+    (ctx) => {
+      const block = slideCalloutStepBlock(ctx.slide?.frontmatter)
+      if (block)
+        ctx.s.append(block)
+    },
+  ],
   codeblocks: [
     // Runs before Slidev's own built-in `wrapper_default` transformer (which
     // is what normally wraps a fence in `<CodeBlockWrapper>` to render its
@@ -271,7 +300,9 @@ export default defineTransformersSetup(() => ({
 
       if (highlights.length === 0 && !sourceLink)
         return undefined
-      const html = await ctx.renderHighlighted({ code })
+      // Highlighted without the title/ranges/options, as Slidev's wrapper does.
+      const { lang, rest } = parseFenceInfo(ctx.info)
+      const html = await ctx.renderHighlighted({ code, info: `${lang} ${rest}` })
       const highlighted = highlights.length > 0 ? injectHighlightSpans(html, highlights) : html
       const clickSteps = highlights.flatMap(h => (h.click ? [h.click] : []))
       return wrapCodeBlock(ctx.info, highlighted, sourceLink, clickSteps)

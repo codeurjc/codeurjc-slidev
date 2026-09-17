@@ -188,6 +188,12 @@ export function parseSlideCallouts(frontmatter: Record<string, unknown> | null |
   }
 }
 
+/** The distinct click steps of a slide's usable callouts, ascending. */
+export function slideCalloutClickSteps(frontmatter: Record<string, unknown> | null | undefined): number[] {
+  const steps = parseSlideCallouts(frontmatter).callouts.flatMap(c => (c?.step ? [c.step] : []))
+  return [...new Set(steps)].sort((a, b) => a - b)
+}
+
 /** Whether the slide declares at least one usable callout. */
 export function hasSlideCallouts(parsed: ParsedSlideCallouts): boolean {
   return parsed.callouts.some(c => c !== null)

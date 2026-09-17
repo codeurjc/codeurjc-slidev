@@ -41,7 +41,17 @@
         "command": "codeurjc-slidev.openImportSource",
         "title": "CodeURJC Slidev: Open source"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "CodeURJC Slidev",
+      "properties": {
+        "codeurjcSlidev.stepBadges.showTotal": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show the slide's total clicks in click-step badges (`▸2 of 3` instead of `▸2`). The total is left out on slides whose clicks can't be counted from the markdown."
+        }
+      }
+    }
   },
   "scripts": {
     "compile": "node esbuild.js",

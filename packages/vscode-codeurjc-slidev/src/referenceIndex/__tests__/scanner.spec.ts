@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { findMarkdownFiles, findProjectRoot, listCodeRootDirectory, makeResolveImportPath, readThemeTaggedMarkdownFiles, resolveImportAbsPath, resolveImportTarget } from '../scanner'
+import { findMarkdownFiles, findProjectRoot, listCodeRootDirectory, listProjectComponentNames, makeResolveImportPath, readThemeTaggedMarkdownFiles, resolveImportAbsPath, resolveImportTarget } from '../scanner'
 
 let dir: string
 
@@ -120,5 +120,20 @@ describe('findProjectRoot', () => {
     const mdPath = join(root, 'nested', 'slides.md')
     writeFileSync(mdPath, '---\ntheme: codeurjc-slidev-theme\n---')
     expect(findProjectRoot(mdPath)).toBe(root)
+  })
+})
+
+describe('listProjectComponentNames', () => {
+  it('lists components/ recursively, as written and in kebab-case', () => {
+    const root = makeFixture()
+    mkdirSync(join(root, 'components', 'charts'), { recursive: true })
+    writeFileSync(join(root, 'components', 'MyStepper.vue'), '<template />')
+    writeFileSync(join(root, 'components', 'charts', 'BarChart.vue'), '<template />')
+    writeFileSync(join(root, 'components', 'notes.txt'), '')
+    expect([...listProjectComponentNames(root)].sort()).toEqual(['BarChart', 'MyStepper', 'bar-chart', 'my-stepper'])
+  })
+
+  it('is empty without a components/ directory', () => {
+    expect(listProjectComponentNames(makeFixture()).size).toBe(0)
   })
 })

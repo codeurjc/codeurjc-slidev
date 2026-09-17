@@ -107,3 +107,31 @@ export function findProjectRoot(mdFilePath: string, codeRoot: string = DEFAULT_C
     dir = parent
   }
 }
+
+const COMPONENT_FILE_RE = /\.(?:vue|md|tsx?|jsx?)$/
+
+/** The component names a Slidev project registers from its `components/` directory (recursively), as written and in kebab-case. */
+export function listProjectComponentNames(projectRoot: string): Set<string> {
+  const names = new Set<string>()
+  const walk = (dir: string) => {
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    }
+    catch {
+      return
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory() && !IGNORED_DIRS.has(entry.name)) {
+        walk(join(dir, entry.name))
+      }
+      else if (entry.isFile() && COMPONENT_FILE_RE.test(entry.name)) {
+        const name = entry.name.replace(COMPONENT_FILE_RE, '')
+        names.add(name)
+        names.add(name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/([A-Z])([A-Z][a-z])/g, '$1-$2').toLowerCase())
+      }
+    }
+  }
+  walk(join(projectRoot, 'components'))
+  return names
+}

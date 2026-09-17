@@ -10,6 +10,8 @@ import { isAnchorDeclarationLine, isSourceDirectiveLine, parseSnippetImportLine 
 
 export interface FencedBlock {
   lang: string
+  /** Everything after the opening fence's backticks/tildes, trimmed: language, `[title]`, `{ranges}`, `{options}`. */
+  info: string
   /** 0-based document line the opening fence (```) is on. */
   fenceStartLine: number
   /** 0-based document line the closing fence (```) is on. */
@@ -19,7 +21,7 @@ export interface FencedBlock {
   code: string
 }
 
-const FENCE_OPEN_RE = /^\s*(`{3,}|~{3,})\s*([^\s{[]*)/
+const FENCE_OPEN_RE = /^\s*(`{3,}|~{3,})\s*([^\s{[]*)(.*)$/
 
 /** Finds every top-level fenced code block in `text` (manual ``` fences, not `<<<` imports). */
 export function findFencedBlocks(text: string): FencedBlock[] {
@@ -42,6 +44,7 @@ export function findFencedBlocks(text: string): FencedBlock[] {
       break // unterminated fence: ignore
     blocks.push({
       lang,
+      info: `${lang}${open[3] ?? ''}`.trim(),
       fenceStartLine: i,
       fenceEndLine: j,
       codeStartLine: i + 1,
@@ -101,31 +104,115 @@ export function findImportBlocks(text: string): ImportBlock[] {
   return blocks
 }
 
-const SLIDE_SEPARATOR_RE = /^---\s*$/
+export interface SlideSpan {
+  /** 1-based slide number within this file. */
+  no: number
+  /** 0-based line the slide starts on (its `---` separator when it has frontmatter). */
+  startLine: number
+  /** 0-based line its content starts on, after any frontmatter. */
+  contentStartLine: number
+  /** 0-based line the slide ends before (exclusive). */
+  endLine: number
+  /** The slide's raw frontmatter (the headmatter for the first slide), without its `---` lines. */
+  frontmatter: string
+}
+
+function advanceHtmlCommentState(line: string, inHtmlComment: boolean): boolean {
+  let cursor = 0
+  while (cursor < line.length) {
+    if (inHtmlComment) {
+      const end = line.indexOf('-->', cursor)
+      if (end < 0)
+        return true
+      inHtmlComment = false
+      cursor = end + 3
+    }
+    else {
+      const start = line.indexOf('<!--', cursor)
+      if (start < 0)
+        return false
+      const end = line.indexOf('-->', start + 4)
+      if (end < 0)
+        return true
+      cursor = end + 3
+    }
+  }
+  return inHtmlComment
+}
 
 /**
- * 1-based ordinal of the slide containing `docLine`, counting standalone
- * `---` separators (the frontmatter's own opening/closing pair is not a
- * separator -- only the first pair of `---` lines at the very start of the
- * document is treated as frontmatter).
+ * Splits a deck into slides exactly as `@slidev/parser` does: a line starting
+ * with `---` ends a slide, and when the next line isn't blank (and the
+ * separator isn't `----`), the lines up to the next `---` are that slide's
+ * frontmatter. Separators inside code fences and HTML comments don't count.
  */
-export function computeSlideNumber(text: string, docLine: number): number {
-  const lines = text.split('\n')
-  let slide = 1
-  let sawFrontmatterOpen = false
-  let sawFrontmatterClose = false
-  for (let i = 0; i < docLine && i < lines.length; i++) {
-    if (!SLIDE_SEPARATOR_RE.test(lines[i]))
-      continue
-    if (!sawFrontmatterOpen) {
-      sawFrontmatterOpen = true
-      continue
-    }
-    if (!sawFrontmatterClose) {
-      sawFrontmatterClose = true
-      continue
-    }
-    slide++
+export function splitSlides(text: string): SlideSpan[] {
+  const lines = text.split(/\r?\n/)
+  const slides: SlideSpan[] = []
+  let start = 0
+  let contentStart = 0
+  let inHtmlComment = false
+
+  function slice(end: number): void {
+    if (start === end)
+      return
+    const hasFrontmatter = contentStart > start && lines[start]?.startsWith('---')
+    slides.push({
+      no: slides.length + 1,
+      startLine: start,
+      contentStartLine: Math.min(contentStart, end),
+      endLine: end,
+      frontmatter: hasFrontmatter ? lines.slice(start + 1, Math.max(start + 1, contentStart - 1)).join('\n') : '',
+    })
+    start = end + 1
+    contentStart = end + 1
   }
-  return slide
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i]
+    const line = rawLine.trimEnd()
+    if (inHtmlComment) {
+      inHtmlComment = advanceHtmlCommentState(rawLine, true)
+      continue
+    }
+    if (line.startsWith('---')) {
+      slice(i)
+      const next = lines[i + 1]
+      if (line[3] !== '-' && next?.trim()) {
+        start = i
+        for (i += 1; i < lines.length; i++) {
+          if (lines[i].trimEnd() === '---')
+            break
+        }
+        contentStart = i + 1
+      }
+    }
+    else if (line.trimStart().startsWith('```')) {
+      const level = /^\s*`+/.exec(line)![0]
+      let j = i + 1
+      for (; j < lines.length; j++) {
+        if (lines[j].startsWith(level))
+          break
+      }
+      if (j !== lines.length)
+        i = j
+    }
+    else {
+      inHtmlComment = advanceHtmlCommentState(rawLine, false)
+    }
+  }
+  if (start <= lines.length - 1)
+    slice(lines.length)
+  return slides
+}
+
+/** The slide containing `docLine`, or the last slide before it. */
+export function slideAt(slides: SlideSpan[], docLine: number): SlideSpan | undefined {
+  return slides.find(s => docLine >= s.startLine && docLine < s.endLine)
+    ?? [...slides].reverse().find(s => s.startLine <= docLine)
+}
+
+/** 1-based ordinal of the slide containing `docLine`, following Slidev's own slide split (see `splitSlides`). */
+export function computeSlideNumber(text: string, docLine: number): number {
+  return slideAt(splitSlides(text), docLine)?.no ?? 1
 }

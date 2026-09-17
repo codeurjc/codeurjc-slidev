@@ -53,4 +53,43 @@ describe('computeCodeLensesForDocument', () => {
 
     expect(lenses[0].line).toBe(3) // shifted down by the inserted leading line
   })
+
+  describe('click step labels', () => {
+    const slideText = [
+      '---',
+      'theme: codeurjc-slidev-theme',
+      '---',
+      '',
+      '# One',
+      '',
+      '---',
+      '',
+      '<<< @/code/Foo.java java',
+      '[!mark:"this.alumnos = alumnos"{3}] stepped',
+      '[!mark:"GestorNotas(DBAlumno"{5}] later',
+      '',
+      '---',
+      'layout: default',
+      '---',
+      '',
+      '<<< @/code/Foo.java java',
+      '[!mark:"this.alumnos = alumnos"] plain',
+    ].join('\n')
+    const index = buildReferenceIndex({ 'slides.md': slideText }, resolvePath)
+    const lensAt = (line: number, options = {}) => computeCodeLensesForDocument(index, '/repo/code/Foo.java', TARGET_TEXT, () => slideText, options).find(l => l.line === line)!
+
+    it('adds the step and slide total to a stepped reference, and keeps a plain one plain', () => {
+      expect(lensAt(2).title).toBe('📽 2 references — Slide 2 ▸3 of 5, Slide 3')
+      expect(lensAt(2).references[0]).toMatchObject({ click: 3, total: 5 })
+    })
+
+    it('leaves the total out when the setting is off', () => {
+      expect(lensAt(2, { showTotal: false }).title).toBe('📽 2 references — Slide 2 ▸3, Slide 3')
+    })
+
+    it('uses the resolver to count the slide like the theme does (an anchor matching nothing adds no click)', () => {
+      const lens = lensAt(2, { resolveImportText: () => TARGET_TEXT.replace('GestorNotas(DBAlumno', 'Other(') })
+      expect(lens.title).toBe('📽 2 references — Slide 2 ▸3 of 3, Slide 3')
+    })
+  })
 })
