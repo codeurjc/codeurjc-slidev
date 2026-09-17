@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AUTOFIT_MAX_PT } from '../packages/codeurjc-slidev-theme/composables/useAutoFitText'
+import { AUTOFIT_MAX_PT, TITLE_MAX_PT, TITLE_MIN_PT } from '../packages/codeurjc-slidev-theme/composables/useAutoFitText'
 import { expect, test } from './fixtures'
 
 // 1pt = 4/3px at 96dpi (the ratio getComputedStyle reports fonts in).
@@ -22,6 +22,9 @@ let originalSlides: string
 //   4 = "Autofit floor"   — overflows even at 9pt (12px), should stop at the floor and remain visible
 //   5 = "Autofit vclick"  — v-click reveal drives live shrink/grow across steps
 //   6 = "Autofit wraps"   — a long unbroken token should wrap rather than shrink the font
+//   7 = long title, no subtitle   — the title shrinks to stay on one line
+//   8 = long title with a subtitle — the same
+//   9 = short title               — stays at the 36pt ceiling
 const FIXTURE_SLIDES = `
 ---
 layout: default
@@ -68,6 +71,31 @@ layout: default
 # Autofit wraps
 
 Averyveryveryveryverylongunbrokentokenwithoutanyspacesatallthatmustwraptothenextlineinsidethecontentboxratherthanoverflowingitshorizontally and then a few trailing regular words to keep the paragraph going a little further.
+
+---
+layout: default
+---
+
+# Positioning content and images per slide in a title that is long
+
+- Body
+
+---
+layout: default
+---
+
+# Positioning content and images per slide in a title that is long
+## With a subtitle
+
+- Body
+
+---
+layout: default
+---
+
+# Short title
+
+- Body
 `
 
 // Slidev keeps hidden clones of every slide's content in the DOM (e.g. for
@@ -206,5 +234,36 @@ test.describe('Content text auto-fit', () => {
     })()
 
     expect(floorVars).toEqual(fitsVars)
+  })
+
+  async function titleFit(page: Page, no: number): Promise<{ fontPx: number, lines: number }> {
+    await page.goto(`/${no}`)
+    const title = page.locator('.slidev-layout.default:visible h1:first-child')
+    await title.waitFor()
+    await page.waitForTimeout(500)
+    return title.evaluate((el) => {
+      const style = getComputedStyle(el)
+      return { fontPx: Number.parseFloat(style.fontSize), lines: Math.round((el as HTMLElement).offsetHeight / Number.parseFloat(style.lineHeight)) }
+    })
+  }
+
+  test('a long title without a subtitle shrinks to stay on one line', async ({ page }) => {
+    const { fontPx, lines } = await titleFit(page, 7)
+    expect(lines).toBe(1)
+    expect(fontPx).toBeLessThan(TITLE_MAX_PT * 4 / 3)
+    expect(fontPx).toBeGreaterThanOrEqual(TITLE_MIN_PT * 4 / 3 - 0.5)
+  })
+
+  test('a long title with a subtitle shrinks the same way', async ({ page }) => {
+    const withSubtitle = await titleFit(page, 8)
+    const withoutSubtitle = await titleFit(page, 7)
+    expect(withSubtitle.lines).toBe(1)
+    expect(withSubtitle.fontPx).toBeCloseTo(withoutSubtitle.fontPx, 1)
+  })
+
+  test('a short title keeps the full title size', async ({ page }) => {
+    const { fontPx, lines } = await titleFit(page, 9)
+    expect(lines).toBe(1)
+    expect(fontPx).toBeCloseTo(TITLE_MAX_PT * 4 / 3, 1)
   })
 })

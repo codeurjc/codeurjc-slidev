@@ -252,22 +252,14 @@ function contentImageSrcs(): (string | null)[] {
 useAutoFitText(contentEl, contentInnerEl, () => effectiveContentRect()?.h ?? editor.positions.content?.h ?? 400)
 
 // --- Title shrink-to-fit-one-line ---------------------------------------
-// The title (h1:first-child) never wraps to a second line when the slide
-// also has a subtitle (rendered as h1:first-child + h2, see slide title
-// carry-over in useSlideTitleCarryover.ts) -- instead its font-size is
-// shrunk, the same way content shrinks to fit its box (useAutoFitText
-// above), just detecting a line-wrap rather than a height overflow. With
-// no subtitle, wrapping to a second line is left alone (title's box has
-// room to grow), so this only ever kicks in when a subtitle is present.
+// The title (h1:first-child) never wraps to a second line, with or without a
+// subtitle: its font-size shrinks instead, the same way content shrinks to fit
+// its box (useAutoFitText above), just detecting a line-wrap rather than a
+// height overflow. A title too long even at TITLE_MIN_PT wraps at that size.
 function fitTitle() {
   const title = contentInnerEl.value?.querySelector(':scope > h1:first-child') as HTMLElement | null
   if (!title)
     return
-  const hasSubtitle = title.nextElementSibling?.tagName === 'H2'
-  if (!hasSubtitle) {
-    title.style.removeProperty('--title-font-size')
-    return
-  }
   function wrapsAt(size: number): boolean {
     title!.style.setProperty('--title-font-size', `${size}pt`)
     const lineHeightPx = Number.parseFloat(getComputedStyle(title!).lineHeight)
