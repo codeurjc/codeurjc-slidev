@@ -74,7 +74,8 @@ async function init() {
     targetDir = projectName.trim()
   }
   const packageName = await getValidPackageName(targetDir)
-  const root = path.join(cwd, targetDir)
+  // resolve, not join: an absolute target (`/tmp/deck`) must not land under cwd.
+  const root = path.resolve(cwd, targetDir)
 
   if (!fs.existsSync(root)) {
     fs.mkdirSync(root, { recursive: true })

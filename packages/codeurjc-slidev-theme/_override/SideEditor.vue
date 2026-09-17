@@ -57,8 +57,17 @@ const elementItems = computed(() => {
     .sort((a, b) => Number(a.slice(imagePrefix.length)) - Number(b.slice(imagePrefix.length)))
   for (const key of imageKeys)
     items.push({ key, label: `Image ${Number(key.slice(imagePrefix.length)) + 1} (this slide)`, color: GEOMETRY_IMAGE_COLOR })
+  const elementPrefix = `${geometryKeyPrefix(no)}element:`
+  const elementKeys = Object.keys(editor.positions)
+    .filter(key => key.startsWith(elementPrefix))
+    .sort((a, b) => Number(a.slice(elementPrefix.length)) - Number(b.slice(elementPrefix.length)))
+  for (const key of elementKeys)
+    items.push({ key, label: `${editor.elementLabels[key] ?? `Element ${Number(key.slice(elementPrefix.length)) + 1}`} (this slide)`, color: GEOMETRY_IMAGE_COLOR })
   return items
 })
+
+/** What on the current slide can't be positioned until it gets an id (published by the layout). */
+const unkeyedHint = computed(() => editor.unkeyedElements[currentSlideNo.value] ?? '')
 
 const dimRatio = ref<number | null>(null)
 
@@ -361,6 +370,9 @@ throttledWatch(
             </button>
           </div>
         </div>
+        <div v-if="unkeyedHint" class="lep-hint" data-testid="unkeyed-hint">
+          {{ unkeyedHint }}
+        </div>
         <div class="lep-actions" style="margin-bottom: 8px">
           <button
             type="button"
@@ -478,6 +490,12 @@ throttledWatch(
 
 .lep-el-label {
   flex: 1;
+}
+
+.lep-hint {
+  margin: 4px 0 8px;
+  font-size: 11px;
+  opacity: 0.7;
 }
 
 .lep-lock-btn {

@@ -38,7 +38,7 @@ Slidev auto-loads a theme package's `vite.config.ts`, `layouts/`, `setup/`, and 
 
 ## Slide geometry
 
-A `default`-layout slide can position its own content box and any number of content images through frontmatter, without forking the layout. Paste presets write the same frontmatter. Parsing and validation live in `composables/useSlideGeometry.ts`; rendering and editor wiring live in `layouts/default.vue`.
+A `default`-layout slide can position its own content box, any number of content images, and code blocks, mermaid diagrams and tables through frontmatter, without forking the layout. Paste presets write the same frontmatter. Parsing and validation live in `composables/useSlideGeometry.ts`; rendering and editor wiring live in `layouts/default.vue`.
 
 ```yaml
 ---
@@ -57,10 +57,34 @@ geometry:
   - Images without an entry stay in normal flow; entries that match no image are ignored (an unresolvable `src` warns).
   - An invalid entry (console warning) leaves its image in flow without shifting later entries.
   - There is no layout-level image element any more: an image is only taken out of flow by an entry. Existing `layout-<ts>.vue` forks and consumer `layouts/default.vue` overrides are full copies of an older layout, so they keep their own extraction.
-- **Editor.** In the Layout tab, frontmatter-positioned elements appear as "Content (this slide)" and "Image N (this slide)".
-  - Their editor keys are `geometry:<slideNo>:content` and `geometry:<slideNo>:image:<n>` (`n` = the entry's list position), scoped by slide number because the editor state is shared by every mounted slide. Images default to aspect-locked. An image overlay's tag shows its file name when the entry has a `src`.
+- **`elements`** entries position code blocks, mermaid diagrams, tables and images by a stable key, never by position. See "Keyed elements" below.
+- **Editor.** In the Layout tab, frontmatter-positioned elements appear as "Content (this slide)", "Image N (this slide)" and, for `elements` entries, "Code <file> (this slide)", "Element <id> (this slide)" or "<image file> (this slide)".
+  - Their editor keys are `geometry:<slideNo>:content`, `geometry:<slideNo>:image:<n>` and `geometry:<slideNo>:element:<n>` (`n` = the entry's list position), scoped by slide number because the editor state is shared by every mounted slide. Images default to aspect-locked. An image overlay's tag shows its file name when the entry has a `src`.
   - Drags, resizes, numeric inputs and undo are written back to that slide's frontmatter once they settle, never mid-drag. The write goes through Slidev's slide `update({ frontmatter })`, into whichever markdown file the slide came from.
   - They never reach a layout file: "Save" / "Save as new layout" (and the save-layout middleware) only persist the four fixed layout elements.
+
+### Keyed elements
+
+```yaml
+---
+geometry:
+  elements:
+    - {code: '@/code/ejem1/src/main/java/es/codeurjc/test/ejem/Calculadora.java', x: 31, y: 150, w: 440, h: 220}
+    - {code: Test.java, x: 510, y: 150, w: 440, h: 220} # a fence's [title]
+    - {id: flow, x: 510, y: 390, w: 440, h: 140} # ```mermaid {id: 'flow'}
+    - {id: prices, x: 31, y: 390, w: 300, h: 120, fit: none} # <div id="prices"> around a table
+    - {image: /images/a.png, x: 620, y: 110, w: 320, h: 180}
+---
+```
+
+- **Keys.** Each entry has exactly one of `code`, `id` or `image`; anything else (or a bad `fit`/rect) is `null` with a warning, keeping later entries' indexes.
+  - `code:` matches a `<<<` import by its path as written (`@/…`), else a fence's `[title]` on a block that isn't an import. The pre transformer stamps imports with `{'data-import-path': …}`, which `CodeBlockWrapper`/`wrapCodeBlock` bind onto `.slidev-code-wrapper` (titles are already `data-title`).
+  - `id:` matches a code fence or mermaid block given `{id: 'x'}` (quoted: unquoted, Vue reads it as a variable and no id lands), or a `<div id>` whose only child is a table or a `<<<` import. Any other element with that id warns that it's the wrong kind.
+  - `image:` takes a src reference (no positional numbers) and goes through the image path; it wins over a `geometry.images` entry for the same picture, which warns.
+  - No match, several matches (e.g. two fences titled `dup.ts`) or an element already claimed by an earlier entry: a warning, and the element stays in flow. There is no positional fallback.
+- **Resolution** is pure (`resolveGeometryElements` over a DOM-free candidate summary the layout collects: `.slidev-code-wrapper`, `.mermaid`, `table`), so every rule is unit-tested.
+- **Fit.** An element gets `.geometry-element` (absolute, `width: max-content`, `transform-origin: top left`), measured at natural size. `fit: contain` (default) scales it uniformly and centres it in the box: code and tables never above 1, while a mermaid diagram's SVG is sized to the box. `fit: none` places it at `(x, y)` unscaled. Callouts measure with `getBoundingClientRect`, so highlights on a scaled block still line up, and callouts are recomputed after every geometry update.
+- **Editor.** Overlays exist only for keyed entries. Images and diagrams start aspect-locked (a diagram once its `id:` resolves), code and tables don't; a layout mounting restores locks only for its four own elements, so it can't reset another slide's per-slide keys. Drags write back with `withElementRect`, keeping key and `fit`. The layout publishes the slide's unkeyed code blocks, diagrams and tables (`editor.unkeyedElements`), shown in the Layout tab as "2 code blocks and 1 mermaid diagram need an id to be positioned". The editor never writes ids into markdown.
 
 ### Paste presets
 
@@ -311,9 +335,10 @@ Slide 4: empty title — no title here, and none on slides after until a new one
   - **Groups.** After code annotations, a slide's remaining drawing (images, connectors, bordered/filled texts, decorations, plain texts) is grouped. Connectors join what lies within 0.5 cm along their length; other shapes only what they touch; plain text only what its centre lies on, or, in a group with arrows, a shape within 1 cm (a node's label beside its icon). Groups touching code or tables are dropped. Role-less shapes inside a group's box (e.g. a `draw:path` curve the classifier ignores) ride along as *extras*.
   - **Mermaid.** A *clear graph* becomes a `flowchart LR|TB` fence: labelled rectangles, no overlaps, nothing drawn inside a box, every edge between two boxes, all edges on one axis. A labelled arrow parked near a node becomes a callout `{text: <node label>}`, unless that text also appears elsewhere on the slide. The fence is placed at the body's run of empty spacer paragraphs nearest the drawing (`ClassifiedSlide.bodyGaps`).
   - **SVG.** Any other group is an SVG candidate when the ordinary conversion would lose part of it, judged by a trial run of `convertOverlay`. A flattened side label or an empty frame around a picture don't count, so fully converted screenshot callouts stay callouts.
-- `draft.ts`/`buildups.ts` — per-slide drafts. Images get `src`-keyed `geometry.images` entries and image callouts `src` anchors (`#N` for a picture shown twice): `slideCalloutsFor` names images by position, and `applyOverlay` rewrites those to src references once the image files are registered.
+- `draft.ts`/`buildups.ts`/`grid.ts` — per-slide drafts. Images get `src`-keyed `geometry.images` entries and image callouts `src` anchors (`#N` for a picture shown twice): `slideCalloutsFor` names images by position, and `applyOverlay` rewrites those to src references once the image files are registered.
   - The ordinary conversion of images, slide callouts, flattened text and losses is the pure `convertOverlay(excluded)`, run once with mermaid shapes excluded and, when SVG candidates exist, `DraftContext.canEmbedDiagrams` holds and the slide is visible, again without the candidates.
   - Runs of slides where each adds only convertible things (code callouts, trailing bullets, images), or where code highlights and their callouts come and go over the same code (a walk-through), merge into one slide with click steps (`{N}`, `<v-click at>`, `<img v-click>`). Slide k of the run is click k, and each highlight gets the range of slides it appears on: none on every slide, `{a}` through the last, `{-b}` from the first, `{a-b}` otherwise. Tema 1.2 ODP 112–114 becomes `{-0}`, `{1-1}`, `{2}`. Diagram shapes never count as convertible additions.
+  - **Side-by-side grids** (`grid.ts`). Code beside other code, the body text or an image becomes a UnoCSS grid in normal flow instead of positioned geometry: `<div class="grid grid-cols-[3fr_2fr] gap-6">` with one `<div class="min-w-0">` per column (blank lines around the markdown inside). Items are code blocks, a body that is still one block, and images with their ODP frame (`DraftImage.odpRect`); two are side by side when their frames overlap horizontally by at most 0.3 cm and share 30% of the shorter height. A connected group with code forms a grid; horizontally overlapping items stack in one column. Widths are rounded to 0.5 cm and reduced (`grid-cols-N` when equal). `layoutDraft` runs on the final draft, after merging, so build-ups need no grid logic and a revealed image keeps its `<img v-click>` in its column. `convert.ts` gives grid images no `geometry.images` entry, drops `geometry.content` when the body is a column, and writes image references in rendered order. The importer never writes `geometry.elements`. The corpus has 7 such slides (e.g. Tema 1.2 ODP 14/34/107, 2.2 ODP 44/108).
   - Same-title slides that look like a build-up but can't merge warn (console and import report): unconvertible additions (`text box`, `arrow`, …), `image removed` (screenshot swaps aren't converted), `list item removed`, or `highlight shown again after being removed` (the run stops there). Slides that remove content and add something unconvertible are just different slides, with no warning.
 - `office.ts`/`svg.ts`/`svgCrop.ts`/`comparison.ts` — LibreOffice ≥ 7.4 detection (up front, unless `office: false`) and one shared SVG export (isolated profile).
   - **Comparison deck.** The export is split per slide (by preserved `ooo:name` = ODP `draw:name`) into `comparison.md`: for each lossy slide an `image-right` info slide (never `default` layout, so carry-over is untouched) + `src: ./slides.md#<file index>`. The info slide shows the Slidev slide number (hidden slides uncounted); the `src:` index counts hidden slides.

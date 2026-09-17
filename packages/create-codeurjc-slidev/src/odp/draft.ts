@@ -4,6 +4,7 @@ import type { AnnotationResult, CodeMark } from './annotations'
 import type { ClassifiedSlide, CoverFields, SlideRole } from './classify'
 import type { CodeMatch, IndexedFile, RepoBase } from './code'
 import type { DiagramGroup, MermaidDiagram } from './diagrams'
+import type { DraftGrid } from './grid'
 import type { EmittedImage } from './imageCallouts'
 import type { OdpDeck, OdpShape, Paragraph, Rect } from './model'
 import { basename, extname } from 'node:path'
@@ -12,6 +13,7 @@ import { annotateCodes, renderAnchorMarks, renderInlineMarks } from './annotatio
 import { codeLinesOf, commentToken, importLineFor, inferLanguage, isWholeFile, languageForFilename, matchCode, normalizeCodeLine, sourceUrl } from './code'
 import { diagramGroups, isSvgCandidate, mermaidFor } from './diagrams'
 import { bodyRegionFor, contentGeometryFor, mapRect } from './geometry'
+import { layoutDraft, renderGrid } from './grid'
 import { slideCalloutsFor } from './imageCallouts'
 import { paragraphsToMarkdown, runsToMarkdown, tableToMarkdown } from './markdown'
 import { paragraphText, shapeText } from './model'
@@ -53,6 +55,8 @@ export interface DraftImage {
   key: string
   publicPath: string
   rect: GeometryRect
+  /** The picture's frame on the ODP slide (cm); absent for images that aren't a picture of the slide, like cropped diagrams. */
+  odpRect?: Rect
   step?: number
 }
 
@@ -338,7 +342,7 @@ function placeMermaid(draft: SlideDraft, mermaid: MermaidDiagram): void {
  */
 function applyOverlay(draft: SlideDraft, overlay: OverlayConversion, ctx: DraftContext): void {
   for (const image of overlay.images)
-    draft.images.push({ key: image.href, publicPath: publicImagePath(image.href, ctx)!, rect: image.rect })
+    draft.images.push({ key: image.href, publicPath: publicImagePath(image.href, ctx)!, rect: image.rect, odpRect: image.shape.rect })
   const srcs = draft.images.map(image => `/${image.publicPath}`)
   draft.callouts.push(...overlay.callouts.map(callout => callout.anchor.kind === 'image' && callout.anchor.ref.kind === 'position'
     ? { ...callout, anchor: { ...callout.anchor, ref: imageRefFor(srcs, callout.anchor.ref.index) } }
@@ -427,29 +431,47 @@ export function renderDraftBody(draft: SlideDraft, repoBase: RepoBase | undefine
   const losses: string[] = []
   let imports = 0
   let inlineCode = 0
-  if (draft.heading && draft.titleLines.length === 2)
-    parts.push(`### ${draft.heading}`)
-  for (const block of draft.blocks) {
-    if (block.kind === 'body') {
-      parts.push(renderBody(block))
-    }
-    else if (block.kind === 'diagram') {
-      parts.push(fence(block.mermaid.split('\n'), 'mermaid'))
-    }
-    else if (block.kind === 'code') {
+  const renderBlock = (block: DraftBlock): string => {
+    if (block.kind === 'body')
+      return renderBody(block)
+    if (block.kind === 'diagram')
+      return fence(block.mermaid.split('\n'), 'mermaid')
+    if (block.kind === 'code') {
       const rendered = renderCode(block.code, repoBase)
-      parts.push(rendered.markdown)
       losses.push(...rendered.losses)
       if (rendered.imported)
         imports++
       else
         inlineCode++
+      return rendered.markdown
     }
-    else {
-      parts.push(block.markdown)
-    }
+    return block.markdown
   }
-  for (const image of draft.images)
-    parts.push(image.step ? `<img v-click="${image.step}" src="/${image.publicPath}">` : `![](/${image.publicPath})`)
+  const renderImage = (image: DraftImage): string =>
+    image.step ? `<img v-click="${image.step}" src="/${image.publicPath}">` : `![](/${image.publicPath})`
+
+  if (draft.heading && draft.titleLines.length === 2)
+    parts.push(`### ${draft.heading}`)
+  const layout = layoutDraft(draft)
+  const renderedGrids = new Set<DraftGrid>()
+  for (const block of draft.blocks) {
+    const grid = layout.blockGrid.get(block)
+    if (!grid) {
+      parts.push(renderBlock(block))
+      continue
+    }
+    if (renderedGrids.has(grid))
+      continue
+    renderedGrids.add(grid)
+    const columns = grid.columns.map(column => column.items
+      .map(item => (item.kind === 'block' ? renderBlock(item.block) : renderImage(item.image)))
+      .filter(Boolean)
+      .join('\n\n'))
+    parts.push(renderGrid(grid, columns))
+  }
+  for (const image of draft.images) {
+    if (!layout.gridImages.has(image))
+      parts.push(renderImage(image))
+  }
   return { markdown: parts.filter(Boolean).join('\n\n'), losses: countLosses(losses), imports, inlineCode }
 }

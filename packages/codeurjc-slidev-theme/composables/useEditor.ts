@@ -99,6 +99,11 @@ const _sharedSelected = ref<string | null>(null)
 // _override/SideEditor.vue) so other entry points -- e.g. global-top.vue's
 // double-click-to-edit handler -- can switch to the Content tab themselves.
 const _sharedActiveTab = ref<'content' | 'note' | 'layout'>('content')
+// Published by layouts/default.vue for the side panel: labels of per-slide
+// `geometry.elements` editor keys, and, per slide number, what content can't
+// be positioned until it gets an id.
+const _sharedElementLabels = reactive<Record<string, string>>({})
+const _sharedUnkeyedElements = reactive<Record<number, string>>({})
 const _sharedHidden = reactive<Record<string, boolean>>({})
 const _sharedAspectLocked = reactive<Record<string, boolean>>({})
 const _sharedPositions = reactive<Record<string, Rect>>({})
@@ -534,6 +539,8 @@ export function useEditor() {
     editing,
     selected,
     activeTab,
+    elementLabels: _sharedElementLabels,
+    unkeyedElements: _sharedUnkeyedElements,
     positions,
     hidden,
     aspectLocked,

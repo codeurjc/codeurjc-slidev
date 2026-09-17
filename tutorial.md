@@ -151,6 +151,50 @@ geometry:
 
 ---
 
+# Positioning code, diagrams and tables
+##
+- `geometry.elements` places more than images: code blocks, mermaid diagrams and tables, each named by a stable key rather than its position
+```yaml
+geometry:
+  elements:
+    - {code: '@/code/ejem1/.../Calculadora.java', x: 31, y: 150, w: 440, h: 220}
+    - {code: Test.java, x: 510, y: 150, w: 440, h: 220}
+    - {id: flow, x: 510, y: 390, w: 440, h: 140}
+```
+- `code:` names a `<<<` import by its path as written, or a fence by its `[title]`; `id:` names a fence with `{id: 'flow'}` (quoted), or a `<div id>` wrapping a single table or import
+- Code and tables are scaled down to fit their box (never up), diagrams are scaled to fill it; `fit: none` keeps the natural size
+- A key matching nothing, or several elements, positions nothing and logs a console warning; the Layout tab lists the elements that still need an id
+
+---
+geometry:
+  elements:
+    - {code: "@/code/ejem1/src/main/java/es/codeurjc/test/ejem/Calculadora.java", x: 31, y: 150, w: 440, h: 220}
+    - {code: Test.java, x: 510, y: 150, w: 440, h: 220}
+    - {id: flow, x: 510, y: 390, w: 440, h: 140}
+---
+
+## Example
+
+<<< @/code/ejem1/src/main/java/es/codeurjc/test/ejem/Calculadora.java[3-12] java
+[!mark:"return op1 + op2;"@120,430] The method under test
+
+```java [Test.java]
+@Test
+public void testSuma() {
+  Calculadora calculadora = new Calculadora();
+  double res = calculadora.suma(1, 1);
+  assertEquals(2, res, 0);
+}
+```
+
+```mermaid {id: 'flow'}
+graph LR
+  Test["Calculadora1Test"] -->|calls suma| SUT["Calculadora"]
+  SUT -->|returns 2| Test
+```
+
+---
+
 # Slide callouts
 ##
 - Point a callout at anything on a slide -- a spot on an image, a line of content, or a bare point -- from the slide's own `callouts` frontmatter

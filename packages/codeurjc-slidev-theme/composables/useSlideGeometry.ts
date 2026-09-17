@@ -11,9 +11,14 @@
 //     content: { x: 31, y: 98, w: 560, h: 424 }
 //     images:
 //       - { src: /images/a.png, x: 620, y: 110, w: 320, h: 400 }
+//     elements:
+//       - { code: "@/code/A.java", x: 31, y: 98, w: 440, h: 400 }
+//       - { id: flow, x: 500, y: 98, w: 440, h: 400, fit: none }
 //
 // An image entry names its image by `src` (see useImageRefs.ts); an entry
 // without one positions the image at its own list position, as before.
+// `elements` entries name what they position by a stable key only (an image
+// src, a `<<<` import's path or a fence's title, or an id), never by position.
 //
 // Pure (no DOM, no Vue) so the grammar is unit-testable and writers other
 // than the layout editor (e.g. the ODP importer) can share the same types.
@@ -38,7 +43,21 @@ export interface ParsedSlideGeometry {
   images: (GeometryRect | null)[]
   /** Index-aligned with `images`: which image each entry positions (its `src`, else its own list position). */
   imageRefs: ImageRef[]
+  /** Index-aligned with the authored `geometry.elements` list: an invalid entry is `null`. */
+  elements: (ElementEntry | null)[]
   warnings: string[]
+}
+
+/** What a `geometry.elements` entry positions: an image by src, a code block by import path or fence title, or an element by id. */
+export type ElementKey = { kind: 'image', ref: ImageRef & { kind: 'src' } } | { kind: 'code', text: string } | { kind: 'id', name: string }
+
+/** `contain` scales the element down (mermaid: to) fit its box, centred; `none` keeps its natural size at the box's top-left. */
+export type ElementFit = 'contain' | 'none'
+
+export interface ElementEntry {
+  key: ElementKey
+  rect: GeometryRect
+  fit: ElementFit
 }
 
 export type GeometryTarget = { kind: 'content' } | { kind: 'image', index: number }
@@ -80,10 +99,10 @@ export function parseSlideGeometry(frontmatter: Record<string, unknown> | null |
   const warnings: string[] = []
   const raw = frontmatter?.[GEOMETRY_FRONTMATTER_KEY]
   if (raw == null)
-    return { content: null, images: [], imageRefs: [], warnings }
+    return { content: null, images: [], imageRefs: [], elements: [], warnings }
   if (!isRecord(raw)) {
-    warnings.push('geometry must be an object with optional content and images')
-    return { content: null, images: [], imageRefs: [], warnings }
+    warnings.push('geometry must be an object with optional content, images and elements')
+    return { content: null, images: [], imageRefs: [], elements: [], warnings }
   }
 
   const content = raw.content == null ? null : parseGeometryRect(raw.content, 'geometry.content', warnings)
@@ -111,7 +130,164 @@ export function parseSlideGeometry(frontmatter: Record<string, unknown> | null |
     }
   }
 
-  return { content, images, imageRefs, warnings }
+  let elements: (ElementEntry | null)[] = []
+  if (raw.elements != null) {
+    if (Array.isArray(raw.elements))
+      elements = raw.elements.map((entry, i) => parseElementEntry(entry, `geometry.elements[${i}]`, warnings))
+    else warnings.push('geometry.elements must be a list')
+  }
+
+  return { content, images, imageRefs, elements, warnings }
+}
+
+const ELEMENT_KEYS = ['image', 'code', 'id'] as const
+
+function parseElementEntry(entry: unknown, path: string, warnings: string[]): ElementEntry | null {
+  if (!isRecord(entry)) {
+    warnings.push(`${path} must be an object with one of image, code or id, and x, y, w and h`)
+    return null
+  }
+  const present = ELEMENT_KEYS.filter(k => entry[k] != null)
+  if (present.length !== 1) {
+    warnings.push(`${path} must have exactly one of image, code or id`)
+    return null
+  }
+  let key: ElementKey
+  const value = entry[present[0]]
+  if (present[0] === 'image') {
+    const ref = parseImageRef(value)
+    if (!ref || ref.kind !== 'src') {
+      warnings.push(`${path}.image must be an image src, optionally with #N (N >= 1)`)
+      return null
+    }
+    key = { kind: 'image', ref }
+  }
+  else {
+    if (typeof value !== 'string' || value.trim() === '') {
+      warnings.push(`${path}.${present[0]} must be a non-empty string`)
+      return null
+    }
+    key = present[0] === 'code' ? { kind: 'code', text: value } : { kind: 'id', name: value }
+  }
+  let fit: ElementFit = 'contain'
+  if (entry.fit != null) {
+    if (entry.fit !== 'contain' && entry.fit !== 'none') {
+      warnings.push(`${path}.fit must be "contain" or "none"`)
+      return null
+    }
+    fit = entry.fit
+  }
+  const rect = parseGeometryRect(entry, path, warnings)
+  return rect ? { key, rect, fit } : null
+}
+
+/** A code block, mermaid diagram or table in the rendered content, as `resolveGeometryElements` needs it (no DOM). */
+export interface ElementCandidate {
+  kind: 'code' | 'mermaid' | 'table'
+  /** The element's own `id` (a fence's `{id: '…'}`). */
+  id?: string
+  /** The `id` of a `<div>` whose only element child is this element. */
+  wrapperId?: string
+  /** A code block's `[title]` (`data-title`). */
+  title?: string
+  /** A `<<<` import's file path as written (`data-import-path`). */
+  importPath?: string
+}
+
+/** What a resolved `geometry.elements` entry positions. */
+export type ElementTarget = { kind: 'element', index: number } | { kind: 'image', index: number }
+
+function describeKey(key: ElementKey): string {
+  if (key.kind === 'image')
+    return `image ${formatImageRef(key.ref)}`
+  return key.kind === 'code' ? `code "${key.text}"` : `id "${key.name}"`
+}
+
+/**
+ * Resolves `geometry.elements` (and `geometry.images`) against a slide's
+ * content: `candidates` are its code blocks, mermaid diagrams and tables,
+ * `srcs` its images' authored srcs, `otherIds` the ids of any other element in
+ * the content (to tell a wrong-kind id from a missing one).
+ *
+ * - `code:` matches a `<<<` import by its path as written, else a fence (not an
+ *   import) by its title.
+ * - `id:` matches a code block or mermaid diagram with that id, or a `<div id>`
+ *   wrapping only a table or an import (which is what gets positioned).
+ * - No match, several matches, a wrong kind or a target claimed twice leave
+ *   the element in flow with a warning; an element image target wins over a
+ *   `geometry.images` entry for the same image.
+ */
+export function resolveGeometryElements(
+  geometry: ParsedSlideGeometry,
+  candidates: ElementCandidate[],
+  srcs: (string | null | undefined)[],
+  otherIds: ReadonlySet<string> = new Set(),
+): { targets: (ElementTarget | null)[], imageIndexes: number[], warnings: string[] } {
+  const warnings: string[] = []
+  const claimed = new Set<string>()
+  const targets = geometry.elements.map((entry, i): ElementTarget | null => {
+    if (!entry)
+      return null
+    const path = `geometry.elements[${i}] (${describeKey(entry.key)})`
+    let target: ElementTarget | null = null
+    if (entry.key.kind === 'image') {
+      const resolved = resolveImageRef(entry.key.ref, srcs)
+      if (resolved.warning)
+        warnings.push(`${path}: ${resolved.warning}`)
+      if (resolved.index >= 0)
+        target = { kind: 'image', index: resolved.index }
+    }
+    else {
+      const key = entry.key
+      let matches: number[]
+      if (key.kind === 'code') {
+        matches = candidates.flatMap((c, j) => (c.kind === 'code' && c.importPath === key.text ? [j] : []))
+        if (matches.length === 0)
+          matches = candidates.flatMap((c, j) => (c.kind === 'code' && !c.importPath && c.title === key.text ? [j] : []))
+      }
+      else {
+        matches = candidates.flatMap((c, j) => {
+          const own = (c.kind === 'code' || c.kind === 'mermaid') && c.id === key.name
+          const wrapped = c.wrapperId === key.name && (c.kind === 'table' || (c.kind === 'code' && !!c.importPath))
+          return own || wrapped ? [j] : []
+        })
+      }
+      if (matches.length === 1) {
+        target = { kind: 'element', index: matches[0] }
+      }
+      else if (matches.length > 1) {
+        warnings.push(`${path} matches ${matches.length} elements; give the one to position an id`)
+      }
+      else if (key.kind === 'id' && otherIds.has(key.name)) {
+        warnings.push(`${path} is not a code block, mermaid diagram, or a <div id> wrapping only a table or <<< import`)
+      }
+      else {
+        warnings.push(key.kind === 'id'
+          ? `${path} matches nothing; add {id: '${key.name}'} to a code or mermaid fence (with quotes), or wrap a table or <<< import in <div id="${key.name}">`
+          : `${path} matches no <<< import path or code block title; add an id to position it`)
+      }
+    }
+    if (!target)
+      return null
+    const claim = `${target.kind}:${target.index}`
+    if (claimed.has(claim)) {
+      warnings.push(`${path} targets an element already positioned by another entry`)
+      return null
+    }
+    claimed.add(claim)
+    return target
+  })
+
+  const images = resolveGeometryImages(geometry, srcs)
+  warnings.push(...images.warnings)
+  const imageIndexes = images.indexes.map((index, i) => {
+    if (index >= 0 && claimed.has(`image:${index}`)) {
+      warnings.push(`geometry.images[${i}]: that image is positioned by geometry.elements, which wins`)
+      return -1
+    }
+    return index
+  })
+  return { targets, imageIndexes, warnings }
 }
 
 /** Whether the slide positions its images through frontmatter (which disables the layout's single tracked-image extraction). */
@@ -216,6 +392,16 @@ export function withPositionedImage(rawGeometry: unknown, content: GeometryRect,
   return next
 }
 
+/** A copy of an authored `geometry` value with one `elements` entry's rect replaced, keeping its key, `fit` and every other entry as written. */
+export function withElementRect(rawGeometry: unknown, index: number, rect: GeometryRect): Record<string, unknown> {
+  const next: Record<string, unknown> = isRecord(rawGeometry) ? { ...rawGeometry } : {}
+  const elements = Array.isArray(next.elements) ? [...next.elements] : []
+  const current = elements[index]
+  elements[index] = isRecord(current) ? { ...current, ...roundRect(rect) } : roundRect(rect)
+  next.elements = elements
+  return next
+}
+
 export function sameRect(a: GeometryRect, b: GeometryRect): boolean {
   return a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h
 }
@@ -245,6 +431,10 @@ export function geometryContentKey(slideNo: number): string {
 
 export function geometryImageKey(slideNo: number, index: number): string {
   return `${geometryKeyPrefix(slideNo)}image:${index}`
+}
+
+export function geometryElementKey(slideNo: number, index: number): string {
+  return `${geometryKeyPrefix(slideNo)}element:${index}`
 }
 
 /** Whether an editor position key belongs to per-slide frontmatter geometry (never to a layout file). */

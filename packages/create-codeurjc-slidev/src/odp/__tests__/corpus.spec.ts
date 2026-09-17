@@ -184,6 +184,25 @@ describe('oDP corpus', () => {
     }, 600_000)
   })
 
+  it.skipIf(!deckPath('Tema 1.2 - Pruebas unitarias') || !deckPath('2.2 Código de calidad'))('side-by-side code becomes grid columns', async () => {
+    const slideOf = (result: Awaited<ReturnType<typeof convert>>, odp: number) => result.slideSources[result.reports.find(r => r.odpNumbers.includes(odp))!.fileIndex - 1]
+    const tema12 = await convert('Tema 1.2 - Pruebas unitarias')
+    // A test class beside its console output, and two versions of a method side by side.
+    expect(slideOf(tema12, 34)).toMatch(/<div class="grid grid-cols-\[\d+fr_\d+fr\] gap-6">\n<div class="min-w-0">\n\n```java\npackage es\.codeurjc\.test\.ejem;[\s\S]*<\/div>\n<div class="min-w-0">\n\n```text\nBefore all tests/)
+    expect(slideOf(tema12, 107)).toContain('<div class="grid grid-cols-2 gap-6">')
+    // A picture beside an imported snippet takes a column, not a geometry entry.
+    expect(slideOf(tema12, 14)).toMatch(/<div class="min-w-0">\n\n!\[\]\(\/images\/[^)]+\)\n\n<\/div>\n<div class="min-w-0">\n\n<<< @\/code\/ejem0\//)
+    expect(slideOf(tema12, 14)).not.toContain('geometry')
+
+    const calidad = await convert('2.2 Código de calidad')
+    expect(slideOf(calidad, 44)).toMatch(/```java\nclass Motor \{[\s\S]*<\/div>\n<div class="min-w-0">\n\n!\[\]/)
+    expect(slideOf(calidad, 44)).not.toContain('geometry')
+    // The shared interface above stays outside the grid; the two implementations are its columns.
+    const cars = slideOf(calidad, 108)
+    expect(cars.indexOf('public interface Car')).toBeLessThan(cars.indexOf('<div class="grid'))
+    expect(cars).toMatch(/<div class="min-w-0">\n\n```java\npublic class MotorCar[\s\S]*<div class="min-w-0">\n\n```java\npublic class ElectricCar/)
+  })
+
   it.skipIf(!deckPath('Tema 1.2 - Pruebas unitarias') || !deckPath('Integración Continua con GitHub Actions'))('import reports record how code matched, the notices and the losses', async () => {
     const report = async (name: string) => importReportMarkdown(await convert(name), { odpPath: deckPath(name)!, importedAt: new Date(2026, 8, 16, 20, 45, 12), version: 'test' })
     const tema12 = await report('Tema 1.2 - Pruebas unitarias')

@@ -1,3 +1,4 @@
+import type { ElementCandidate } from '../useSlideGeometry'
 import { describe, expect, it } from 'vitest'
 import {
   geometryContentKey,
@@ -7,16 +8,18 @@ import {
   hasGeometryImages,
   isGeometryKey,
   parseSlideGeometry,
+  resolveGeometryElements,
   resolveGeometryImages,
   serializeSlideGeometry,
+  withElementRect,
   withGeometryRect,
   withPositionedImage,
 } from '../useSlideGeometry'
 
 describe('parseSlideGeometry', () => {
   it('returns an empty geometry when the frontmatter has none', () => {
-    expect(parseSlideGeometry({ layout: 'default' })).toEqual({ content: null, images: [], imageRefs: [], warnings: [] })
-    expect(parseSlideGeometry(undefined)).toEqual({ content: null, images: [], imageRefs: [], warnings: [] })
+    expect(parseSlideGeometry({ layout: 'default' })).toEqual({ content: null, images: [], imageRefs: [], elements: [], warnings: [] })
+    expect(parseSlideGeometry(undefined)).toEqual({ content: null, images: [], imageRefs: [], elements: [], warnings: [] })
   })
 
   it('reads content only', () => {
@@ -67,7 +70,7 @@ describe('parseSlideGeometry', () => {
   })
 
   it('warns when geometry itself is not an object', () => {
-    expect(parseSlideGeometry({ geometry: 'wide' }).warnings).toEqual(['geometry must be an object with optional content and images'])
+    expect(parseSlideGeometry({ geometry: 'wide' }).warnings).toEqual(['geometry must be an object with optional content, images and elements'])
   })
 
   it('ignores extra unknown keys', () => {
@@ -197,5 +200,103 @@ describe('withPositionedImage', () => {
     const raw = { content: { x: 0, y: 80, w: 452, h: 400 }, images: [{ src: '/images/paste-2.png', x: 476, y: 80, w: 400, h: 400 }] }
     const next = withPositionedImage(raw, content, pasted, rect, ['/images/paste-2.png'])
     expect(next).toEqual({ content, images: [{ src: '/images/paste-2.png', ...rect }] })
+  })
+})
+
+describe('geometry.elements', () => {
+  const rect = { x: 10, y: 20, w: 300, h: 200 }
+
+  it('parses entries with one key each and a fit', () => {
+    const g = parseSlideGeometry({ geometry: { elements: [
+      { code: '@/code/A.java', ...rect },
+      { id: 'flow', ...rect, fit: 'none' },
+      { image: '/images/a.png#2', ...rect },
+    ] } })
+    expect(g.elements).toEqual([
+      { key: { kind: 'code', text: '@/code/A.java' }, rect, fit: 'contain' },
+      { key: { kind: 'id', name: 'flow' }, rect, fit: 'none' },
+      { key: { kind: 'image', ref: { kind: 'src', src: '/images/a.png', occurrence: 2 } }, rect, fit: 'contain' },
+    ])
+    expect(g.warnings).toEqual([])
+  })
+
+  it.each([
+    [{ ...rect }, 'geometry.elements[0] must have exactly one of image, code or id'],
+    [{ code: 'a', id: 'b', ...rect }, 'geometry.elements[0] must have exactly one of image, code or id'],
+    [{ image: 1, ...rect }, 'geometry.elements[0].image must be an image src, optionally with #N (N >= 1)'],
+    [{ id: '', ...rect }, 'geometry.elements[0].id must be a non-empty string'],
+    [{ code: 'a', ...rect, fit: 'cover' }, 'geometry.elements[0].fit must be "contain" or "none"'],
+    [{ code: 'a', x: 1, y: 2, w: 0, h: 3 }, 'geometry.elements[0].w must be greater than 0'],
+  ])('rejects %j', (entry, warning) => {
+    const g = parseSlideGeometry({ geometry: { elements: [entry, { code: 'ok', ...rect }] } })
+    expect(g.elements[0]).toBeNull()
+    expect(g.elements[1]).not.toBeNull()
+    expect(g.warnings).toEqual([warning])
+  })
+
+  describe('resolveGeometryElements', () => {
+    const geometry = (...elements: object[]) => parseSlideGeometry({ geometry: { elements: elements.map(e => ({ ...e, ...rect })) } })
+    const candidates: ElementCandidate[] = [
+      { kind: 'code', importPath: '@/code/A.java', title: 'A.java' },
+      { kind: 'code', title: 'app.ts' },
+      { kind: 'code', id: 'main', title: 'B.java', importPath: '@/code/B.java' },
+      { kind: 'mermaid', id: 'flow' },
+      { kind: 'table', wrapperId: 'prices' },
+      { kind: 'code', wrapperId: 'wrapped', importPath: '@/code/C.java' },
+      { kind: 'code', title: 'dup' },
+      { kind: 'code', title: 'dup' },
+      { kind: 'mermaid' },
+    ]
+
+    it('matches imports by path, fences by title, and ids on fences, diagrams and wrappers', () => {
+      const { targets, warnings } = resolveGeometryElements(
+        geometry({ code: '@/code/A.java' }, { code: 'app.ts' }, { id: 'main' }, { id: 'flow' }, { id: 'prices' }, { id: 'wrapped' }),
+        candidates,
+        [],
+      )
+      expect(targets).toEqual([0, 1, 2, 3, 4, 5].map(index => ({ kind: 'element', index })))
+      expect(warnings).toEqual([])
+    })
+
+    it('does not match an import by its title', () => {
+      const { targets, warnings } = resolveGeometryElements(geometry({ code: 'A.java' }), candidates, [])
+      expect(targets).toEqual([null])
+      expect(warnings[0]).toContain('add an id')
+    })
+
+    it('warns about repeated titles, wrong-kind ids and ids that match nothing', () => {
+      const { targets, warnings } = resolveGeometryElements(geometry({ code: 'dup' }, { id: 'notes' }, { id: 'nowhere' }), candidates, [], new Set(['notes']))
+      expect(targets).toEqual([null, null, null])
+      expect(warnings).toEqual([
+        'geometry.elements[0] (code "dup") matches 2 elements; give the one to position an id',
+        'geometry.elements[1] (id "notes") is not a code block, mermaid diagram, or a <div id> wrapping only a table or <<< import',
+        'geometry.elements[2] (id "nowhere") matches nothing; add {id: \'nowhere\'} to a code or mermaid fence (with quotes), or wrap a table or <<< import in <div id="nowhere">',
+      ])
+    })
+
+    it('keeps the first of two entries for one element', () => {
+      const { targets, warnings } = resolveGeometryElements(geometry({ code: 'app.ts' }, { code: 'app.ts' }), candidates, [])
+      expect(targets).toEqual([{ kind: 'element', index: 1 }, null])
+      expect(warnings).toEqual(['geometry.elements[1] (code "app.ts") targets an element already positioned by another entry'])
+    })
+
+    it('lets an image entry in elements win over geometry.images', () => {
+      const parsed = parseSlideGeometry({ geometry: {
+        images: [{ src: '/images/a.png', ...rect }, { src: '/images/b.png', ...rect }],
+        elements: [{ image: '/images/a.png', ...rect }],
+      } })
+      const { targets, imageIndexes, warnings } = resolveGeometryElements(parsed, [], ['/images/a.png', '/images/b.png'])
+      expect(targets).toEqual([{ kind: 'image', index: 0 }])
+      expect(imageIndexes).toEqual([-1, 1])
+      expect(warnings).toEqual(['geometry.images[0]: that image is positioned by geometry.elements, which wins'])
+    })
+  })
+
+  it('withElementRect replaces one entry\'s rect and keeps its key, fit and the other entries', () => {
+    const raw = { content: { x: 1, y: 1, w: 1, h: 1 }, elements: [{ code: 'a', x: 1, y: 1, w: 1, h: 1, fit: 'none' }, { id: 'b', x: 2, y: 2, w: 2, h: 2 }] }
+    expect(withElementRect(raw, 0, { x: 10.4, y: 20.6, w: 30, h: 40 })).toEqual({
+      content: { x: 1, y: 1, w: 1, h: 1 },
+      elements: [{ code: 'a', x: 10, y: 21, w: 30, h: 40, fit: 'none' }, { id: 'b', x: 2, y: 2, w: 2, h: 2 }],
+    })
   })
 })

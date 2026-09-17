@@ -102,6 +102,20 @@ describe('create-codeurjc-slidev --from-odp', () => {
     expect(existsSync(join(work, 'tema-2-pruebas/slides.md'))).toBe(true)
   })
 
+  it('creates the project at an absolute target path, not under the working directory', async () => {
+    const target = mkdtempSync(join(tmpdir(), 'odp-cli-abs-'))
+    try {
+      const { code } = await cli([join(target, 'deck'), '--from-odp', 'Tema 2 - Pruebas.odp'])
+      expect(code).toBe(0)
+      expect(existsSync(join(target, 'deck/slides.md'))).toBe(true)
+      expect(JSON.parse(readFileSync(join(target, 'deck/package.json'), 'utf-8')).name).toBe('deck')
+      expect(existsSync(join(work, target.slice(1)))).toBe(false)
+    }
+    finally {
+      rmSync(target, { recursive: true, force: true })
+    }
+  })
+
   it('aborts with a non-zero exit code before creating anything when the ODP is missing', async () => {
     const { code, stdout } = await cli(['broken', '--from-odp', 'missing.odp'])
     expect(code).not.toBe(0)

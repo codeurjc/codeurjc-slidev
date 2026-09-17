@@ -54,6 +54,7 @@ export default defineConfig({
         'click-model-ground-truth.spec.ts',
         'callout-step-ranges.spec.ts',
         'callout-arrow-style.spec.ts',
+        'geometry-elements.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'] },
     },

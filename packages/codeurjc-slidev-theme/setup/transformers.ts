@@ -231,7 +231,11 @@ export default defineTransformersSetup(() => ({
         }
 
         const combined = combineWithSourceLink(combineCodeAndAnchors(slicedCode, anchorLines), sourceLink)
-        const fenceInfo = parsed.notitle ? parsed.lang : `${parsed.lang} [${basename(parsed.filePath)}]`
+        // The import's path as written travels as a fence option, which both
+        // Slidev's wrapper and wrapCodeBlock bind onto the rendered
+        // `.slidev-code-wrapper`, so `geometry.elements` can find it by path.
+        const importPathOption = `{'data-import-path': '${parsed.filePath.replace(/\\/g, '\\\\').replace(/'/g, '\\\'').replace(/"/g, '&quot;')}'}`
+        const fenceInfo = `${parsed.notitle ? parsed.lang : `${parsed.lang} [${basename(parsed.filePath)}]`} ${importPathOption}`
         const fenceText = `\`\`\`${fenceInfo}\n${combined}\n\`\`\``
 
         const startOffset = lineStarts[i]

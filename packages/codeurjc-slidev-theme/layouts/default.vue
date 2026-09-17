@@ -2,7 +2,7 @@
 import type { StepRange } from '../composables/stepRange'
 import type { PlacedRect, Point, Rect, Side, StackEntry } from '../composables/useHighlightLayout'
 import type { CalloutAnchor, CalloutPoint, SlideCallout } from '../composables/useSlideCallouts'
-import type { GeometryRect, GeometryTarget } from '../composables/useSlideGeometry'
+import type { ElementCandidate, ElementEntry, GeometryRect, GeometryTarget } from '../composables/useSlideGeometry'
 import { useSlideContext } from '@slidev/client'
 import { useDynamicSlideInfo } from '@slidev/client/composables/useSlideInfo.ts'
 import { computed, nextTick, onMounted, onUnmounted, ref, unref, useId, watch } from 'vue'
@@ -29,12 +29,14 @@ import {
 import {
   geometryContentKey,
   geometryContentVars,
+  geometryElementKey,
   geometryImageKey,
   geometryKeyPrefix,
   hasGeometryImages,
   parseSlideGeometry,
-  resolveGeometryImages,
+  resolveGeometryElements,
   sameRect,
+  withElementRect,
   withGeometryRect,
 } from '../composables/useSlideGeometry'
 
@@ -114,6 +116,20 @@ function effectiveImageRect(index: number): GeometryRect | null {
   return (editor.editing.value && editor.positions[geometryImageKey(slideNo.value, index)]) || declared
 }
 
+function effectiveElementRect(index: number): GeometryRect | null {
+  const declared = geometry.value.elements[index]?.rect ?? null
+  if (!declared)
+    return null
+  return (editor.editing.value && editor.positions[geometryElementKey(slideNo.value, index)]) || declared
+}
+
+/** An overlay label for a `geometry.elements` entry: its kind and key. */
+function elementLabel(entry: ElementEntry): string {
+  if (entry.key.kind === 'image')
+    return `${entry.key.ref.src.split('/').pop()}${entry.key.ref.occurrence ? ` #${entry.key.ref.occurrence}` : ''}`
+  return entry.key.kind === 'code' ? `Code ${entry.key.text.split('/').pop()}` : `Element ${entry.key.name}`
+}
+
 const rootInlineStyle = computed((): Record<string, string> => {
   const style: Record<string, string> = editor.editing.value ? { ...editor.rootStyle.value } : {}
   const content = effectiveContentRect()
@@ -135,7 +151,13 @@ const geometryImageOverlays = computed(() => geometry.value.images.flatMap((decl
   const ref = geometry.value.imageRefs[index]
   const label = ref?.kind === 'src' ? `${ref.src.split('/').pop()}${ref.occurrence ? ` #${ref.occurrence}` : ''}` : `Image ${index + 1}`
   return rect ? [{ key, index, rect, label }] : []
-}))
+}).concat(geometry.value.elements.flatMap((entry, index) => {
+  if (!entry)
+    return []
+  const key = geometryElementKey(slideNo.value, index)
+  const rect = editor.positions[key]
+  return rect ? [{ key, index, rect, label: elementLabel(entry) }] : []
+})))
 
 watch(() => geometry.value.warnings.join('\n'), (joined) => {
   if (joined)
@@ -166,6 +188,16 @@ function syncGeometryEditorKeys() {
     if (declared)
       sync(`image:${index}`, geometryImageKey(slideNo.value, index), declared, true)
   })
+  // Images and diagrams keep their aspect ratio when resized; code and tables
+  // scale into whatever box they're given. Diagrams are locked once resolved
+  // (updateGeometryImages), since an `id:` key doesn't say what it names.
+  g.elements.forEach((entry, index) => {
+    if (!entry)
+      return
+    const key = geometryElementKey(slideNo.value, index)
+    editor.elementLabels[key] = elementLabel(entry)
+    sync(`element:${index}`, key, entry.rect, entry.key.kind === 'image')
+  })
   editor.pruneDynamicKeys(geometryKeyPrefix(slideNo.value), valid)
 }
 watch(geometry, syncGeometryEditorKeys, { immediate: true })
@@ -178,6 +210,10 @@ function geometryEditorSnapshot(): string {
   g.images.forEach((declared, index) => {
     if (declared)
       rects[`image:${index}`] = editor.positions[geometryImageKey(slideNo.value, index)]
+  })
+  g.elements.forEach((entry, index) => {
+    if (entry)
+      rects[`element:${index}`] = editor.positions[geometryElementKey(slideNo.value, index)]
   })
   return JSON.stringify(rects)
 }
@@ -203,13 +239,13 @@ async function persistGeometry() {
   let raw: unknown = liveFrontmatter.value.geometry
   const srcs = contentImageSrcs()
   let changed = false
-  const consider = (target: GeometryTarget, key: string, declared: GeometryRect) => {
+  const consider = (target: GeometryTarget | { kind: 'element', index: number }, key: string, declared: GeometryRect) => {
     const live = editor.positions[key]
     // Never write a rect the parser would itself reject (e.g. NaN from a
     // mis-measured gesture would serialize as `null`).
     const valid = live && [live.x, live.y, live.w, live.h].every(Number.isFinite) && live.x >= 0 && live.y >= 0 && live.w > 0 && live.h > 0
     if (valid && !sameRect(live, declared)) {
-      raw = withGeometryRect(raw, target, live, srcs)
+      raw = target.kind === 'element' ? withElementRect(raw, target.index, live) : withGeometryRect(raw, target, live, srcs)
       changed = true
     }
   }
@@ -218,6 +254,10 @@ async function persistGeometry() {
   g.images.forEach((declared, index) => {
     if (declared)
       consider({ kind: 'image', index }, geometryImageKey(slideNo.value, index), declared)
+  })
+  g.elements.forEach((entry, index) => {
+    if (entry)
+      consider({ kind: 'element', index }, geometryElementKey(slideNo.value, index), entry.rect)
   })
   if (!changed || !slideNo.value || !__SLIDEV_HAS_SERVER__)
     return
@@ -309,9 +349,11 @@ onMounted(() => {
 
   // Restore aspect-lock state. data-aspect-locked lists the *locked*
   // elements (unlocked is the default), so anything not listed stays unlocked.
+  // Only the layout's own elements: per-slide keys (geometry, callouts) keep
+  // their defaults, which a slide mounted later must not reset.
   const lockedNames = lockedStr ? lockedStr.split(',') : []
   const al: Record<string, boolean> = {}
-  for (const key of Object.keys(editor.positions)) {
+  for (const key of Object.keys(VAR_MAP)) {
     al[key] = lockedNames.includes(key)
   }
   editor.setAspectLocked(al)
@@ -330,7 +372,11 @@ onMounted(() => {
     computeCallouts()
     fitTitle()
   })
-  diagramObserver = new MutationObserver(() => computeCallouts())
+  diagramObserver = new MutationObserver(() => {
+    // A diagram that just rendered can now be measured and positioned.
+    updateGeometryImages()
+    computeCallouts()
+  })
   const observer = new MutationObserver(() => {
     updateGeometryImages()
     computeCallouts()
@@ -1238,29 +1284,134 @@ function clearGeometryImage(img: HTMLElement) {
     img.style.removeProperty(prop)
 }
 
-// Positions each content image by the `geometry.images` entry that references
-// it (by src, or by position for entries without one). Images without an entry
-// stay in normal flow.
+// Positions the slide's content by its `geometry`: each image by the
+// `geometry.images` or `geometry.elements` entry that references it, and each
+// code block, mermaid diagram or table by the `geometry.elements` entry keyed
+// to it (see resolveGeometryElements). Anything without an entry stays in
+// normal flow.
+function collectElementCandidates(container: Element): { els: HTMLElement[], candidates: ElementCandidate[], otherIds: Set<string> } {
+  const els: HTMLElement[] = []
+  const candidates: ElementCandidate[] = []
+  const wrapperOf = (el: Element) => {
+    const parent = el.parentElement
+    return parent && parent !== container && parent.tagName === 'DIV' && parent.id && parent.children.length === 1 ? parent.id : undefined
+  }
+  const add = (el: HTMLElement, candidate: ElementCandidate) => {
+    els.push(el)
+    candidates.push({ ...candidate, wrapperId: wrapperOf(el) })
+  }
+  for (const el of Array.from(container.querySelectorAll<HTMLElement>('.slidev-code-wrapper')))
+    add(el, { kind: 'code', id: el.id || undefined, title: el.getAttribute('data-title') || undefined, importPath: el.getAttribute('data-import-path') || undefined })
+  for (const el of Array.from(container.querySelectorAll<HTMLElement>('.mermaid')))
+    add(el, { kind: 'mermaid', id: el.id || undefined })
+  for (const el of Array.from(container.querySelectorAll<HTMLElement>('table')))
+    add(el, { kind: 'table' })
+  const otherIds = new Set(Array.from(container.querySelectorAll('[id]')).map(el => el.id))
+  return { els, candidates, otherIds }
+}
+
+function clearGeometryElement(el: HTMLElement) {
+  el.classList.remove('geometry-element')
+  for (const prop of ['left', 'top', 'width', 'transform'])
+    el.style.removeProperty(prop)
+  const svg = el.shadowRoot?.querySelector('svg')
+  if (svg)
+    svg.style.removeProperty('max-width')
+}
+
+function positionGeometryElement(el: HTMLElement, kind: ElementCandidate['kind'], rect: GeometryRect, fit: ElementEntry['fit']) {
+  el.classList.add('geometry-element')
+  el.style.removeProperty('transform')
+  if (kind === 'mermaid' && fit === 'contain') {
+    // A diagram is vector: size it to the box's width, then narrow it until it
+    // also fits the height, keeping its aspect ratio.
+    const svg = el.shadowRoot?.querySelector('svg')
+    if (svg)
+      svg.style.maxWidth = 'none'
+    el.style.width = `${rect.w}px`
+    const height = el.offsetHeight
+    const width = height > rect.h ? rect.w * rect.h / height : rect.w
+    el.style.width = `${width}px`
+    el.style.left = `${rect.x + (rect.w - width) / 2}px`
+    el.style.top = `${rect.y + (rect.h - Math.min(height, rect.h)) / 2}px`
+    return
+  }
+  // Natural size, measured out of flow and untransformed (offset sizes ignore
+  // the slide's own scale).
+  el.style.removeProperty('width')
+  const naturalW = el.offsetWidth
+  const naturalH = el.offsetHeight
+  if (!naturalW || !naturalH || fit === 'none') {
+    el.style.left = `${rect.x}px`
+    el.style.top = `${rect.y}px`
+    return
+  }
+  const scale = Math.min(rect.w / naturalW, rect.h / naturalH, 1)
+  el.style.left = `${rect.x + (rect.w - naturalW * scale) / 2}px`
+  el.style.top = `${rect.y + (rect.h - naturalH * scale) / 2}px`
+  if (scale < 1)
+    el.style.transform = `scale(${scale})`
+}
+
+/**
+ * Tells the side panel which code blocks, diagrams and tables of this slide
+ * have no stable key (a unique import path or title, or an id), so it can say
+ * they need an id before they can be positioned.
+ */
+function publishUnkeyedElements(candidates: ElementCandidate[]) {
+  const count = (pick: (c: ElementCandidate) => string | undefined, value: string | undefined) =>
+    value === undefined ? 0 : candidates.filter(c => c.kind === 'code' && pick(c) === value).length
+  const unkeyed = candidates.filter((c) => {
+    if (c.kind === 'mermaid')
+      return !c.id
+    if (c.kind === 'table')
+      return !c.wrapperId
+    if (c.id || (c.importPath && c.wrapperId))
+      return false
+    if (c.importPath)
+      return count(x => x.importPath, c.importPath) > 1
+    return !c.title || count(x => (x.importPath ? undefined : x.title), c.title) > 1
+  })
+  const names = { code: ['code block', 'code blocks'], mermaid: ['mermaid diagram', 'mermaid diagrams'], table: ['table', 'tables'] } as const
+  const parts = (['code', 'mermaid', 'table'] as const).flatMap((kind) => {
+    const n = unkeyed.filter(c => c.kind === kind).length
+    return n ? [`${n} ${names[kind][n === 1 ? 0 : 1]}`] : []
+  })
+  const message = parts.length
+    ? `${parts.join(', ').replace(/, ([^,]*)$/, ' and $1')} ${unkeyed.length === 1 ? 'needs' : 'need'} an id to be positioned`
+    : ''
+  if (message)
+    editor.unkeyedElements[slideNo.value] = message
+  else
+    delete editor.unkeyedElements[slideNo.value]
+}
+
+const diagramLockDefaulted = new Set<string>()
 function updateGeometryImages() {
   const container = contentInnerEl.value
   if (!container)
     return
   const imgs = Array.from(container.querySelectorAll('img'))
-  if (!hasGeometryImages(geometry.value)) {
+  const g = geometry.value
+  if (!hasGeometryImages(g) && !g.elements.some(Boolean)) {
+    publishUnkeyedElements(collectElementCandidates(container).candidates)
     for (const img of imgs) {
       if (img.classList.contains('geometry-image'))
         clearGeometryImage(img)
     }
+    for (const el of Array.from(container.querySelectorAll<HTMLElement>('.geometry-element')))
+      clearGeometryElement(el)
     return
   }
-  // Which entry positions each image: src entries by src, positional ones by
-  // their own list position (see resolveGeometryImages).
-  const { indexes, warnings } = resolveGeometryImages(geometry.value, imgs.map(authoredSrc))
+  const { els, candidates, otherIds } = collectElementCandidates(container)
+  const { targets, imageIndexes, warnings } = resolveGeometryElements(g, candidates, imgs.map(authoredSrc), otherIds)
   for (const warning of warnings)
     warnGeometryOnce(warning)
+
   imgs.forEach((img, index) => {
-    const entry = indexes.indexOf(index)
-    const rect = entry >= 0 ? effectiveImageRect(entry) : null
+    const imageEntry = imageIndexes.indexOf(index)
+    const elementEntry = targets.findIndex(t => t?.kind === 'image' && t.index === index)
+    const rect = elementEntry >= 0 ? effectiveElementRect(elementEntry) : imageEntry >= 0 ? effectiveImageRect(imageEntry) : null
     if (!rect) {
       clearGeometryImage(img)
       return
@@ -1271,14 +1422,41 @@ function updateGeometryImages() {
     img.style.width = `${rect.w}px`
     img.style.height = `${rect.h}px`
   })
+
+  els.forEach((el, index) => {
+    const entry = targets.findIndex(t => t?.kind === 'element' && t.index === index)
+    const rect = entry >= 0 ? effectiveElementRect(entry) : null
+    if (!rect) {
+      if (el.classList.contains('geometry-element'))
+        clearGeometryElement(el)
+      return
+    }
+    positionGeometryElement(el, candidates[index].kind, rect, g.elements[entry]!.fit)
+    // An `id:` entry's kind is only known once resolved: a diagram starts
+    // aspect-locked like an image, once, so the author can still unlock it.
+    const key = geometryElementKey(slideNo.value, entry)
+    if (candidates[index].kind === 'mermaid' && !diagramLockDefaulted.has(key) && key in editor.aspectLocked) {
+      diagramLockDefaulted.add(key)
+      editor.aspectLocked[key] = true
+    }
+  })
+  publishUnkeyedElements(candidates)
 }
 
 // Re-apply image positions when the declared geometry changes or, while the
 // editor is open, as its live rects move (inline styles on slot DOM aren't
 // reactive on their own).
 watch(
-  () => JSON.stringify([editor.editing.value, geometry.value.images.map((_, index) => effectiveImageRect(index))]),
-  () => updateGeometryImages(),
+  () => JSON.stringify([
+    editor.editing.value,
+    geometry.value.images.map((_, index) => effectiveImageRect(index)),
+    geometry.value.elements.map((entry, index) => entry && [effectiveElementRect(index), entry.fit]),
+  ]),
+  () => {
+    updateGeometryImages()
+    // Code callouts are placed around the (possibly moved and scaled) code.
+    computeCallouts()
+  },
   { flush: 'post' },
 )
 
@@ -1699,6 +1877,18 @@ watch(editor.aspectLocked, (v) => {
   margin: 0 auto;
   width: 850px;
   max-width: 100%;
+}
+
+/* Code blocks, mermaid diagrams and tables positioned by `geometry.elements`
+   (see positionGeometryElement): out of flow at their natural size, scaled
+   from the top-left corner into their box. */
+.content-inner .geometry-element {
+  position: absolute;
+  width: max-content;
+  max-width: none;
+  margin: 0;
+  transform-origin: top left;
+  z-index: 40;
 }
 
 .content-overlay {

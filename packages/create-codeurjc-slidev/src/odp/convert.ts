@@ -7,7 +7,7 @@ import type { LibreOfficeStatus, OfficeRunner } from './office'
 import type { SvgExport } from './svgCrop'
 import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
-import { formatImageRef, imageRefFor } from 'codeurjc-slidev-theme/composables/useImageRefs'
+import { formatImageRef, imageRefFor, resolveImageRef } from 'codeurjc-slidev-theme/composables/useImageRefs'
 import { serializeSlideCallouts } from 'codeurjc-slidev-theme/composables/useSlideCallouts'
 import { serializeSlideGeometry } from 'codeurjc-slidev-theme/composables/useSlideGeometry'
 import { realGitRunner } from 'codeurjc-slidev-theme/composables/useSourceLink'
@@ -19,6 +19,7 @@ import { boxOf } from './diagrams'
 import { draftSlide, renderDraftBody } from './draft'
 import { toYaml } from './frontmatter'
 import { bodyRegionFor, mapRect } from './geometry'
+import { layoutDraft } from './grid'
 import { emitHeadings } from './headings'
 import { detectLibreOffice, exportSvg, realOfficeRunner } from './office'
 import { parseOdp } from './parse'
@@ -133,14 +134,26 @@ function slideFrontmatter(draft: SlideDraft): Record<string, unknown> {
   if (draft.role === 'content') {
     // Image entries are keyed by the src the slide's markdown uses, so they
     // keep applying to their picture however the images are later reordered.
-    const srcs = draft.images.map(i => `/${i.publicPath}`)
+    // Images in a grid column are laid out by the grid, and a body in one
+    // spans the grid's column rather than a positioned content box.
+    const layout = layoutDraft(draft)
+    const srcs = layout.images.map(i => `/${i.publicPath}`)
     const geometry = serializeSlideGeometry({
-      content: draft.contentGeometry,
-      images: draft.images.map((image, index) => ({ ...image.rect, src: String(formatImageRef(imageRefFor(srcs, index))) })),
+      content: layout.bodyInGrid ? undefined : draft.contentGeometry,
+      images: layout.images.flatMap((image, index) => (layout.gridImages.has(image) ? [] : [{ ...image.rect, src: String(formatImageRef(imageRefFor(srcs, index))) }])),
     })
     if (geometry)
       fm.geometry = geometry
-    const callouts = serializeSlideCallouts(draft.callouts)
+    // Callout image references were written against the draft's image order;
+    // a grid can show the images in another one, which matters for `src#N`.
+    const draftSrcs = draft.images.map(i => `/${i.publicPath}`)
+    const callouts = serializeSlideCallouts(draft.callouts.map((callout) => {
+      if (callout.anchor.kind !== 'image')
+        return callout
+      const { index } = resolveImageRef(callout.anchor.ref, draftSrcs)
+      const shown = index < 0 ? -1 : layout.images.indexOf(draft.images[index])
+      return shown < 0 ? callout : { ...callout, anchor: { ...callout.anchor, ref: imageRefFor(srcs, shown) } }
+    }))
     if (callouts)
       fm.callouts = callouts
   }
