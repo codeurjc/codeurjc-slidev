@@ -1,3 +1,11 @@
+# image-paste
+
+## Purpose
+
+Lets a presenter paste an image from the clipboard onto the current slide while the dev server is running: the file is written under `public/images/` with a timestamped name, and a markdown image reference is inserted into that slide's content, whether the side editor is open (at the cursor, keeping unsaved edits) or closed.
+
+## Requirements
+
 ### Requirement: Paste image while side editor is open
 While the Slidev dev server is running and the side editor panel is open, pasting an image from the clipboard SHALL save the image to `public/images/` and insert a markdown image reference into the current slide's content at the content textarea's cursor position, without requiring the layout editor.
 

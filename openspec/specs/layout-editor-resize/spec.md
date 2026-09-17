@@ -1,4 +1,10 @@
-## ADDED Requirements
+# layout-editor-resize
+
+## Purpose
+
+Defines how the layout editor resizes elements: every fixed element (`red-bar`, `logo`, `title`, `content`) drags and resizes from a corner handle, each has its own aspect-ratio lock that defaults to off and persists with the saved layout, right-anchored elements track the cursor, and the editor's position/hidden/lock records also hold dynamic per-slide keys.
+
+## Requirements
 
 ### Requirement: Every layout element is fully resizable
 Every layout editor element (`red-bar`, `logo`, `title`, `content`) SHALL support both dragging (x/y) and resizing (w/h) via a corner (`se`, or `sw` for right-anchored elements) handle, with width and height values rendered into the slide via CSS custom properties and included in the exported CSS output.
