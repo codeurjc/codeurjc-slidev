@@ -1,21 +1,4 @@
-# slide-geometry
-
-## Purpose
-
-Lets a `default`-layout slide position its own content box and an ordered list of content images through `geometry` frontmatter, in the layout editor's slide-canvas pixel space, editable from the Layout tab and written back to that slide's frontmatter without touching any layout file.
-
-## Requirements
-
-### Requirement: Slide frontmatter can reposition the content box
-A `default`-layout slide's frontmatter SHALL accept `geometry.content: { x, y, w, h }` (numbers, slide-canvas pixels). When present and valid, that slide's content box SHALL render at the declared position and size, overriding the layout's own saved content-box position for that slide only.
-
-#### Scenario: Content geometry applies to its own slide
-- **WHEN** slide 3's frontmatter declares `geometry: { content: { x: 31, y: 98, w: 560, h: 424 } }` and slide 4 declares no `geometry`
-- **THEN** slide 3's content box renders 560px wide at (31, 98), and slide 4's content box renders at the layout's own saved position and size
-
-#### Scenario: Invalid content geometry is ignored
-- **WHEN** a slide's `geometry.content` is missing a field, or has a non-numeric or negative width/height
-- **THEN** the slide renders its content box at the layout's own saved position, and a console warning names the slide and the invalid field
+## MODIFIED Requirements
 
 ### Requirement: Slide frontmatter can position a list of images
 A `default`-layout slide's frontmatter SHALL accept `geometry.images`: a list of `{ src?, x, y, w, h }` entries in slide-canvas pixels. An entry with a `src` SHALL position the image that `src` reference resolves to (see slide-image-references), wherever it sits in the content. An entry without a `src` SHALL position the image at its own position in the list, the Nth `<img>` in the slide's content in document order, as before. Images without a matching entry SHALL stay in normal content flow; entries without a matching image SHALL be ignored, with a console warning for an unresolvable `src`.
@@ -39,27 +22,6 @@ A `default`-layout slide's frontmatter SHALL accept `geometry.images`: a list of
 #### Scenario: Inserting an image doesn't move src-keyed geometry
 - **WHEN** a src-keyed entry positions `/images/b.png` and the author inserts another image before it in the content
 - **THEN** `/images/b.png` keeps its position and the inserted image stays in normal content flow
-
-### Requirement: Positioned images keep their aspect ratio
-An image positioned by `geometry.images` SHALL be scaled to fit inside its declared box without distortion, centered in that box.
-
-#### Scenario: Box wider than the image's aspect ratio
-- **WHEN** a 400×400 image is positioned in a `{ w: 600, h: 300 }` box
-- **THEN** the image renders 300×300, centered horizontally within the 600×300 box
-
-### Requirement: Frontmatter image geometry replaces single tracked-image extraction
-On a slide whose frontmatter declares `geometry.images`, the layout's single tracked-image extraction (last `<img>` into the layout-level `image` element) SHALL NOT apply. Images on that slide are positioned only by `geometry.images`.
-
-#### Scenario: Last image is not extracted into the layout image element
-- **WHEN** a slide declares one `geometry.images` entry and its content contains two images
-- **THEN** only the first image is absolutely positioned (by the frontmatter entry), the second image stays in normal flow, and the layout-level `image` element is not shown for that slide
-
-### Requirement: Frontmatter geometry uses the layout editor's coordinate space
-`geometry` coordinates SHALL be interpreted in the same slide-canvas pixel space that the layout editor uses for the `content` and `image` elements, so a value read from the editor's position readout reproduces the same on-screen placement.
-
-#### Scenario: Editor readout round-trips
-- **WHEN** an element is dragged in the Layout tab to a readout of `x: 438, y: 80, w: 400, h: 300`, and that same rect is written by hand into a slide's `geometry.images[0]`
-- **THEN** the image renders at the same on-screen position and size as it did in the editor
 
 ### Requirement: Frontmatter geometry is editable from the Layout tab and persisted to frontmatter
 In editor mode, each element positioned by the current slide's `geometry` (the content box and each positioned image) SHALL appear as a draggable and resizable overlay. Finishing a drag or resize SHALL write the updated rect back into that slide's `geometry` frontmatter. The write SHALL key every image entry of that slide by a src reference, including entries that were positional, so a slide migrates to src keys the first time it is edited. Entries whose image has no `src` stay positional. It SHALL NOT create or modify any layout file.

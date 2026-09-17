@@ -135,7 +135,7 @@ describe('convertOdp: diagrams', () => {
     expect(pipeline).toMatchObject({ losses: [], info: ['diagram converted to a mermaid flowchart'] })
 
     expect(result.slideSources[1]).toContain('![](/images/diagram-uml.svg)')
-    expect(result.slideSources[1]).toMatch(/geometry:\n {2}images:\n {4}- \{ x: \d+, y: \d+, w: \d+, h: \d+ \}/)
+    expect(result.slideSources[1]).toMatch(/geometry:\n {2}images:\n {4}- \{ src: \/images\/diagram-uml\.svg, x: \d+, y: \d+, w: \d+, h: \d+ \}/)
     expect(new TextDecoder().decode(result.images.get('images/diagram-uml.svg'))).toContain('<text>User</text>')
     expect(uml).toMatchObject({ losses: [], info: ['diagram embedded as an SVG image (not editable)'] })
 

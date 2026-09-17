@@ -28,7 +28,7 @@ describe('parseSlideCallouts', () => {
     })
     expect(parsed.warnings).toEqual([])
     expect(parsed.callouts).toEqual([{
-      anchor: { kind: 'image', index: 0, x: 0.45, y: 0.51 },
+      anchor: { kind: 'image', ref: { kind: 'position', index: 0 }, x: 0.45, y: 0.51 },
       text: 'Le damos un nombre',
       box: { x: 620, y: 300 },
       step: null,
@@ -66,7 +66,7 @@ describe('parseSlideCallouts', () => {
 
   it('rejects a negative image index and a non-numeric coordinate', () => {
     expect(parseSlideCallouts({ callouts: [{ at: { image: -1, x: 0.5, y: 0.5 } }] }).warnings)
-      .toEqual(['callouts[0].at.image must be a non-negative whole number'])
+      .toEqual(['callouts[0].at.image must be an image src (optionally with #N) or a non-negative whole number'])
     expect(parseSlideCallouts({ callouts: [{ at: { x: '10', y: 20 } }] }).warnings)
       .toEqual(['callouts[0].at.x must be a number'])
   })
@@ -100,7 +100,7 @@ describe('serializeSlideCallouts', () => {
 
   it('rounds pixels to whole numbers and fractions to four decimals', () => {
     expect(serializeSlideCallout({
-      anchor: { kind: 'image', index: 1, x: 0.123456, y: 0.5 },
+      anchor: { kind: 'image', ref: { kind: 'position', index: 1 }, x: 0.123456, y: 0.5 },
       text: 'note',
       box: { x: 12.7, y: 44.2 },
       step: 3,
@@ -109,13 +109,13 @@ describe('serializeSlideCallouts', () => {
 
   it('round-trips through the parser', () => {
     const raw = serializeSlideCallouts([
-      { anchor: { kind: 'image', index: 0, x: 0.45, y: 0.51 }, text: 'uno', box: { x: 620, y: 300 }, step: 1 },
+      { anchor: { kind: 'image', ref: { kind: 'position', index: 0 }, x: 0.45, y: 0.51 }, text: 'uno', box: { x: 620, y: 300 }, step: 1 },
       { anchor: { kind: 'text', text: 'Verificar' }, text: '', box: null, step: null },
     ])
     const parsed = parseSlideCallouts({ callouts: raw })
     expect(parsed.warnings).toEqual([])
     expect(parsed.callouts).toEqual([
-      { anchor: { kind: 'image', index: 0, x: 0.45, y: 0.51 }, text: 'uno', box: { x: 620, y: 300 }, step: 1 },
+      { anchor: { kind: 'image', ref: { kind: 'position', index: 0 }, x: 0.45, y: 0.51 }, text: 'uno', box: { x: 620, y: 300 }, step: 1 },
       { anchor: { kind: 'text', text: 'Verificar' }, text: '', box: null, step: null },
     ])
   })
@@ -193,5 +193,30 @@ describe('editor keys', () => {
     expect(isSlideCalloutKey(calloutBoxKey(1, 0))).toBe(true)
     expect(isSlideCalloutKey('geometry:1:content')).toBe(false)
     expect(isSlideCalloutKey('callout:0')).toBe(false)
+  })
+})
+
+describe('src image anchors', () => {
+  it('reads and writes an image anchor referenced by src', () => {
+    const [callout] = parseSlideCallouts({ callouts: [{ at: { image: '/images/a.png#2', x: 0.5, y: 0.25 }, text: 'aquí' }] }).callouts
+    expect(callout!.anchor).toEqual({ kind: 'image', ref: { kind: 'src', src: '/images/a.png', occurrence: 2 }, x: 0.5, y: 0.25 })
+    expect(serializeSlideCallout(callout!)).toEqual({ at: { image: '/images/a.png#2', x: 0.5, y: 0.25 }, text: 'aquí' })
+  })
+
+  it('migrates positional image anchors when a write knows the slide\'s srcs, keeping unresolvable ones', () => {
+    const authored = [
+      { at: { image: 1, x: 0.1, y: 0.2 }, text: 'b' },
+      { at: { image: 5, x: 0.3, y: 0.4 } },
+      { at: { x: 10, y: 20 } },
+    ]
+    const srcs = ['/images/a.png', '/images/b.png']
+    expect(withSlideCallout(authored, 2, { anchor: { kind: 'point', x: 11, y: 21 }, text: '', box: null, step: null }, srcs)).toEqual([
+      { at: { image: '/images/b.png', x: 0.1, y: 0.2 }, text: 'b' },
+      { at: { image: 5, x: 0.3, y: 0.4 } },
+      { at: { x: 11, y: 21 } },
+    ])
+    expect(withoutSlideCallout(authored, 2, srcs)[0]).toEqual({ at: { image: '/images/b.png', x: 0.1, y: 0.2 }, text: 'b' })
+    // Without srcs, nothing is migrated.
+    expect(withoutSlideCallout(authored, 2)[0]).toEqual(authored[0])
   })
 })

@@ -11,6 +11,7 @@ import { useCalloutTool } from '../composables/useCalloutTool'
 import { CONTENT_DEFAULT_WIDTH, useEditor } from '../composables/useEditor'
 import { elbowPath, estimateCalloutSize, placeCallout, pointsToSvgPath } from '../composables/useHighlightLayout'
 import { computeBelowPreset } from '../composables/useImagePosition'
+import { authoredSrc, imageRefFor, resolveImageRef } from '../composables/useImageRefs'
 import {
   boxContainsAnchor,
   calloutAnchorKey,
@@ -30,6 +31,7 @@ import {
   geometryKeyPrefix,
   hasGeometryImages,
   parseSlideGeometry,
+  resolveGeometryImages,
   sameRect,
   withGeometryRect,
 } from '../composables/useSlideGeometry'
@@ -72,8 +74,6 @@ const slideEnd = slideInfo?.source?.end ?? slideInfo?.end
 // the editor state is shared by every mounted slide) takes over so drags
 // render immediately; edits are written back into the slide's frontmatter.
 const slideNo = computed(() => Number(unref($page)) || 0)
-const geometry = computed(() => parseSlideGeometry($frontmatter as Record<string, unknown>))
-const geometryContentEditorKey = computed(() => geometryContentKey(slideNo.value))
 
 // A slide's own `callouts` frontmatter (see composables/useSlideCallouts.ts):
 // annotations that point at anything on the slide -- a spot on an image, a
@@ -86,9 +86,13 @@ const geometryContentEditorKey = computed(() => geometryContentKey(slideNo.value
 // session. The info ref is refreshed by `update()`'s response and by
 // `slidev:update-slide` for hand edits; until its first fetch lands (and in a
 // static build) `$frontmatter` is the fallback.
+// `geometry` is read from the same ref, for the same reason: its editor writes
+// are frontmatter-only patches too.
 const { info: liveSlideInfo, update: updateSlideInfo } = useDynamicSlideInfo(slideNo)
-const calloutsFrontmatter = computed(() => (liveSlideInfo.value?.frontmatter ?? $frontmatter) as Record<string, unknown>)
-const slideCallouts = computed(() => parseSlideCallouts(calloutsFrontmatter.value))
+const liveFrontmatter = computed(() => (liveSlideInfo.value?.frontmatter ?? $frontmatter) as Record<string, unknown>)
+const slideCallouts = computed(() => parseSlideCallouts(liveFrontmatter.value))
+const geometry = computed(() => parseSlideGeometry(liveFrontmatter.value))
+const geometryContentEditorKey = computed(() => geometryContentKey(slideNo.value))
 
 function effectiveContentRect(): GeometryRect | null {
   const declared = geometry.value.content
@@ -122,7 +126,9 @@ const geometryImageOverlays = computed(() => geometry.value.images.flatMap((decl
     return []
   const key = geometryImageKey(slideNo.value, index)
   const rect = editor.positions[key]
-  return rect ? [{ key, index, rect }] : []
+  const ref = geometry.value.imageRefs[index]
+  const label = ref?.kind === 'src' ? `${ref.src.split('/').pop()}${ref.occurrence ? ` #${ref.occurrence}` : ''}` : `Image ${index + 1}`
+  return rect ? [{ key, index, rect, label }] : []
 }))
 
 watch(() => geometry.value.warnings.join('\n'), (joined) => {
@@ -188,7 +194,8 @@ async function persistGeometry() {
     return
   }
   const g = geometry.value
-  let raw: unknown = ($frontmatter as Record<string, unknown>).geometry
+  let raw: unknown = liveFrontmatter.value.geometry
+  const srcs = contentImageSrcs()
   let changed = false
   const consider = (target: GeometryTarget, key: string, declared: GeometryRect) => {
     const live = editor.positions[key]
@@ -196,7 +203,7 @@ async function persistGeometry() {
     // mis-measured gesture would serialize as `null`).
     const valid = live && [live.x, live.y, live.w, live.h].every(Number.isFinite) && live.x >= 0 && live.y >= 0 && live.w > 0 && live.h > 0
     if (valid && !sameRect(live, declared)) {
-      raw = withGeometryRect(raw, target, live)
+      raw = withGeometryRect(raw, target, live, srcs)
       changed = true
     }
   }
@@ -209,14 +216,12 @@ async function persistGeometry() {
   if (!changed || !slideNo.value || !__SLIDEV_HAS_SERVER__)
     return
   try {
-    // Slidev's own slide-patch endpoint (the same request its
-    // `useSlideInfo().update()` sends). It writes into whichever markdown file
-    // the slide came from, and a `frontmatter` patch replaces top-level keys.
-    await fetch(`/__slidev/slides/${slideNo.value}.json`, {
-      method: 'POST',
-      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ frontmatter: { geometry: raw } }),
-    })
+    // Slidev's slide-patch request, through the slide-info ref so the patched
+    // frontmatter is reflected immediately. It writes into whichever markdown
+    // file the slide came from, and a `frontmatter` patch replaces top-level
+    // keys. The write also migrates the slide's positional image entries to
+    // src references (see withGeometryRect).
+    await updateSlideInfo({ frontmatter: { geometry: raw as Record<string, unknown> } })
   }
   catch {
     // best-effort: a failed save just means the edit stays session-only
@@ -226,6 +231,17 @@ async function persistGeometry() {
 const rootEl = ref<HTMLElement | null>(null)
 const contentEl = ref<HTMLElement | null>(null)
 const contentInnerEl = ref<HTMLElement | null>(null)
+
+// The slide's content images and their authored srcs, in document order: what
+// image references (`geometry.images` srcs, callout `image` anchors) resolve
+// against. The authored src comes from the `data-src` markdownImageSrc.ts
+// stamps at render time, since the rendered `src` is a bundled asset URL.
+function contentImages(): HTMLImageElement[] {
+  return Array.from(contentInnerEl.value?.querySelectorAll('img') ?? [])
+}
+function contentImageSrcs(): (string | null)[] {
+  return contentImages().map(authoredSrc)
+}
 
 useAutoFitText(contentEl, contentInnerEl, () => effectiveContentRect()?.h ?? editor.positions.content?.h ?? 400)
 
@@ -455,7 +471,7 @@ watch(pendingCallout, (pending) => {
 
 /** The authored `callouts` value, from the same source the rendering reads (see `slideCallouts`). */
 function rawCallouts(): unknown {
-  return calloutsFrontmatter.value.callouts
+  return liveFrontmatter.value.callouts
 }
 
 /** Writes the whole `callouts` key; `null` removes it, which is how Slidev's frontmatter patch drops a field. */
@@ -485,10 +501,10 @@ function anchorForClick(e: MouseEvent, point: CalloutPoint): CalloutAnchor {
   const hit = document.elementsFromPoint(e.clientX, e.clientY).find(el => container?.contains(el)) ?? eventTarget
   if (container && root && hit) {
     const img = hit.closest('img') as HTMLImageElement | null
-    const index = img ? Array.from(container.querySelectorAll('img')).indexOf(img) : -1
+    const index = img ? contentImages().indexOf(img) : -1
     if (img && index >= 0) {
       const rendered = containedRect(rectOf(img, root.getBoundingClientRect(), getScale()), img.naturalWidth, img.naturalHeight)
-      return { kind: 'image', index, ...fractionsInRect(rendered, point) }
+      return { kind: 'image', ref: imageRefFor(contentImageSrcs(), index), ...fractionsInRect(rendered, point) }
     }
     const el = hit.closest(ANCHOR_ELEMENT_SELECTOR)
     const text = (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
@@ -523,7 +539,7 @@ async function commitPendingCallout() {
   const raw = rawCallouts()
   const index = Array.isArray(raw) ? raw.length : 0
   // Committing empty text is meaningful: it leaves a bare arrow.
-  await writeCallouts(withSlideCallout(raw, index, { anchor: pending.anchor, text: pending.text.trim(), box: null, step: null }))
+  await writeCallouts(withSlideCallout(raw, index, { anchor: pending.anchor, text: pending.text.trim(), box: null, step: null }, contentImageSrcs()))
 }
 
 function cancelPendingCallout() {
@@ -532,7 +548,7 @@ function cancelPendingCallout() {
 
 async function deleteCallout(index: number) {
   movedCalloutBoxes.delete(index)
-  await writeCallouts(withoutSlideCallout(rawCallouts(), index))
+  await writeCallouts(withoutSlideCallout(rawCallouts(), index, contentImageSrcs()))
 }
 
 function startAnchorDrag(e: MouseEvent, handle: { key: string, point: CalloutPoint, index: number }) {
@@ -553,13 +569,15 @@ function movedAnchor(anchor: CalloutAnchor, point: CalloutPoint): CalloutAnchor 
     return null
   if (anchor.kind === 'point')
     return { kind: 'point', x: Math.round(point.x), y: Math.round(point.y) }
-  const container = contentInnerEl.value
   const root = rootEl.value
-  const img = container ? Array.from(container.querySelectorAll('img'))[anchor.index] as HTMLImageElement | undefined : undefined
+  const srcs = contentImageSrcs()
+  const { index } = resolveImageRef(anchor.ref, srcs)
+  const img = index >= 0 ? contentImages()[index] : undefined
   if (!img || !root)
     return null
   const rendered = containedRect(rectOf(img, root.getBoundingClientRect(), getScale()), img.naturalWidth, img.naturalHeight)
-  return { kind: 'image', index: anchor.index, ...fractionsInRect(rendered, point) }
+  // Keeps pointing at the same image, as a src reference from now on.
+  return { kind: 'image', ref: imageRefFor(srcs, index), ...fractionsInRect(rendered, point) }
 }
 
 async function persistCalloutAnchor(index: number) {
@@ -570,7 +588,7 @@ async function persistCalloutAnchor(index: number) {
   const anchor = movedAnchor(declared.anchor, { x: live.x, y: live.y })
   if (!anchor)
     return
-  await writeCallouts(withSlideCallout(rawCallouts(), index, { ...declared, anchor }))
+  await writeCallouts(withSlideCallout(rawCallouts(), index, { ...declared, anchor }, contentImageSrcs()))
 }
 
 // Mirrors declared callout positions into the editor's per-slide entries, the
@@ -616,6 +634,7 @@ async function persistCalloutBoxes() {
     return
   }
   let raw = rawCallouts()
+  const srcs = contentImageSrcs()
   let changed = false
   for (const index of movedCalloutBoxes) {
     const declared: SlideCallout | null | undefined = slideCallouts.value.callouts[index]
@@ -625,7 +644,7 @@ async function persistCalloutBoxes() {
     const box = { x: Math.round(live.x), y: Math.round(live.y) }
     if (declared.box && declared.box.x === box.x && declared.box.y === box.y)
       continue
-    raw = withSlideCallout(raw, index, { ...declared, box })
+    raw = withSlideCallout(raw, index, { ...declared, box }, srcs)
     changed = true
   }
   if (changed)
@@ -839,11 +858,13 @@ function resolveCalloutAnchor(container: Element, originRect: DOMRect, scale: nu
     return { point: { x: anchor.x, y: anchor.y }, obstacle: null }
 
   if (anchor.kind === 'image') {
-    const img = Array.from(container.querySelectorAll('img'))[anchor.index] as HTMLImageElement | undefined
-    if (!img) {
-      warnAnchorOnce(`callout anchored to image ${anchor.index}, which this slide doesn't have`)
+    const imgs = Array.from(container.querySelectorAll('img'))
+    const resolved = resolveImageRef(anchor.ref, imgs.map(authoredSrc))
+    if (resolved.warning)
+      warnAnchorOnce(`callout anchored to an image: ${resolved.warning}`)
+    const img = resolved.index >= 0 ? imgs[resolved.index] : undefined
+    if (!img)
       return null
-    }
     // Fractions address the picture, not its box: an image is drawn with
     // `object-fit: contain`, so it can sit letterboxed inside the box.
     const rendered = containedRect(rectOf(img, originRect, scale), img.naturalWidth, img.naturalHeight)
@@ -1127,15 +1148,23 @@ async function saveCalloutPosition(item: CalloutItem) {
 // sit at different nesting depths -- see design.md), marks it as the single
 // tracked/draggable image, and derives hidden.image + a live default position
 // (when none was ever explicitly saved for this layout).
+const warnedGeometry = new Set<string>()
+function warnGeometryOnce(message: string) {
+  if (warnedGeometry.has(message))
+    return
+  warnedGeometry.add(message)
+  console.warn(`[codeurjc-slidev-theme] slide ${slideNo.value}: ${message}`)
+}
+
 function clearGeometryImage(img: HTMLElement) {
   img.classList.remove('geometry-image')
   for (const prop of ['left', 'top', 'width', 'height'])
     img.style.removeProperty(prop)
 }
 
-// On a slide declaring `geometry.images`, positions the Nth content image by
-// the Nth frontmatter entry (same document-order traversal as the tracked
-// image below) and skips single tracked-image extraction entirely -- images
+// On a slide declaring `geometry.images`, positions each content image by the
+// frontmatter entry that references it (by src, or by position for entries
+// without one) and skips single tracked-image extraction entirely -- images
 // without an entry stay in normal flow. Returns whether it handled the slide.
 function updateGeometryImages(): boolean {
   const container = contentInnerEl.value
@@ -1150,9 +1179,15 @@ function updateGeometryImages(): boolean {
     return false
   }
   editor.hidden.image = true
+  // Which entry positions each image: src entries by src, positional ones by
+  // their own list position (see resolveGeometryImages).
+  const { indexes, warnings } = resolveGeometryImages(geometry.value, imgs.map(authoredSrc))
+  for (const warning of warnings)
+    warnGeometryOnce(warning)
   imgs.forEach((img, index) => {
     img.classList.remove('tracked-image')
-    const rect = effectiveImageRect(index)
+    const entry = indexes.indexOf(index)
+    const rect = entry >= 0 ? effectiveImageRect(entry) : null
     if (!rect) {
       clearGeometryImage(img)
       return
@@ -1383,7 +1418,7 @@ watch(editor.aspectLocked, (v) => {
         :class="{ 'el-active': editor.selected.value === item.key }"
         @mousedown.stop="editor.startDrag($event, item.key)"
       >
-        <span class="el-tag">Image {{ item.index + 1 }} (this slide)</span>
+        <span class="el-tag">{{ item.label }} (this slide)</span>
         <div
           v-if="editor.selected.value === item.key"
           class="resize-handle se"

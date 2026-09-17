@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
 import { defineConfig } from 'vite'
+import { markdownImageSrc } from './composables/markdownImageSrc.ts'
 import { resolveMarkerLine, serializeMarkerOverride } from './composables/useCodeHighlights.ts'
 
 const VAR_MAP: Record<string, Record<string, string>> = {
@@ -52,6 +53,15 @@ const IMAGE_MIME_EXT: Record<string, string> = {
 let projectRoot = process.cwd()
 
 export default defineConfig({
+  // Slidev merges every root's vite.config and hands the merged `slidev` key to
+  // its own plugin, so a theme can extend the slide markdown pipeline here.
+  slidev: {
+    markdown: {
+      markdownSetup(md: Parameters<typeof markdownImageSrc>[0]) {
+        markdownImageSrc(md)
+      },
+    },
+  },
   plugins: [
     {
       // Slidev's markdown-image-to-import transform rejects absolute

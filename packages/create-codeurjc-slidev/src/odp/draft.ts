@@ -7,6 +7,7 @@ import type { DiagramGroup, MermaidDiagram } from './diagrams'
 import type { EmittedImage } from './imageCallouts'
 import type { OdpDeck, OdpShape, Paragraph, Rect } from './model'
 import { basename, extname } from 'node:path'
+import { imageRefFor } from 'codeurjc-slidev-theme/composables/useImageRefs'
 import { annotateCodes, renderAnchorMarks, renderInlineMarks } from './annotations'
 import { codeLinesOf, commentToken, importLineFor, inferLanguage, isWholeFile, languageForFilename, matchCode, normalizeCodeLine, sourceUrl } from './code'
 import { diagramGroups, isSvgCandidate, mermaidFor } from './diagrams'
@@ -330,11 +331,18 @@ function placeMermaid(draft: SlideDraft, mermaid: MermaidDiagram): void {
   draft.blocks.splice(index, 1, ...pieces)
 }
 
-/** Writes an overlay conversion into a draft, registering its image files. */
+/**
+ * Writes an overlay conversion into a draft, registering its image files. Its
+ * callouts name images by position (public paths only exist from here on), so
+ * they're rewritten to src references against the images the slide emits.
+ */
 function applyOverlay(draft: SlideDraft, overlay: OverlayConversion, ctx: DraftContext): void {
   for (const image of overlay.images)
     draft.images.push({ key: image.href, publicPath: publicImagePath(image.href, ctx)!, rect: image.rect })
-  draft.callouts.push(...overlay.callouts)
+  const srcs = draft.images.map(image => `/${image.publicPath}`)
+  draft.callouts.push(...overlay.callouts.map(callout => callout.anchor.kind === 'image' && callout.anchor.ref.kind === 'position'
+    ? { ...callout, anchor: { ...callout.anchor, ref: imageRefFor(srcs, callout.anchor.ref.index) } }
+    : callout))
   draft.blocks.push(...overlay.blocks)
   draft.blocks.sort((a, b) => a.y - b.y)
   draft.losses.push(...overlay.losses)

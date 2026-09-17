@@ -26,7 +26,7 @@ The import is a best effort:
 
 - **Slides and titles:** one slide per ODP slide, in order. Hidden slides keep `hide: true`, and cover/copyright slides use the theme's layouts. Titles become `#` / `##` headings written only where they change, relying on the theme's title carry-over; a two-line title becomes chapter + subchapter.
 - **Text:** bullet lists (with nesting), bold, italic, inline code, links and plain tables.
-- **Images:** copied into `public/images/` and positioned with per-slide `geometry` frontmatter.
+- **Images:** copied into `public/images/` and positioned with per-slide `geometry` frontmatter. Geometry and callouts name each picture by its `src` (`#2` for a picture shown twice), so adding another image to a slide later doesn't move them.
 - **Code:**
   - A block that exactly matches a file in the code folder becomes a `<<< @/code/...` import, with a source link.
   - Code that differs from its file (elided or changed since) stays inline, with a link to the file.

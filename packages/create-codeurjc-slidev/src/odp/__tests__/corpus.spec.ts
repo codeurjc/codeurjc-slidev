@@ -88,10 +88,10 @@ describe('oDP corpus', () => {
     const { slidesMarkdown, reports } = await convert('Anexo – Despliegue de aplicaciones en Azure')
     // An arrow from a text box into a screenshot: an image-anchored callout
     // carrying the text and the box position it was drawn at.
-    expect(slidesMarkdown).toMatch(/callouts:\n {2}- at: \{ image: \d+, x: [\d.]+, y: [\d.]+ \}\n {4}text: .+\n {4}box: \{ x: \d+, y: \d+ \}/)
+    expect(slidesMarkdown).toMatch(/callouts:\n {2}- at: \{ image: \/images\/[^,#]+(?:#\d+)?, x: [\d.]+, y: [\d.]+ \}\n {4}text: .+\n {4}box: \{ x: \d+, y: \d+ \}/)
     // An arrow with nothing at its other end: anchor only, so the theme draws
     // the arrow and no box.
-    expect(slidesMarkdown).toMatch(/ {2}- at: \{ image: \d+, x: [\d.]+, y: [\d.]+ \}\n(?! {4}text:)/)
+    expect(slidesMarkdown).toMatch(/ {2}- at: \{ image: \/images\/[^,#]+(?:#\d+)?, x: [\d.]+, y: [\d.]+ \}\n(?! {4}text:)/)
     // Those arrows used to be reported as losses; now nothing is left to report.
     expect(reports.flatMap(r => r.losses).join('\n')).not.toContain('arrow or line omitted')
   })
@@ -99,12 +99,12 @@ describe('oDP corpus', () => {
   it.skipIf(!deckPath('2.2 Código de calidad'))('2.2: a label drawn on a diagram image becomes a callout instead of a flattened paragraph', async () => {
     const { slidesMarkdown } = await convert('2.2 Código de calidad')
     expect(slidesMarkdown).toContain('text: MODELO DE DOMINIO')
-    expect(slidesMarkdown).toMatch(/- at: \{ image: \d+, x: [\d.]+, y: [\d.]+ \}\n {4}text: MODELO DE DOMINIO/)
+    expect(slidesMarkdown).toMatch(/- at: \{ image: \/images\/[^,#]+(?:#\d+)?, x: [\d.]+, y: [\d.]+ \}\n {4}text: MODELO DE DOMINIO/)
   })
 
   it.skipIf(!deckPath('2.5 Análisis estático de código'))('2.5: bare pointers into screenshots become text-less callouts', async () => {
     const { slidesMarkdown, reports } = await convert('2.5 Análisis estático de código')
-    expect(slidesMarkdown).toMatch(/ {2}- at: \{ image: \d+, x: [\d.]+, y: [\d.]+ \}\n(?! {4}text:)/)
+    expect(slidesMarkdown).toMatch(/ {2}- at: \{ image: \/images\/[^,#]+(?:#\d+)?, x: [\d.]+, y: [\d.]+ \}\n(?! {4}text:)/)
     expect(reports.flatMap(r => r.losses).join('\n')).not.toContain('arrow or line omitted')
   })
 
@@ -116,7 +116,7 @@ describe('oDP corpus', () => {
     const tema12 = await convert('Tema 1.2 - Pruebas unitarias')
     expect(tema12.slidesMarkdown).toContain('text: Sólo muestra que la aserción no es correcta')
     // A vertically mirrored line's tip is its top-right end: 27% down the screenshot, not 40%.
-    expect(tema12.slidesMarkdown).toContain('- at: { image: 0, x: 0.042, y: 0.2721 }')
+    expect(tema12.slidesMarkdown).toMatch(/- at: \{ image: \/images\/[^,]+, x: 0\.042, y: 0\.2721 \}/)
     const selenium = await convert('Tema 4 - Pruebas de sistema - Selenium')
     expect(selenium.slidesMarkdown).toMatch(/@LocalServerPort \/\/ \[!mark@\d+,\d+\] Arranque automático del SUT/)
   })
@@ -135,7 +135,7 @@ describe('oDP corpus', () => {
       expect(report).toMatchObject({ losses: [], info: ['diagram converted to a mermaid flowchart'] })
     }
     // Given/When/Then boxes pointing into a code screenshot stay image callouts.
-    expect(slideOf(56).source).toMatch(/- at: \{ image: 0, x: [\d.]+, y: [\d.]+ \}\n {4}text: Given/)
+    expect(slideOf(56).source).toMatch(/- at: \{ image: \/images\/[^,]+, x: [\d.]+, y: [\d.]+ \}\n {4}text: Given/)
     expect(slideOf(56).source).not.toContain('```mermaid')
   })
 

@@ -12,7 +12,7 @@ import { mapPoint } from './geometry'
 // Everything here runs after code annotations have claimed their own texts and
 // connectors, so the two never convert the same shape twice.
 
-/** An image the slide actually emits, with the index its anchor must use. */
+/** An image the slide actually emits, with its position among the slide's emitted images. */
 export interface EmittedImage {
   shape: OdpShape
   index: number
@@ -34,9 +34,14 @@ function fractionIn(rect: Rect, x: number, y: number): { x: number, y: number } 
   return { x: clamp(rect.w > 0 ? (x - rect.x) / rect.w : 0), y: clamp(rect.h > 0 ? (y - rect.y) / rect.h : 0) }
 }
 
+/**
+ * An anchor at a point of an emitted image. The image is named by position
+ * here, since its public path isn't known until the draft registers its image
+ * files; `applyOverlay` (draft.ts) then rewrites it to a src reference.
+ */
 function imageAnchor(image: EmittedImage, x: number, y: number): CalloutAnchor {
   const { x: fx, y: fy } = fractionIn(image.shape.rect!, x, y)
-  return { kind: 'image', index: image.index, x: fx, y: fy }
+  return { kind: 'image', ref: { kind: 'position', index: image.index }, x: fx, y: fy }
 }
 
 export function slideCalloutsFor(

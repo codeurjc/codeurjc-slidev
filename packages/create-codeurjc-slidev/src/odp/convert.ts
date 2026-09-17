@@ -7,6 +7,7 @@ import type { LibreOfficeStatus, OfficeRunner } from './office'
 import type { SvgExport } from './svgCrop'
 import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
+import { formatImageRef, imageRefFor } from 'codeurjc-slidev-theme/composables/useImageRefs'
 import { serializeSlideCallouts } from 'codeurjc-slidev-theme/composables/useSlideCallouts'
 import { serializeSlideGeometry } from 'codeurjc-slidev-theme/composables/useSlideGeometry'
 import { realGitRunner } from 'codeurjc-slidev-theme/composables/useSourceLink'
@@ -130,7 +131,13 @@ function slideFrontmatter(draft: SlideDraft): Record<string, unknown> {
   if (draft.hidden)
     fm.hide = true
   if (draft.role === 'content') {
-    const geometry = serializeSlideGeometry({ content: draft.contentGeometry, images: draft.images.map(i => i.rect) })
+    // Image entries are keyed by the src the slide's markdown uses, so they
+    // keep applying to their picture however the images are later reordered.
+    const srcs = draft.images.map(i => `/${i.publicPath}`)
+    const geometry = serializeSlideGeometry({
+      content: draft.contentGeometry,
+      images: draft.images.map((image, index) => ({ ...image.rect, src: String(formatImageRef(imageRefFor(srcs, index))) })),
+    })
     if (geometry)
       fm.geometry = geometry
     const callouts = serializeSlideCallouts(draft.callouts)

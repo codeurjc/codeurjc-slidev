@@ -20,7 +20,9 @@ Includes a custom layout editor that lets you drag/resize slide elements (red ba
 - `composables/useHighlightLayout.ts` — pure geometry for callout auto-placement and elbow connector routing
 - `composables/useSnippetImport.ts` — `<<< @/path[selector] lang` snippet-import parsing, selector resolution (line-range / content-anchor-range, now also reporting the resolved 1-based line numbers) against a file's text, the code-root convention check, and `[!source ...]` directive-line parsing (see "Code source links" below)
 - `composables/useSourceLink.ts` — GitHub `origin`-remote detection (walking up to the nearest `.git` from the imported file, resolving symlinks first), default-branch resolution, and GitHub source-URL assembly; git access is injected so it's unit-testable without a real repo
-- `composables/useSlideGeometry.ts` — per-slide `geometry` frontmatter parsing/validation (content box + ordered image list), rect replacement for write-back, and the per-slide editor keys (see "Slide geometry" below)
+- `composables/useSlideGeometry.ts` — per-slide `geometry` frontmatter parsing/validation (content box + image entries keyed by `src` or position), resolving entries to images, rect replacement for write-back (migrating positional entries to `src`), and the per-slide editor keys (see "Slide geometry" below)
+- `composables/useImageRefs.ts` — the image reference grammar shared by geometry, callouts and the ODP importer: `src`, `src#N` for a repeated picture, or a legacy position; parsing, the shortest-reference generator and resolution against a slide's authored srcs (see "Image references" below)
+- `composables/markdownImageSrc.ts` — markdown-it plugin, registered from `vite.config.ts` (`slidev.markdown.markdownSetup`), stamping each content image's authored `src` into `data-src`
 - `composables/useSlideTitleCarryover.ts` — leading-heading parsing, the per-level (title/subtitle) carry-chain resolver, and heading injection for slide title/subtitle carry-over (see "Slide title carry-over" below)
 - `setup/transformers.ts` — registers a `pre` markdown-transformer that resolves `<<<` snippet imports (with slicing) into literal fenced code blocks before Slidev's own `<<<` handling ever sees them, plus the `codeblocks` transformer that renders highlights (from inline markers or external anchors) and source-link icons as callouts/title decorations
 - `setup/preparser.ts` — registers a `transformSlide` preparser extension that injects carried title/subtitle headings into a slide's content and syncs the result into Slidev's own parsed `slide.title`
@@ -39,21 +41,37 @@ A `default`-layout slide can position its own content box and any number of cont
 geometry:
   content: {x: 31, y: 98, w: 560, h: 424}
   images:
-    - {x: 620, y: 110, w: 320, h: 180}
-    - {x: 620, y: 310, w: 320, h: 180}
+    - {src: /images/diagram.png, x: 620, y: 110, w: 320, h: 180}
+    - {src: /images/screenshot.png, x: 620, y: 310, w: 320, h: 180}
 ---
 ```
 
 - **Coordinates** are slide-canvas pixels, the same space as the layout editor's position readouts and the `--ed-*` layout variables. `.content`/`.content-inner` are unpositioned, so everything resolves against the layout root with no offset.
 - **`content`** overrides that slide's `--ed-content-*` only; other slides keep the layout's saved position. Content autofit measures against the overridden box.
-- **`images[N]`** positions the Nth `<img>` in the slide's content (document order), scaled to fit without distortion (`object-fit: contain`).
-  - Images without an entry stay in normal flow; extra entries are ignored.
+- **`images`** entries each position one `<img>` of the slide's content, scaled to fit without distortion (`object-fit: contain`).
+  - An entry with a `src` positions the image with that authored src (see "Image references"), wherever it sits, so inserting another image doesn't move it. An entry without one positions the image at its own list position (the Nth `<img>`), as it always did. Src entries claim their images first; a positional entry landing on a claimed image is skipped with a warning.
+  - Images without an entry stay in normal flow; entries that match no image are ignored (an unresolvable `src` warns).
   - An invalid entry (console warning) leaves its image in flow without shifting later entries.
   - A slide declaring `geometry.images` skips the layout's single tracked-image extraction (last `<img>` → layout-level `image` element).
 - **Editor.** In the Layout tab, frontmatter-positioned elements appear as "Content (this slide)" and "Image N (this slide)".
-  - Their editor keys are `geometry:<slideNo>:content` and `geometry:<slideNo>:image:<n>`, scoped by slide number because the editor state is shared by every mounted slide. Images default to aspect-locked.
+  - Their editor keys are `geometry:<slideNo>:content` and `geometry:<slideNo>:image:<n>` (`n` = the entry's list position), scoped by slide number because the editor state is shared by every mounted slide. Images default to aspect-locked. An image overlay's tag shows its file name when the entry has a `src`.
   - Drags, resizes, numeric inputs and undo are written back to that slide's frontmatter once they settle, never mid-drag. The write goes through Slidev's slide `update({ frontmatter })`, into whichever markdown file the slide came from.
   - They never reach a layout file: "Save" / "Save as new layout" (and the save-layout middleware) only persist the five fixed layout elements.
+
+## Image references
+
+`geometry.images` entries (`src:`) and callout image anchors (`at: {image: …}`) name a picture the same way, parsed and resolved by `composables/useImageRefs.ts`:
+
+| Form | Picks |
+|---|---|
+| `/images/a.png` | The image whose `src` is written exactly that way in the slide's markdown or HTML |
+| `/images/a.png#2` | The 2nd image with that `src`, for a picture shown more than once (only a trailing `#<digits>` counts, so `icons.svg#logo` is a plain src) |
+| `1` | Legacy positional form: the 2nd content `<img>` in document order |
+
+- **Authored src, not rendered URL.** Slidev turns slide image URLs into bundled asset imports (`/public/images/…` in dev, an inlined or hashed URL in a build), so the rendered `src` can't be compared. `composables/markdownImageSrc.ts`, a markdown-it core rule the theme registers through its `vite.config.ts` (`slidev.markdown.markdownSetup` — Slidev merges every root's vite config and hands the merged `slidev` key to its plugin), copies each image's written `src` into `data-src`, for markdown images and raw `<img>` tags alike. A consumer defining its own `markdownSetup` replaces the theme's and should call `markdownImageSrc(md)` from theirs.
+- **Never re-targets.** A reference that matches nothing (a renamed file, an occurrence past the count) warns and leaves images alone; a bare `src` that repeats picks the first occurrence with a warning suggesting `#N`.
+- **Writers** (the layout editor, "+ Callout", the ODP importer) always write the shortest unambiguous form (`imageRefFor`): the bare `src`, or `src#N` only when it repeats. Editor writes also rewrite that slide's positional entries and anchors to `src` (`withGeometryRect`/`withSlideCallout`/`withoutSlideCallout` take the slide's srcs), so older decks migrate as they're edited; nothing is rewritten just by viewing.
+- **Geometry and callouts are read from the slide-info ref** (`useDynamicSlideInfo(no).info`), not `$frontmatter`, so these frontmatter-only writes show up without a reload.
 
 ## Slide callouts
 
@@ -62,7 +80,7 @@ A `default`-layout slide can annotate anything on it -- a spot on an image, a pi
 ```yaml
 ---
 callouts:
-  - at: {image: 0, x: 0.45, y: 0.51} # fraction of that image
+  - at: {image: /images/screenshot.png, x: 0.45, y: 0.51} # fraction of that image
     text: Le damos un nombre al grupo
     box: {x: 620, y: 300} # optional; auto-placed when absent
   - at: {x: 480, y: 210} # free point, slide-canvas pixels
@@ -75,11 +93,11 @@ callouts:
 
 | Form | Resolves to | Survives |
 |---|---|---|
-| `{ image: N, x, y }` | Fractions (0-1) of the Nth image's **rendered** area | the image being moved or resized |
+| `{ image: <src>, x, y }` | Fractions (0-1) of that image's **rendered** area (`src#N` for a repeated picture; a number still means the Nth image) | the image being moved, resized, or other images being inserted |
 | `{ x, y }` | A point in slide-canvas pixels, the same space as `geometry` | nothing -- it drifts if content reflows |
 | `{ text: "..." }` | The first content element containing that text, preferring the deepest match over its wrappers | edits elsewhere, autofit rescaling |
 
-Image fractions resolve against the picture, not its `geometry.images` box: an image is drawn with `object-fit: contain`, so one whose aspect ratio differs from its box renders letterboxed inside it (`containedRect`). An anchor naming a missing image or unfindable text is skipped with a console warning, as is an invalid entry -- its siblings still render, since entries keep their index.
+Image fractions resolve against the picture, not its `geometry.images` box: an image is drawn with `object-fit: contain`, so one whose aspect ratio differs from its box renders letterboxed inside it (`containedRect`). An anchor naming a missing image or unfindable text is skipped with a console warning, as is an invalid entry -- its siblings still render, since entries keep their index. "+ Callout" on a picture writes its `src` reference; every callout write (create, box or anchor drag, delete) also turns that slide's positional image anchors into `src` references.
 
 ### What gets drawn
 
@@ -272,7 +290,7 @@ Slide 4: empty title — no title here, and none on slides after until a new one
   - **Groups.** After code annotations, a slide's remaining drawing (images, connectors, bordered/filled texts, decorations, plain texts) is grouped. Connectors join what lies within 0.5 cm along their length; other shapes only what they touch; plain text only what its centre lies on, or, in a group with arrows, a shape within 1 cm (a node's label beside its icon). Groups touching code or tables are dropped. Role-less shapes inside a group's box (e.g. a `draw:path` curve the classifier ignores) ride along as *extras*.
   - **Mermaid.** A *clear graph* becomes a `flowchart LR|TB` fence: labelled rectangles, no overlaps, nothing drawn inside a box, every edge between two boxes, all edges on one axis. A labelled arrow parked near a node becomes a callout `{text: <node label>}`, unless that text also appears elsewhere on the slide. The fence is placed at the body's run of empty spacer paragraphs nearest the drawing (`ClassifiedSlide.bodyGaps`).
   - **SVG.** Any other group is an SVG candidate when the ordinary conversion would lose part of it, judged by a trial run of `convertOverlay`. A flattened side label or an empty frame around a picture don't count, so fully converted screenshot callouts stay callouts.
-- `draft.ts`/`buildups.ts` — per-slide drafts.
+- `draft.ts`/`buildups.ts` — per-slide drafts. Images get `src`-keyed `geometry.images` entries and image callouts `src` anchors (`#N` for a picture shown twice): `slideCalloutsFor` names images by position, and `applyOverlay` rewrites those to src references once the image files are registered.
   - The ordinary conversion of images, slide callouts, flattened text and losses is the pure `convertOverlay(excluded)`, run once with mermaid shapes excluded and, when SVG candidates exist, `DraftContext.canEmbedDiagrams` holds and the slide is visible, again without the candidates.
   - Runs of slides where each adds only convertible things (code callouts, trailing bullets, images) merge into one slide with click steps (`{N}`, `<v-click at>`, `<img v-click>`), otherwise stay separate with a warning. Diagram shapes never count as convertible additions.
 - `office.ts`/`svg.ts`/`svgCrop.ts`/`comparison.ts` — LibreOffice ≥ 7.4 detection (up front, unless `office: false`) and one shared SVG export (isolated profile).

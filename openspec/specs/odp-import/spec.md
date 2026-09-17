@@ -109,15 +109,19 @@ A text box, outside the body, whose only content is a hyperlink SHALL become a p
 - **THEN** the slide's content ends with a paragraph linking to `https://martinfowler.com/bliki/UnitTest.html`
 
 ### Requirement: Images are extracted and positioned with slide geometry
-Each image frame SHALL be written to the project's `public/images/` directory and referenced from the slide as an image. When a frame holds both an SVG and a raster fallback, the SVG SHALL be used. Each referenced image SHALL get a `geometry.images` entry, in the same order as the images in the slide content. When the body box differs from the template's default body box beyond tolerance, the slide SHALL also get `geometry.content`. Positions SHALL be mapped from the ODP's default body region to the theme's default content box, scaling each axis independently, and clamped to the slide canvas. An image in a format browsers can't display SHALL be omitted and reported as a loss.
+Each image frame SHALL be written to the project's `public/images/` directory and referenced from the slide as an image. When a frame holds both an SVG and a raster fallback, the SVG SHALL be used. Each referenced image SHALL get a `geometry.images` entry keyed by its `src` (with `#N` when the same picture appears more than once on the slide). When the body box differs from the template's default body box beyond tolerance, the slide SHALL also get `geometry.content`. Positions SHALL be mapped from the ODP's default body region to the theme's default content box, scaling each axis independently, and clamped to the slide canvas. An image in a format browsers can't display SHALL be omitted and reported as a loss.
 
 #### Scenario: List narrowed beside an image
 - **WHEN** a slide's body box is narrowed to 14.5 cm and an image sits to its right
-- **THEN** the slide's frontmatter has a `geometry.content` narrower than the default, and a `geometry.images` entry to the right of it, and the image file exists under `public/images/`
+- **THEN** the slide's frontmatter has a `geometry.content` narrower than the default, and a `geometry.images` entry keyed by the image's `src` to the right of it, and the image file exists under `public/images/`
 
 #### Scenario: SVG preferred over raster fallback
 - **WHEN** an image frame contains an SVG image and a PNG fallback with the same geometry
 - **THEN** only the SVG is copied and referenced
+
+#### Scenario: Same picture twice on a slide
+- **WHEN** a slide shows the same embedded picture in two frames
+- **THEN** its `geometry.images` entries reference `/images/<name>#1` and `/images/<name>#2`
 
 ### Requirement: Plain tables become markdown tables
 A table whose cells contain only text SHALL become a markdown table, using the first row as the header. A table overlapped by other shapes (e.g. images placed over cells) SHALL still be emitted as text, and the overlapping shapes reported as a loss.
@@ -163,13 +167,13 @@ The importer SHALL convert annotations drawn over an image into `callouts` front
 - a text box drawn on top of an image SHALL become a callout whose anchor and `box` are that text's position, so it renders as a label with no connector;
 - a labelled arrow pointing at slide content rather than at an image SHALL become a callout with a slide-point anchor.
 
-Anchors on images SHALL be expressed as fractions of the image, so they survive the image being repositioned or resized.
+Anchors on images SHALL reference the image by its `src` and be expressed as fractions of the image, so they survive the image being repositioned, resized, or other images being added before it.
 
 The exception is an image whose overlay can't be converted entirely this way: some shape, arrow or text on it would still be lost, or a rotated label would lose its rotation. When that image can be embedded as a diagram SVG, the image and its whole overlay SHALL become that SVG instead, with no callouts (see odp-diagram-conversion).
 
 #### Scenario: Screenshot callout
 - **WHEN** an ODP slide has an arrow from the text box "Le damos un nombre a nuestro grupo" to a point inside a screenshot
-- **THEN** the converted slide has a callout anchored at that fraction of that image, carrying that text, and the arrow is not reported as a loss
+- **THEN** the converted slide has a callout anchored at `{ image: <the screenshot's src>, x, y }` at that fraction, carrying that text, and the arrow is not reported as a loss
 
 #### Scenario: Bare pointer over a screenshot
 - **WHEN** an arrow points into a screenshot and no text box is connected to it

@@ -7,14 +7,15 @@ import {
   hasGeometryImages,
   isGeometryKey,
   parseSlideGeometry,
+  resolveGeometryImages,
   serializeSlideGeometry,
   withGeometryRect,
 } from '../useSlideGeometry'
 
 describe('parseSlideGeometry', () => {
   it('returns an empty geometry when the frontmatter has none', () => {
-    expect(parseSlideGeometry({ layout: 'default' })).toEqual({ content: null, images: [], warnings: [] })
-    expect(parseSlideGeometry(undefined)).toEqual({ content: null, images: [], warnings: [] })
+    expect(parseSlideGeometry({ layout: 'default' })).toEqual({ content: null, images: [], imageRefs: [], warnings: [] })
+    expect(parseSlideGeometry(undefined)).toEqual({ content: null, images: [], imageRefs: [], warnings: [] })
   })
 
   it('reads content only', () => {
@@ -98,6 +99,56 @@ describe('withGeometryRect', () => {
 
   it('starts from an empty object when there is no authored geometry', () => {
     expect(withGeometryRect(undefined, { kind: 'image', index: 0 }, { x: 1, y: 2, w: 3, h: 4 })).toEqual({ images: [{ x: 1, y: 2, w: 3, h: 4 }] })
+  })
+
+  it('keeps an entry\'s src when replacing its rect', () => {
+    const next = withGeometryRect({ images: [{ src: '/images/a.png', x: 1, y: 1, w: 1, h: 1 }] }, { kind: 'image', index: 0 }, { x: 9, y: 9, w: 9, h: 9 })
+    expect(next).toEqual({ images: [{ src: '/images/a.png', x: 9, y: 9, w: 9, h: 9 }] })
+  })
+
+  it('migrates resolvable positional entries to src references, keeping the rest as written', () => {
+    const raw = { images: [{ x: 1, y: 1, w: 1, h: 1 }, { x: 2, y: 2, w: 2, h: 2 }, { x: 3, y: 3, w: 3, h: 3 }] }
+    // The third entry has no image to resolve to.
+    const next = withGeometryRect(raw, { kind: 'image', index: 1 }, { x: 20, y: 2, w: 2, h: 2 }, ['/images/a.png', '/images/a.png'])
+    expect(next.images).toEqual([
+      { src: '/images/a.png#1', x: 1, y: 1, w: 1, h: 1 },
+      { src: '/images/a.png#2', x: 20, y: 2, w: 2, h: 2 },
+      { x: 3, y: 3, w: 3, h: 3 },
+    ])
+  })
+
+  it('doesn\'t migrate a positional entry onto an image a src entry already positions', () => {
+    const raw = { images: [{ x: 1, y: 1, w: 1, h: 1 }, { src: '/images/a.png', x: 2, y: 2, w: 2, h: 2 }] }
+    const next = withGeometryRect(raw, { kind: 'image', index: 1 }, { x: 5, y: 5, w: 5, h: 5 }, ['/images/a.png'])
+    expect(next.images).toEqual([{ x: 1, y: 1, w: 1, h: 1 }, { src: '/images/a.png', x: 5, y: 5, w: 5, h: 5 }])
+  })
+})
+
+describe('src-keyed geometry images', () => {
+  it('parses src entries next to positional ones and rejects invalid srcs', () => {
+    const g = parseSlideGeometry({ geometry: { images: [{ src: '/images/b.png#2', x: 1, y: 2, w: 3, h: 4 }, { x: 5, y: 6, w: 7, h: 8 }, { src: '/images/c.png#0', x: 1, y: 1, w: 1, h: 1 }] } })
+    expect(g.imageRefs).toEqual([{ kind: 'src', src: '/images/b.png', occurrence: 2 }, { kind: 'position', index: 1 }, { kind: 'position', index: 2 }])
+    expect(g.images).toEqual([{ x: 1, y: 2, w: 3, h: 4 }, { x: 5, y: 6, w: 7, h: 8 }, null])
+    expect(g.warnings).toEqual(['geometry.images[2].src must be an image src, optionally with #N (N >= 1)'])
+  })
+
+  it('resolves src entries first, so an inserted image doesn\'t move them', () => {
+    const g = parseSlideGeometry({ geometry: { images: [{ src: '/images/b.png', x: 1, y: 1, w: 1, h: 1 }] } })
+    expect(resolveGeometryImages(g, ['/images/new.png', '/images/a.png', '/images/b.png']).indexes).toEqual([2])
+  })
+
+  it('skips a positional entry whose image a src entry claimed, and warns about unresolvable srcs', () => {
+    const g = parseSlideGeometry({ geometry: { images: [{ x: 1, y: 1, w: 1, h: 1 }, { src: '/images/a.png', x: 2, y: 2, w: 2, h: 2 }, { src: '/images/gone.png', x: 3, y: 3, w: 3, h: 3 }] } })
+    const { indexes, warnings } = resolveGeometryImages(g, ['/images/a.png', '/images/b.png'])
+    expect(indexes).toEqual([-1, 0, -1])
+    expect(warnings).toEqual([
+      'geometry.images[2]: no image with src "/images/gone.png"',
+      'geometry.images[0]: image 0 is already positioned by another entry',
+    ])
+  })
+
+  it('serializes src-keyed entries with the src first', () => {
+    expect(serializeSlideGeometry({ images: [{ src: '/images/a.png', x: 1.2, y: 2, w: 3, h: 4 }] })).toEqual({ images: [{ src: '/images/a.png', x: 1, y: 2, w: 3, h: 4 }] })
   })
 })
 

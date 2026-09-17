@@ -5,7 +5,7 @@
 // for annotations of the *slide*, which is why it sits beside `geometry`.
 //
 //   callouts:
-//     - at: { image: 0, x: 0.45, y: 0.51 }   # fraction of that image
+//     - at: { image: /images/a.png, x: 0.45, y: 0.51 }   # fraction of that image
 //       text: Le damos un nombre al grupo
 //       box: { x: 620, y: 300 }              # optional; auto-placed when absent
 //     - at: { x: 480, y: 210 }               # free point, slide-canvas pixels
@@ -17,6 +17,8 @@
 // the layout editor (the ODP importer) can share the same types.
 
 import type { Rect } from './useHighlightLayout'
+import type { ImageRef } from './useImageRefs'
+import { formatImageRef, imageRefFor, parseImageRef, resolveImageRef } from './useImageRefs'
 
 export interface CalloutPoint {
   x: number
@@ -30,11 +32,12 @@ export interface CalloutPoint {
  * if the thing it visually pointed at later moves.
  */
 export type CalloutAnchor
-  // `image`: x/y are fractions (0..1) of the image's *rendered* area, not of
-  // its `geometry.images` box -- an image is drawn with `object-fit: contain`,
-  // so a picture whose aspect ratio differs from its box is letterboxed inside
-  // it and the box's centre is not the picture's centre.
-  = | { kind: 'image', index: number, x: number, y: number }
+  // `image`: `ref` names the image (its src, or its position -- see
+  // useImageRefs.ts); x/y are fractions (0..1) of the image's *rendered* area,
+  // not of its `geometry.images` box -- an image is drawn with `object-fit:
+  // contain`, so a picture whose aspect ratio differs from its box is
+  // letterboxed inside it and the box's centre is not the picture's centre.
+  = | { kind: 'image', ref: ImageRef, x: number, y: number }
     | { kind: 'point', x: number, y: number }
     | { kind: 'text', text: string }
 
@@ -80,9 +83,9 @@ function parseAnchor(raw: unknown, path: string, warnings: string[]): CalloutAnc
   }
 
   if (raw.image != null) {
-    const index = raw.image
-    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) {
-      warnings.push(`${path}.image must be a non-negative whole number`)
+    const ref = parseImageRef(raw.image)
+    if (!ref) {
+      warnings.push(`${path}.image must be an image src (optionally with #N) or a non-negative whole number`)
       return null
     }
     const x = numberField(raw, 'x', path, warnings)
@@ -97,7 +100,7 @@ function parseAnchor(raw: unknown, path: string, warnings: string[]): CalloutAnc
         return null
       }
     }
-    return { kind: 'image', index, x, y }
+    return { kind: 'image', ref, x, y }
   }
 
   if (raw.text != null) {
@@ -201,7 +204,7 @@ function roundFraction(value: number): number {
 
 function serializeAnchor(anchor: CalloutAnchor): Record<string, unknown> {
   if (anchor.kind === 'image')
-    return { image: anchor.index, x: roundFraction(anchor.x), y: roundFraction(anchor.y) }
+    return { image: formatImageRef(anchor.ref), x: roundFraction(anchor.x), y: roundFraction(anchor.y) }
   if (anchor.kind === 'text')
     return { text: anchor.text }
   const { x, y } = roundPx(anchor)
@@ -225,24 +228,47 @@ export function serializeSlideCallouts(callouts: SlideCallout[]): Record<string,
 }
 
 /**
+ * Given the slide's authored image `srcs`, rewrites every positional image
+ * anchor that resolves to an image with a src into a src reference to that
+ * image (`#N` when it repeats), so a slide migrates the first time its
+ * callouts are edited. Anything else is kept exactly as written.
+ */
+function migrateImageAnchors(entries: Record<string, unknown>[], srcs: (string | null | undefined)[] | undefined): Record<string, unknown>[] {
+  if (!srcs)
+    return entries
+  return entries.map((entry) => {
+    const at = entry.at
+    if (!isRecord(at) || typeof at.image !== 'number')
+      return entry
+    const ref = parseImageRef(at.image)
+    const resolved = ref ? resolveImageRef(ref, srcs) : undefined
+    if (!resolved || resolved.index < 0)
+      return entry
+    const next = imageRefFor(srcs, resolved.index)
+    return next.kind === 'src' ? { ...entry, at: { ...at, image: formatImageRef(next) } } : entry
+  })
+}
+
+/**
  * Returns a copy of an authored `callouts` frontmatter value with only entry
  * `index` replaced -- every other entry (including ones this parser considers
  * invalid) is kept exactly as written, since Slidev's frontmatter patch
- * replaces the whole top-level `callouts` key.
+ * replaces the whole top-level `callouts` key. Positional image anchors are
+ * migrated to src references when `srcs` is given.
  */
-export function withSlideCallout(rawCallouts: unknown, index: number, callout: SlideCallout): Record<string, unknown>[] {
+export function withSlideCallout(rawCallouts: unknown, index: number, callout: SlideCallout, srcs?: (string | null | undefined)[]): Record<string, unknown>[] {
   const next: unknown[] = Array.isArray(rawCallouts) ? [...rawCallouts] : []
   next[index] = serializeSlideCallout(callout)
   // A sparse write (index past the end) would leave holes that serialize as
   // nulls, so fill any gap with the empty object the parser already warns on.
-  return Array.from(next, entry => (entry ?? {}) as Record<string, unknown>)
+  return migrateImageAnchors(Array.from(next, entry => (entry ?? {}) as Record<string, unknown>), srcs)
 }
 
-/** Returns a copy of an authored `callouts` value with entry `index` removed, keeping the others as written. */
-export function withoutSlideCallout(rawCallouts: unknown, index: number): Record<string, unknown>[] {
+/** Returns a copy of an authored `callouts` value with entry `index` removed, keeping the others as written (positional image anchors migrated when `srcs` is given). */
+export function withoutSlideCallout(rawCallouts: unknown, index: number, srcs?: (string | null | undefined)[]): Record<string, unknown>[] {
   const next: unknown[] = Array.isArray(rawCallouts) ? [...rawCallouts] : []
   next.splice(index, 1)
-  return Array.from(next, entry => (entry ?? {}) as Record<string, unknown>)
+  return migrateImageAnchors(Array.from(next, entry => (entry ?? {}) as Record<string, unknown>), srcs)
 }
 
 /**

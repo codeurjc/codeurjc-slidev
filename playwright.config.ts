@@ -49,6 +49,7 @@ export default defineConfig({
         'slide-geometry.spec.ts',
         'slide-callouts.spec.ts',
         'slide-callouts-diagrams.spec.ts',
+        'slide-image-references.spec.ts',
         'callout-click-steps.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'] },

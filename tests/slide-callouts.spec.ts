@@ -75,7 +75,7 @@ geometry:
 
 # Authoring
 
-<img class="fx-new" src="${PNG}">
+<img class="fx-new" src="/images/logo.png">
 `
 
 let slidesPath: string
@@ -118,9 +118,9 @@ function authoringFrontmatter(): string {
   return text.slice(text.lastIndexOf('---', close - 1), close)
 }
 
-/** The authoring callout's image-anchor x fraction, if it has one. */
+/** The authoring callout's image-anchor x fraction, if it has one: the anchor references the picture by its src. */
 function authoringAnchorX(): string | undefined {
-  return /image:\s*0,?\s+x:\s*([\d.]+)/.exec(authoringFrontmatter())?.[1]
+  return /image:\s*\/images\/logo\.png,?\s+x:\s*([\d.]+)/.exec(authoringFrontmatter())?.[1]
 }
 
 /** The first point of a connector's path, in slide-canvas pixels. */
@@ -235,7 +235,7 @@ test.describe('Slide callouts E2E', () => {
     await pending.fill('Nueva nota')
     await pending.press('Enter')
 
-    // Clicking an image anchors by fraction of that image, not by pixel.
+    // Clicking an image anchors by fraction of that image, referenced by its src.
     await expect.poll(authoringFrontmatter, { timeout: 20000 }).toContain('text: Nueva nota')
     const before = authoringAnchorX()
     expect(before).toBeDefined()

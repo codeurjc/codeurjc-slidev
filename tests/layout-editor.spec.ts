@@ -58,8 +58,12 @@ test.describe('Layout Editor E2E', () => {
     await page.waitForTimeout(2000)
     // Open the editor by clicking the "Show editor" button in the nav controls
     await page.locator('button:has-text("Show editor")').click()
-    // Switch to layout tab
-    await page.locator('button:has-text("Switch to layout tab")').click()
+    // Switch to layout tab. Dispatched rather than clicked: while the side
+    // editor settles its width, its header's "Dock to bottom" button can
+    // overlap the tab buttons and intercept a real click.
+    const layoutTab = page.locator('button:has-text("Switch to layout tab")')
+    await layoutTab.waitFor({ state: 'attached', timeout: 30000 })
+    await layoutTab.dispatchEvent('click')
     // Wait for layout panel content to be visible
     await page.waitForSelector('.layout-editor-panel', { timeout: 30000 })
   })

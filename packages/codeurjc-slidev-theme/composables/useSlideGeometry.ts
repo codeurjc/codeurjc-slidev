@@ -10,10 +10,16 @@
 //   geometry:
 //     content: { x: 31, y: 98, w: 560, h: 424 }
 //     images:
-//       - { x: 620, y: 110, w: 320, h: 400 }
+//       - { src: /images/a.png, x: 620, y: 110, w: 320, h: 400 }
+//
+// An image entry names its image by `src` (see useImageRefs.ts); an entry
+// without one positions the image at its own list position, as before.
 //
 // Pure (no DOM, no Vue) so the grammar is unit-testable and writers other
 // than the layout editor (e.g. the ODP importer) can share the same types.
+
+import type { ImageRef } from './useImageRefs'
+import { formatImageRef, imageRefFor, parseImageRef, resolveImageRef } from './useImageRefs'
 
 export interface GeometryRect {
   x: number
@@ -30,6 +36,8 @@ export interface ParsedSlideGeometry {
    * so every later entry still positions its own image by document order.
    */
   images: (GeometryRect | null)[]
+  /** Index-aligned with `images`: which image each entry positions (its `src`, else its own list position). */
+  imageRefs: ImageRef[]
   warnings: string[]
 }
 
@@ -72,23 +80,38 @@ export function parseSlideGeometry(frontmatter: Record<string, unknown> | null |
   const warnings: string[] = []
   const raw = frontmatter?.[GEOMETRY_FRONTMATTER_KEY]
   if (raw == null)
-    return { content: null, images: [], warnings }
+    return { content: null, images: [], imageRefs: [], warnings }
   if (!isRecord(raw)) {
     warnings.push('geometry must be an object with optional content and images')
-    return { content: null, images: [], warnings }
+    return { content: null, images: [], imageRefs: [], warnings }
   }
 
   const content = raw.content == null ? null : parseGeometryRect(raw.content, 'geometry.content', warnings)
 
   let images: (GeometryRect | null)[] = []
+  let imageRefs: ImageRef[] = []
   if (raw.images != null) {
-    if (Array.isArray(raw.images))
-      images = raw.images.map((entry, i) => parseGeometryRect(entry, `geometry.images[${i}]`, warnings))
-    else
+    if (Array.isArray(raw.images)) {
+      imageRefs = raw.images.map((entry, i) => ({ kind: 'position', index: i }))
+      images = raw.images.map((entry, i) => {
+        const path = `geometry.images[${i}]`
+        if (isRecord(entry) && entry.src != null) {
+          const ref = parseImageRef(entry.src)
+          if (!ref || ref.kind !== 'src') {
+            warnings.push(`${path}.src must be an image src, optionally with #N (N >= 1)`)
+            return null
+          }
+          imageRefs[i] = ref
+        }
+        return parseGeometryRect(entry, path, warnings)
+      })
+    }
+    else {
       warnings.push('geometry.images must be a list')
+    }
   }
 
-  return { content, images, warnings }
+  return { content, images, imageRefs, warnings }
 }
 
 /** Whether the slide positions its images through frontmatter (which disables the layout's single tracked-image extraction). */
@@ -96,17 +119,47 @@ export function hasGeometryImages(geometry: ParsedSlideGeometry): boolean {
   return geometry.images.some(rect => rect !== null)
 }
 
+/**
+ * Which image (index into `srcs`, the slide's authored image srcs in document
+ * order) each `geometry.images` entry positions, or -1. Src entries claim
+ * their images first, so a positional entry landing on an image a src entry
+ * already took is skipped rather than fighting over it.
+ */
+export function resolveGeometryImages(geometry: ParsedSlideGeometry, srcs: (string | null | undefined)[]): { indexes: number[], warnings: string[] } {
+  const warnings: string[] = []
+  const indexes = geometry.images.map(() => -1)
+  const claimed = new Set<number>()
+  const pass = (kind: ImageRef['kind']) => geometry.imageRefs.forEach((ref, i) => {
+    if (ref.kind !== kind || !geometry.images[i])
+      return
+    const resolved = resolveImageRef(ref, srcs)
+    if (resolved.warning && (kind === 'src' || resolved.index >= 0))
+      warnings.push(`geometry.images[${i}]: ${resolved.warning}`)
+    if (resolved.index < 0)
+      return
+    if (claimed.has(resolved.index)) {
+      warnings.push(`geometry.images[${i}]: image ${resolved.index} is already positioned by another entry`)
+      return
+    }
+    claimed.add(resolved.index)
+    indexes[i] = resolved.index
+  })
+  pass('src')
+  pass('position')
+  return { indexes, warnings }
+}
+
 function roundRect(rect: GeometryRect): GeometryRect {
   return { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.w), h: Math.round(rect.h) }
 }
 
-/** Builds a `geometry` frontmatter value from rects, rounding to whole pixels and omitting empty parts. */
-export function serializeSlideGeometry(geometry: { content?: GeometryRect | null, images?: GeometryRect[] }): Record<string, unknown> | undefined {
+/** Builds a `geometry` frontmatter value from rects (image entries optionally keyed by `src`), rounding to whole pixels and omitting empty parts. */
+export function serializeSlideGeometry(geometry: { content?: GeometryRect | null, images?: (GeometryRect & { src?: string })[] }): Record<string, unknown> | undefined {
   const out: Record<string, unknown> = {}
   if (geometry.content)
     out.content = roundRect(geometry.content)
   if (geometry.images && geometry.images.length > 0)
-    out.images = geometry.images.map(roundRect)
+    out.images = geometry.images.map(({ src, ...rect }) => (src ? { src, ...roundRect(rect) } : roundRect(rect)))
   return Object.keys(out).length > 0 ? out : undefined
 }
 
@@ -115,16 +168,32 @@ export function serializeSlideGeometry(geometry: { content?: GeometryRect | null
  * `target`'s rect replaced -- every other entry (including ones this parser
  * considers invalid) is kept exactly as written, since Slidev's frontmatter
  * patch replaces the whole top-level `geometry` key.
+ *
+ * Given the slide's authored image `srcs`, the write also keys every
+ * positional image entry that resolves to an image with a src by that src
+ * (`#N` when it repeats), so a slide migrates to src references the first
+ * time it's edited. Entries that don't resolve are kept as written.
  */
-export function withGeometryRect(rawGeometry: unknown, target: GeometryTarget, rect: GeometryRect): Record<string, unknown> {
+export function withGeometryRect(rawGeometry: unknown, target: GeometryTarget, rect: GeometryRect, srcs?: (string | null | undefined)[]): Record<string, unknown> {
   const next: Record<string, unknown> = isRecord(rawGeometry) ? { ...rawGeometry } : {}
   if (target.kind === 'content') {
     next.content = roundRect(rect)
   }
   else {
     const images = Array.isArray(next.images) ? [...next.images] : []
-    images[target.index] = roundRect(rect)
+    const current = images[target.index]
+    images[target.index] = isRecord(current) && current.src != null ? { src: current.src, ...roundRect(rect) } : roundRect(rect)
     next.images = images
+  }
+  if (srcs && Array.isArray(next.images)) {
+    const images = next.images as unknown[]
+    const { indexes } = resolveGeometryImages(parseSlideGeometry({ [GEOMETRY_FRONTMATTER_KEY]: next }), srcs)
+    next.images = images.map((entry, i) => {
+      if (!isRecord(entry) || entry.src != null || indexes[i] < 0)
+        return entry
+      const ref = imageRefFor(srcs, indexes[i])
+      return ref.kind === 'src' ? { src: formatImageRef(ref), ...entry } : entry
+    })
   }
   return next
 }

@@ -133,7 +133,7 @@ describe('convertOdp', () => {
     expect(slides[3]).toContain('# Justificación y objetivos\n## Objetivos (1/3)\n\n- **Verificar** que funciona\n  - en detalle')
     expect(slides[4]).not.toContain('# Justificación')
     expect(slides[4]).toContain('\n##\n')
-    expect(slides[4]).toMatch(/geometry:\n {2}content: \{ x: 31, y: 98, w: \d+, h: 424 \}\n {2}images:\n {4}- \{ x: \d+, y: \d+, w: \d+, h: \d+ \}/)
+    expect(slides[4]).toMatch(/geometry:\n {2}content: \{ x: 31, y: 98, w: \d+, h: 424 \}\n {2}images:\n {4}- \{ src: \/images\/chair\.svg, x: \d+, y: \d+, w: \d+, h: \d+ \}/)
     expect(slides[4]).toContain('![](/images/chair.svg)')
     expect([...result.images.keys()]).toEqual(['images/chair.svg'])
     expect(slides[5]).toContain('# Tipos de pruebas\n## Qué características prueban\n\n### Pruebas Funcionales\n\n- Verifican la funcionalidad')
