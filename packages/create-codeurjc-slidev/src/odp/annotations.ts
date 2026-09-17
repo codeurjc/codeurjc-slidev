@@ -1,5 +1,7 @@
+import type { StepRange } from 'codeurjc-slidev-theme/composables/stepRange'
 import type { ClassifiedSlide, CodeShape } from './classify'
 import type { OdpShape, Rect } from './model'
+import { formatStepRange } from 'codeurjc-slidev-theme/composables/stepRange'
 import {
   BOX_LINE_HEIGHT_RATIO,
   CONNECTOR_DISTANCE_CM,
@@ -19,6 +21,7 @@ import { shapeText } from './model'
 // trailing-comment markers (hand-typed fences) or anchor-declaration lines
 // (`<<<` imports).
 
+/** A mark's click step or step range (see the theme's stepRange.ts). */
 export interface CodeMark {
   kind: 'line' | 'range' | 'substring'
   /** 0-based indexes into the code block's (trimmed) lines. */
@@ -28,7 +31,7 @@ export interface CodeMark {
   substring?: { start: number, end: number }
   comment: string
   override?: { x: number, y: number }
-  click?: number
+  click?: StepRange
 }
 
 export interface AnnotationResult {
@@ -274,7 +277,7 @@ function pairConnector(connector: OdpShape, box: Rect, texts: OdpShape[], consum
 // --- Rendering marks -----------------------------------------------------------
 
 function suffix(mark: CodeMark): string {
-  return `${mark.click ? `{${mark.click}}` : ''}${mark.override ? `@${mark.override.x},${mark.override.y}` : ''}`
+  return `${mark.click ? `{${formatStepRange(mark.click)}}` : ''}${mark.override ? `@${mark.override.x},${mark.override.y}` : ''}`
 }
 
 function withComment(marker: string, comment: string): string {

@@ -111,8 +111,8 @@ describe('annotateCodes', () => {
 describe('rendering marks', () => {
   const marks: CodeMark[] = [
     { kind: 'range', startLine: 0, endLine: 8, comment: 'WORKFLOW' },
-    { kind: 'range', startLine: 4, endLine: 8, comment: 'JOB', click: 1 },
-    { kind: 'substring', startLine: 6, endLine: 6, substring: { start: 4, end: 10 }, comment: 'Steps', override: { x: 500, y: 200 }, click: 2 },
+    { kind: 'range', startLine: 4, endLine: 8, comment: 'JOB', click: { from: 1 } },
+    { kind: 'substring', startLine: 6, endLine: 6, substring: { start: 4, end: 10 }, comment: 'Steps', override: { x: 500, y: 200 }, click: { from: 2 } },
   ]
 
   it('renders every mark inline, several on one line, and the theme parses them back', () => {
@@ -126,8 +126,8 @@ describe('rendering marks', () => {
     expect(parsed.code).toBe(YAML.join('\n'))
     expect(parsed.highlights.map(h => [h.kind, h.startLine, h.endLine, h.comment, h.click, h.override])).toEqual([
       ['range', 0, 8, 'WORKFLOW', undefined, undefined],
-      ['range', 4, 8, 'JOB', 1, undefined],
-      ['substring', 6, 6, 'Steps', 2, { x: 500, y: 200 }],
+      ['range', 4, 8, 'JOB', { from: 1 }, undefined],
+      ['substring', 6, 6, 'Steps', { from: 2 }, { x: 500, y: 200 }],
     ])
   })
 
@@ -156,6 +156,6 @@ describe('rendering marks', () => {
     expect(losses).toEqual([])
     expect(anchors).toEqual(['[!mark:2..10] WORKFLOW', '[!mark:6..10{1}] JOB', '[!mark:"steps:"{2}@500,200] Steps'])
     const resolved = parseExternalHighlightAnchors(snippet.join('\n'), anchors, { onWarn: () => {}, onError: () => {} })
-    expect(resolved.map(h => [h.kind, h.startLine, h.endLine, h.click])).toEqual([['range', 1, 9, undefined], ['range', 5, 9, 1], ['substring', 7, 7, 2]])
+    expect(resolved.map(h => [h.kind, h.startLine, h.endLine, h.click])).toEqual([['range', 1, 9, undefined], ['range', 5, 9, { from: 1 }], ['substring', 7, 7, { from: 2 }]])
   })
 })

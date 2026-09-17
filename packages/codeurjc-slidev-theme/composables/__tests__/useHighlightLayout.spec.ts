@@ -152,3 +152,27 @@ describe('pointsToSvgPath', () => {
     expect(pointsToSvgPath([])).toBe('')
   })
 })
+
+describe('placeCallout with step ranges', () => {
+  const codeRect: Rect = { x: 40, y: 40, w: 400, h: 300 }
+  const highlightRect: Rect = { x: 60, y: 100, w: 200, h: 20 }
+  const calloutSize = { w: 150, h: 60 }
+
+  it('ignores callouts that are never visible at the same click', () => {
+    const first = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed: [], range: { to: 0 } })
+    const second = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed: [{ ...first.rect, range: { to: 0 } }], range: { from: 1, to: 1 } })
+    expect(second.rect).toEqual(first.rect)
+  })
+
+  it('avoids callouts visible at a same click', () => {
+    const first = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed: [], range: { to: 1 } })
+    const second = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed: [{ ...first.rect, range: { to: 1 } }], range: { from: 1, to: 2 } })
+    expect(rectsOverlap(second.rect, first.rect)).toBe(false)
+  })
+
+  it('treats an unstepped callout as visible at every click', () => {
+    const always = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed: [] })
+    const later = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed: [always.rect], range: { from: 5 } })
+    expect(rectsOverlap(later.rect, always.rect)).toBe(false)
+  })
+})

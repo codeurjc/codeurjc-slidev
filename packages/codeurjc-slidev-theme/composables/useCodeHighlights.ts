@@ -8,7 +8,9 @@
 //                                          into the code line, not the
 //                                          rendered/Shiki-wrapped HTML)
 //   // [!mark{<N>}] comment               (click step: hidden until click N;
-//                                          goes before any @x,y override)
+//                                          or a range {N-M}/{N-}/{-M}, see
+//                                          stepRange.ts; goes before any
+//                                          @x,y override)
 //   // [!mark@<x>,<y>] comment            (manual callout position override)
 // Highlight ids are internal bookkeeping only (DOM grouping, position-map
 // keys) -- presenters never write or reference them, so they're generated
@@ -16,7 +18,9 @@
 // Runs in both a Node/Vite context (setup/transformers.ts) and in unit tests;
 // deliberately has no Vue or DOM dependency.
 
+import type { StepRange } from './stepRange.ts'
 import { Buffer } from 'node:buffer'
+import { formatStepRange, parseStepRange } from './stepRange.ts'
 
 export interface CodeHighlight {
   id: string
@@ -27,11 +31,11 @@ export interface CodeHighlight {
   comment: string
   override?: { x: number, y: number }
   /**
-   * Click step (`{N}` suffix, N >= 1): the highlight, its callout and its
-   * connector stay hidden until the slide reaches click N. Absent means always
-   * visible.
+   * Click step (`{N}` suffix, or a range `{N-M}`/`{N-}`/`{-M}`): the highlight,
+   * its callout and its connector are only visible within it. Absent means
+   * always visible.
    */
-  click?: number
+  click?: StepRange
   /** Exact original source line the marker was parsed from (for round-tripping position overrides). */
   sourceLine: string
   /**
@@ -48,13 +52,22 @@ export interface CodeHighlight {
   lineOccurrence?: number
 }
 
-// `{N}` (click step) sits after the role/substring range and before the
-// `@x,y` override, so the editor's "append/replace the trailing @x,y" rewrite
-// never has to reason about it. Only a positive integer is accepted -- `{0}`,
-// `{}` or `{x}` make the whole marker unrecognized, like any malformed marker.
+// `{N}` (click step, or a range like `{2-4}`) sits after the role/substring
+// range and before the `@x,y` override, so the editor's "append/replace the
+// trailing @x,y" rewrite never has to reason about it. The braces' content is
+// validated by `parseStepRange` -- `{0}`, `{}`, `{3-2}` or `{x}` make the whole
+// marker unrecognized, like any malformed marker.
 // Anchored at a marker's own start: a line's comment can hold several markers,
 // each parsed in turn.
-const MARKER_RE = /^\[!mark(?::(start|end))?(?:\((\d+)-(\d+)\))?(?:\{([1-9]\d*)\})?(?:@(-?\d+),(-?\d+))?\]/
+const MARKER_RE = /^\[!mark(?::(start|end))?(?:\((\d+)-(\d+)\))?(?:\{([^}@\]]*)\})?(?:@(-?\d+),(-?\d+))?\]/
+
+/** Matches a marker at the start of `text`, rejecting one whose step suffix isn't a valid step or range. */
+function matchMarker(text: string): RegExpExecArray | null {
+  const m = MARKER_RE.exec(text)
+  if (m && m[4] !== undefined && !parseStepRange(m[4]))
+    return null
+  return m
+}
 /** A `//`/`#` comment token that opens a marker region (i.e. a marker follows it). */
 const COMMENT_TOKEN_RE = /(?:\/\/|#)\s*(?=\[!mark)/g
 const MARKER_START = '[!mark'
@@ -62,7 +75,7 @@ const MARKER_START = '[!mark'
 interface ParsedMarker {
   role?: 'start' | 'end'
   substringRange?: { start: number, end: number }
-  click?: number
+  click?: StepRange
   override?: { x: number, y: number }
   comment: string
 }
@@ -88,7 +101,7 @@ function parseMarkerRegion(region: string): ParsedMarker[] {
     const at = region.indexOf(MARKER_START, cursor)
     if (at === -1)
       break
-    const m = MARKER_RE.exec(region.slice(at))
+    const m = matchMarker(region.slice(at))
     if (!m) {
       cursor = at + MARKER_START.length
       continue
@@ -99,7 +112,7 @@ function parseMarkerRegion(region: string): ParsedMarker[] {
     markers.push({
       role: role as 'start' | 'end' | undefined,
       substringRange: rangeStart !== undefined ? { start: Number(rangeStart), end: Number(rangeEnd) } : undefined,
-      click: click !== undefined ? Number(click) : undefined,
+      click: click !== undefined ? parseStepRange(click)! : undefined,
       override: ox !== undefined ? { x: Number(ox), y: Number(oy) } : undefined,
       comment: region.slice(bodyStart, next === -1 ? undefined : next).trim(),
     })
@@ -143,7 +156,7 @@ export function parseCodeHighlights(code: string): { code: string, highlights: C
   const lines = code.split('\n')
   const strippedLines: string[] = []
   const highlights: CodeHighlight[] = []
-  const pendingStarts: { line: number, markerIndex: number, comment: string, click?: number, override?: { x: number, y: number }, sourceLine: string }[] = []
+  const pendingStarts: { line: number, markerIndex: number, comment: string, click?: StepRange, override?: { x: number, y: number }, sourceLine: string }[] = []
   let nextId = 0
 
   lines.forEach((line, index) => {
@@ -224,12 +237,12 @@ function findTopLevelCloseBracket(line: string): number {
 }
 
 /** Rewrites a highlight's original source line to carry (or update) an `@x,y` position override. */
-/** Inserts or replaces one marker's `@x,y`, keeping its role, substring range and `{N}` step. */
+/** Inserts or replaces one marker's `@x,y`, keeping its role, substring range and step (as written). */
 function withOverride(marker: string, x: number, y: number): string {
-  // Any `{N}` click step stays in the preserved prefix, so the override
-  // always lands after it (the grammar's `...{N}@x,y]` order).
+  // Any `{N}` click step or range stays in the preserved prefix, so the
+  // override always lands after it (the grammar's `...{N}@x,y]` order).
   return marker.replace(
-    /(\[!mark(?::(?:start|end))?(?:\(\d+-\d+\))?(?:\{[1-9]\d*\})?)(?:@-?\d+,-?\d+)?(\])/,
+    /(\[!mark(?::(?:start|end))?(?:\(\d+-\d+\))?(?:\{[^}@\]]*\})?)(?:@-?\d+,-?\d+)?(\])/,
     `$1@${x},${y}$2`,
   )
 }
@@ -276,7 +289,7 @@ export function serializeMarkerOverride(sourceLine: string, x: number, y: number
       const at = sourceLine.indexOf(MARKER_START, cursor)
       if (at === -1)
         break
-      const m = MARKER_RE.exec(sourceLine.slice(at))
+      const m = matchMarker(sourceLine.slice(at))
       if (!m) {
         cursor = at + MARKER_START.length
         continue
@@ -321,7 +334,7 @@ function highlightAttrs(h: CodeHighlight): string {
   if (h.override)
     attrs += ` data-override-x="${h.override.x}" data-override-y="${h.override.y}"`
   if (h.click)
-    attrs += ` data-highlight-click="${h.click}"`
+    attrs += ` data-highlight-click="${formatStepRange(h.click)}"`
   return attrs
 }
 
@@ -482,7 +495,7 @@ export interface ExternalAnchorSpec {
   offset?: number
   substringRange?: { start: number, end: number }
   occurrence?: number | 'all'
-  click?: number
+  click?: StepRange
   override?: { x: number, y: number }
   comment: string
   sourceLine: string
@@ -586,13 +599,14 @@ export function parseAnchorLine(line: string): ExternalAnchorSpec | null {
     }
   }
 
-  // Click step: after the whole anchor target (substring range, offset,
-  // occurrence selector), before any `@x,y` -- same order as inline markers.
+  // Click step or range: after the whole anchor target (substring range,
+  // offset, occurrence selector), before any `@x,y` -- same order as inline markers.
   if (line[i] === '{') {
-    const m = /^\{([1-9]\d*)\}/.exec(line.slice(i))
-    if (!m)
+    const m = /^\{([^}@\]]*)\}/.exec(line.slice(i))
+    const click = m ? parseStepRange(m[1]) : null
+    if (!m || !click)
       return null
-    spec.click = Number(m[1])
+    spec.click = click
     i += m[0].length
   }
 

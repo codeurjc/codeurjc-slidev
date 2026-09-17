@@ -388,7 +388,7 @@ describe('click-step suffix on inline markers', () => {
     const { code, highlights } = parseCodeHighlights('this.alumnos = alumnos; // [!mark{2}] Stores the dependency')
     expect(code).toBe('this.alumnos = alumnos;')
     expect(highlights).toEqual([
-      expect.objectContaining({ kind: 'line', startLine: 0, click: 2, comment: 'Stores the dependency' }),
+      expect.objectContaining({ kind: 'line', startLine: 0, click: { from: 2 }, comment: 'Stores the dependency' }),
     ])
   })
 
@@ -399,20 +399,20 @@ describe('click-step suffix on inline markers', () => {
 
   it('applies a step on the :start marker to the whole range', () => {
     const { highlights } = parseCodeHighlights(['a(); // [!mark:start{3}] Loop', 'b();', 'c(); // [!mark:end]'].join('\n'))
-    expect(highlights).toEqual([expect.objectContaining({ kind: 'range', startLine: 0, endLine: 2, click: 3 })])
+    expect(highlights).toEqual([expect.objectContaining({ kind: 'range', startLine: 0, endLine: 2, click: { from: 3 } })])
   })
 
   it('falls back to the :end marker step when :start has none, and prefers :start when both do', () => {
     const endOnly = parseCodeHighlights(['a(); // [!mark:start] Loop', 'b(); // [!mark:end{2}]'].join('\n'))
-    expect(endOnly.highlights[0].click).toBe(2)
+    expect(endOnly.highlights[0].click).toEqual({ from: 2 })
     const both = parseCodeHighlights(['a(); // [!mark:start{1}] Loop', 'b(); // [!mark:end{4}]'].join('\n'))
-    expect(both.highlights[0].click).toBe(1)
+    expect(both.highlights[0].click).toEqual({ from: 1 })
   })
 
   it('combines the suffix with a substring range and a position override', () => {
     const { highlights } = parseCodeHighlights('  this.alumnos = alumnos; // [!mark(2-16){2}@120,40] Just the substring')
     expect(highlights).toEqual([
-      expect.objectContaining({ kind: 'substring', substringRange: { start: 2, end: 16 }, click: 2, override: { x: 120, y: 40 } }),
+      expect.objectContaining({ kind: 'substring', substringRange: { start: 2, end: 16 }, click: { from: 2 }, override: { x: 120, y: 40 } }),
     ])
   })
 
@@ -444,5 +444,42 @@ describe('click-step suffix on inline markers', () => {
     expect(out).toContain('data-highlight-click="2"')
     const unstepped = injectHighlightSpans(html, parseCodeHighlights('a(); // [!mark] Note').highlights)
     expect(unstepped).not.toContain('data-highlight-click')
+  })
+})
+
+describe('click-step ranges on inline markers', () => {
+  it.each([
+    ['{2-3}', { from: 2, to: 3 }],
+    ['{2-}', { from: 2 }],
+    ['{-1}', { to: 1 }],
+    ['{-0}', { to: 0 }],
+  ])('parses %s', (suffix, range) => {
+    const { highlights, code } = parseCodeHighlights(`a(); // [!mark${suffix}] Note`)
+    expect(highlights).toEqual([expect.objectContaining({ kind: 'line', click: range, comment: 'Note' })])
+    expect(code).toBe('a();')
+  })
+
+  it('combines a range with a substring range, an override, and a :start/:end range', () => {
+    expect(parseCodeHighlights('this.x = x; // [!mark(2-16){2-3}@120,40] Sub').highlights[0])
+      .toEqual(expect.objectContaining({ kind: 'substring', click: { from: 2, to: 3 }, override: { x: 120, y: 40 } }))
+    expect(parseCodeHighlights('a(); // [!mark:start{-1}] R\nb();\nc(); // [!mark:end]').highlights[0])
+      .toEqual(expect.objectContaining({ kind: 'range', startLine: 0, endLine: 2, click: { to: 1 } }))
+  })
+
+  it.each(['{0-2}', '{3-2}', '{-}', '{2-3-4}', '{0}'])('leaves a marker with %s unrecognized', (suffix) => {
+    const line = `a(); // [!mark${suffix}] Note`
+    expect(parseCodeHighlights(line).highlights).toEqual([])
+    expect(findMarkerSpan(line)).toBeNull()
+  })
+
+  it('marks spans with the formatted range', () => {
+    const html = '<pre class="shiki"><code><span class="line"><span>a();</span></span></code></pre>'
+    expect(injectHighlightSpans(html, parseCodeHighlights('a(); // [!mark{2-3}] Note').highlights)).toContain('data-highlight-click="2-3"')
+  })
+
+  it('keeps the range as written when writing a position override', () => {
+    expect(serializeMarkerOverride('a(); // [!mark{2-3}] Note', 200, 60)).toBe('a(); // [!mark{2-3}@200,60] Note')
+    expect(serializeMarkerOverride('a(); // [!mark{2-}@1,1] Note', 5, 6)).toBe('a(); // [!mark{2-}@5,6] Note')
+    expect(serializeMarkerOverride('a(); // [!mark{0-2}] bad [!mark{-1}] Good', 7, 8, 0)).toBe('a(); // [!mark{0-2}] bad [!mark{-1}@7,8] Good')
   })
 })

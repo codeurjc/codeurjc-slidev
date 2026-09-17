@@ -156,7 +156,7 @@ geometry:
 - Point a callout at anything on a slide -- a spot on an image, a line of content, or a bare point -- from the slide's own `callouts` frontmatter
 - `at` says what it points at: `{image: /images/pic.png, x, y}` (fractions of that picture, named by its `src`; add `#2` for its second copy), `{x, y}` (slide pixels) or `{text: ...}` (the element containing that text)
 - No `text` gives an arrow with no box; a `box` placed over its own anchor gives a label with no arrow
-- `step: N` reveals it at click N, like `{N}` on code marks
+- `step: N` reveals it at click N, like `{N}` on code marks; `step: 2-4` or `step: -1` is a range, as on code marks
 - In edit mode, **+ Callout** in the Layout tab (or Alt+click) creates one: click what it should point at, then type
 
 ---
@@ -276,7 +276,9 @@ jobs:
 - Add `{N}` to a mark to reveal it step by step: the highlight, its callout and its connector appear at click `N` and stay visible
     - It goes after the range or substring and before `@x,y`: `// [!mark{2}]`, `// [!mark:start{3}]`, `// [!mark(2-16){2}@120,40]`
 - Several marks can share a step, so they appear together; marks without a step are always visible
-- Callouts are placed as if every step were visible, so revealing a step never moves the callouts already shown
+- A range makes a mark disappear again: `{2-3}` is visible at clicks 2 and 3, `{-1}` from the start through click 1, `{-0}` only before the first click
+    - Walking through code one line at a time is `{-0}`, `{1-1}`, `{2}`
+- Callouts are placed once for every click, so revealing or hiding a step never moves the callouts shown; callouts that are never visible together don't push each other away
 - In edit mode every callout is visible, to drag them freely
 - `slidev export --with-clicks` exports each step as its own page
 
@@ -295,6 +297,17 @@ public float calculaNotaMedia(long idAlumno) {
 		suma += nota;
 	}
 	return suma / notas.size(); // [!mark:end]
+}
+```
+
+---
+
+## Walk-through (click to advance)
+```java
+public float calculaNotaMedia(long idAlumno) {
+	List<Float> notas = alumnos.getNotasAlumno(idAlumno); // [!mark{-0}] First the grades are fetched
+	float suma = 0.0f; // [!mark{1-1}] then summed
+	return suma / notas.size(); // [!mark{2}] and averaged
 }
 ```
 

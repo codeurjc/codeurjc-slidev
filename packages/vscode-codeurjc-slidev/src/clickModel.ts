@@ -14,8 +14,10 @@
 // that point: absolute clicks stay exact, relative ones after it don't, and the
 // total is unknown. Numbers are either what Slidev does or not given at all.
 
+import type { StepRange } from 'codeurjc-slidev-theme/composables/stepRange'
 import type { SlideSpan } from './documentScan'
 import { parseFenceInfo } from 'codeurjc-slidev-theme/composables/fenceInfo'
+import { parseStepRange, rangeRegistrations } from 'codeurjc-slidev-theme/composables/stepRange'
 import { extractInlineSourceLink, isInlineSourceMarkerLine, parseAnchorLine, parseCodeHighlights, parseExternalHighlightAnchors } from 'codeurjc-slidev-theme/composables/useCodeHighlights'
 import { isAnchorDeclarationLine, isSourceDirectiveLine, parseSnippetImportLine, parseSnippetSelector, resolveSnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 import { splitSlides } from './documentScan'
@@ -41,6 +43,8 @@ export interface ClickRegistration {
   exact: boolean
   /** For a fence with native ranges: one entry per segment after the first. */
   segments?: FenceSegment[]
+  /** For a marker, anchor or callout: its click step or step range. */
+  range?: StepRange
 }
 
 export interface UncountableSource {
@@ -169,6 +173,16 @@ class ClickCounter {
     const registration: ClickRegistration = { kind, line, start, max, exact }
     this.registrations.push(registration)
     return registration
+  }
+
+  /**
+   * A theme step or step range (markers, anchors, callouts): absolute
+   * placeholders at its start and after its end, so no offset changes.
+   * `start` is the first click it's visible at; `max` the last registered click.
+   */
+  step(kind: ClickSourceKind, line: number, range: StepRange): void {
+    const clicks = rangeRegistrations(range)
+    this.registrations.push({ kind, line, start: range.from ?? 0, max: clicks.length > 0 ? Math.max(...clicks) : 0, exact: true, range })
   }
 
   /** Slidev's `calculateRange([from, to])` + `register`. */
@@ -526,7 +540,7 @@ export function computeSlideClicks(docLines: string[], slide: SlideSpan, options
         col: 0,
         isSource: steps.length > 0,
         run: (c) => {
-          for (const s of steps) c.since('anchor', s.line, { kind: 'absolute', n: s.click })
+          for (const s of steps) c.step('anchor', s.line, s.click)
         },
       })
       blank(i, j - 1)
@@ -538,7 +552,7 @@ export function computeSlideClicks(docLines: string[], slide: SlideSpan, options
 
   // Slide callouts' steps: absolute, registered by the theme's placeholders.
   for (const { line, step } of calloutSteps(slide))
-    counter.since('callout', line, { kind: 'absolute', n: step })
+    counter.step('callout', line, step)
 
   events.sort((a, b) => a.line - b.line || a.col - b.col)
   for (const e of events) e.run(counter)
@@ -560,7 +574,7 @@ export function computeSlideClicks(docLines: string[], slide: SlideSpan, options
  * with their document lines. Read from the raw YAML (block or flow style)
  * without validating the entries, which the theme does before registering.
  */
-function calloutSteps(slide: SlideSpan): { line: number, step: number }[] {
+function calloutSteps(slide: SlideSpan): { line: number, step: StepRange }[] {
   const lines = slide.frontmatter.split('\n')
   const layout = /^layout:\s*['"]?([^'"\s#]+)/m.exec(slide.frontmatter)?.[1]
   if (layout && layout !== 'default')
@@ -570,18 +584,19 @@ function calloutSteps(slide: SlideSpan): { line: number, step: number }[] {
     return []
   let end = start + 1
   while (end < lines.length && (/^[\s-]/.test(lines[end]) || lines[end].trim() === '' || lines[end].startsWith('#'))) end++
-  const steps: { line: number, step: number }[] = []
+  const steps: { line: number, step: StepRange }[] = []
   for (let i = start; i < end; i++) {
-    for (const m of lines[i].matchAll(/\bstep\s*:\s*(\d+)/g)) {
-      if (Number(m[1]) >= 1)
-        steps.push({ line: slide.startLine + 1 + i, step: Number(m[1]) })
+    for (const m of lines[i].matchAll(/\bstep\s*:\s*(['"]?)(-?\d*-?\d*)\1/g)) {
+      const step = parseStepRange(m[2])
+      if (step)
+        steps.push({ line: slide.startLine + 1 + i, step })
     }
   }
   return steps
 }
 
 /** A `<<<` anchor line's click steps: one per highlight it resolves to, as the theme registers them. */
-function anchorSteps(imported: NonNullable<ReturnType<typeof parseSnippetImportLine>>, anchor: { text: string }, options: ClickModelOptions): number[] {
+function anchorSteps(imported: NonNullable<ReturnType<typeof parseSnippetImportLine>>, anchor: { text: string }, options: ClickModelOptions): StepRange[] {
   if (!options.resolveImportText) {
     const click = parseAnchorLine(anchor.text)?.click
     return click ? [click] : []
@@ -621,7 +636,7 @@ function fenceEvent(openLine: number, info: string, codeLines: string[]): Event 
     isSource: markers.length > 0 || hasRanges || isMagicMove || showOutputAt,
     run: (c) => {
       // The theme's zero-size `v-click="N"` placeholders sit inside the wrapper, so they mount first.
-      for (const m of markers) c.since('marker', kept[m.startLine]?.docLine ?? openLine + 1 + m.startLine, { kind: 'absolute', n: m.click! })
+      for (const m of markers) c.step('marker', kept[m.startLine]?.docLine ?? openLine + 1 + m.startLine, m.click!)
       if (isMagicMove)
         return c.markUncountable(openLine, 'magic-move code block')
       if (showOutputAt)

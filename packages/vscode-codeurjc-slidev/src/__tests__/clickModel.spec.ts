@@ -37,6 +37,9 @@ describe('computeDocumentClicks: recognised sources', () => {
     ['single fence range adds no click', `${FENCE}ts {2}\na\nb\n${FENCE}`, 0],
     ['fence ranges with a numeric at', `${FENCE}ts {1|2|3} {at: 5}\na\nb\nc\n${FENCE}`, 6],
     ['theme marker step', `${FENCE}java\nint a; // [!mark{3}] note\n${FENCE}`, 3],
+    ['theme marker step range adds its disappearance click', `${FENCE}java\nint a; // [!mark{1-2}] note\n${FENCE}`, 3],
+    ['walk-through', `${FENCE}java\nint a; // [!mark{-0}] a\nint b; // [!mark{1-1}] b\nint c; // [!mark{2}] c\n${FENCE}`, 2],
+    ['anchor step range', '<<< @/code/Foo.java java\n[!mark:1{-1}] note', 2],
     ['anchor step', '<<< @/code/Foo.java java\n[!mark:1{2}] note', 2],
     ['comments are ignored', '<!-- <div v-click>a</div> -->\n<div v-click>b</div>', 1],
     ['inline code is ignored', '`<div v-click>`\n\ntext', 0],
@@ -50,6 +53,11 @@ describe('computeDocumentClicks: recognised sources', () => {
   it('counts slide callout steps from block and flow frontmatter', () => {
     expect(slide('text', 'callouts:\n  - at: {x: 1, y: 1}\n    step: 3\n  - at: {x: 2, y: 2}')).toMatchObject({ total: 3, uncountable: [] })
     expect(slide('text', 'callouts: [{at: {x: 1, y: 1}, step: 2}]\ngeometry:\n  step: 9').total).toBe(2)
+  })
+
+  it('counts slide callout step ranges', () => {
+    expect(slide('text', 'callouts:\n  - at: {x: 1, y: 1}\n    step: 2-4\n  - at: {x: 2, y: 2}\n    step: -0')).toMatchObject({ total: 5 })
+    expect(slide('text', 'callouts: [{at: {x: 1, y: 1}, step: "-1"}]').total).toBe(2)
   })
 
   it('ignores callout steps off the default layout', () => {

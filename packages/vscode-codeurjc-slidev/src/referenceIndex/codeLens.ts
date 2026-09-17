@@ -4,8 +4,10 @@
 // requested, mirroring the theme's own dev-server "always re-resolve"
 // rendering behavior instead of tracking line-shift deltas.
 
+import type { StepRange } from 'codeurjc-slidev-theme/composables/stepRange'
 import type { SlideClicks } from '../clickModel'
 import type { ReferenceIndex } from './indexBuilder'
+import { formatStepRange } from 'codeurjc-slidev-theme/composables/stepRange'
 import { parseExternalHighlightAnchors } from 'codeurjc-slidev-theme/composables/useCodeHighlights'
 import { resolveSnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 import { computeDocumentClicks, slideClicksAt } from '../clickModel'
@@ -17,8 +19,8 @@ export interface ReferenceMention {
   slideLine: number
   slideNumber: number
   comment: string
-  /** The referencing anchor's click step, when it has one. */
-  click?: number
+  /** The referencing anchor's click step or step range, when it has one. */
+  click?: StepRange
   /** That slide's total clicks, or null when it can't be counted. */
   total?: number | null
 }
@@ -95,7 +97,7 @@ export function computeCodeLensesForDocument(
 }
 
 function formatLensTitle(references: ReferenceMention[], showTotal: boolean): string {
-  const slideLabels = references.map(r => r.click ? `Slide ${r.slideNumber} ${formatStepBadge([r.click], r.total ?? null, showTotal)}` : `Slide ${r.slideNumber}`)
+  const slideLabels = references.map(r => r.click ? `Slide ${r.slideNumber} ${formatStepBadge([formatStepRange(r.click)], r.total ?? null, showTotal)}` : `Slide ${r.slideNumber}`)
   const count = references.length
   return `📽 ${count} reference${count === 1 ? '' : 's'} — ${slideLabels.join(', ')}`
 }

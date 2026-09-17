@@ -38,12 +38,18 @@ const FRONTMATTER_SLIDE = '---\nclicks: 6\n---\n\n# GT 17\n\n<div v-click>a</div
 // Slide 23: a slide callout with a click step, from frontmatter.
 const CALLOUT_SLIDE = '---\ncallouts:\n  - at: {x: 100, y: 100}\n    text: Stepped callout\n    step: 2\n---\n\n# GT 23\n\nText'
 
+// Slides 24-25: step ranges, which register their start and the click after their end.
+const RANGE_SLIDES = [
+  `# GT 24\n\n${FENCE}java\nint a = 1; // [!mark{1-2}] Ranged\n${FENCE}`,
+  `# GT 25\n\n${FENCE}java\nint a = 1; // [!mark{-0}] A\nint b = 2; // [!mark{1-1}] B\nint c = 3; // [!mark{2}] C\n${FENCE}`,
+]
+
 function deckText(): string {
   const bodies = [...SLIDES]
   const head = '---\ntheme: codeurjc-slidev-theme\nlayout: default\ncolorSchema: light\naspectRatio: 16/9\nmdc: true\n---\n\n'
   const before = bodies.slice(0, 16).join('\n\n---\n\n')
   const after = bodies.slice(16).join('\n\n---\n\n')
-  return `${head}${before}\n\n${FRONTMATTER_SLIDE}\n\n---\n\n${after}\n\n${CALLOUT_SLIDE}\n`
+  return `${head}${before}\n\n${FRONTMATTER_SLIDE}\n\n---\n\n${after}\n\n${CALLOUT_SLIDE}\n\n---\n\n${RANGE_SLIDES.join('\n\n---\n\n')}\n`
 }
 
 export const GROUND_TRUTH_DECK = deckText()
@@ -52,7 +58,7 @@ export const GROUND_TRUTH_DECK = deckText()
 export const GROUND_TRUTH_IMPORT = GESTOR
 
 /** Each slide's click total, as Slidev 52.19.1 computes it (in slide order). */
-export const GROUND_TRUTH_TOTALS = [0, 2, 5, 4, 3, 2, 4, 4, 0, 3, 2, 4, 4, 3, 0, 3, 6, 0, 2, 0, 0, 0, 2]
+export const GROUND_TRUTH_TOTALS = [0, 2, 5, 4, 3, 2, 4, 4, 0, 3, 2, 4, 4, 3, 0, 3, 6, 0, 2, 0, 0, 0, 2, 3, 2]
 
 /**
  * Slides the model declines to count (its total is null): MDC `{v-click}`

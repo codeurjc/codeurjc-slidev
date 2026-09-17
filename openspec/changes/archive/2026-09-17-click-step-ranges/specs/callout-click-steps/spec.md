@@ -1,10 +1,41 @@
-# callout-click-steps
+## ADDED Requirements
 
-## Purpose
+### Requirement: Click steps accept ranges
+Wherever a click step is accepted, it SHALL accept these forms:
 
-Lets code-highlight markers and anchor declarations carry a click-step suffix, `{N}` or a step range (`{N-M}`, `{N-}`, `{-M}`), so a highlight, its callout and its connector are only visible at those clicks. Steps count toward the slide's clicks, keep callout placement stable across clicks, stay fully visible in editor mode, and export as one page per step with `slidev export --with-clicks`.
+| Form | Visible at |
+|---|---|
+| `{N}` | click N and every later click (unchanged) |
+| `{N-}` | the same as `{N}` |
+| `{N-M}` | clicks N through M inclusive; hidden again from click M+1 |
+| `{-M}` | click 0 through click M; hidden from click M+1 (`{-0}`: only before the first click) |
 
-## Requirements
+N SHALL be a positive integer. M SHALL be a positive integer with M ≥ N when N is given, and a non-negative integer in the open-start form `{-M}`. The range SHALL take the place of `{N}` in the marker and anchor grammars, in the same position.
+
+#### Scenario: Bounded range on an inline marker
+- **WHEN** a code line carries `// [!mark{2-3}] Note`
+- **THEN** a highlight is created whose step range is clicks 2 through 3
+
+#### Scenario: Open start on an anchor line
+- **WHEN** a `<<<` import is followed by `[!mark:3{-1}] First`
+- **THEN** line 3 of the snippet is highlighted with a step range from click 0 through click 1
+
+#### Scenario: Visible only before the first click
+- **WHEN** a code line carries `// [!mark{-0}] Starting point`
+- **THEN** the highlight is visible at click 0 and hidden from click 1
+
+#### Scenario: Open end is the same as a single step
+- **WHEN** one line carries `// [!mark{2-}] A` and another `// [!mark{2}] B`
+- **THEN** both highlights have the same step range, from click 2 on
+
+### Requirement: A ranged highlight disappears after its range
+A highlight whose step range ends at click M SHALL render with no highlight styling, no callout box and no connector from click M+1 onward, and exactly as an unstepped highlight within its range.
+
+#### Scenario: Walk-through of three highlights
+- **WHEN** a code block has highlight A at `{-1}`, B at `{2-2}` and C at `{3}`, and the presenter advances from click 0 to click 3
+- **THEN** A is visible at clicks 0 and 1, only B at click 2, and only C at click 3
+
+## MODIFIED Requirements
 
 ### Requirement: Inline markers accept a click-step suffix
 An inline highlight marker SHALL accept an optional click-step suffix: `{N}`, or a step range (see "Click steps accept ranges"). It goes after the marker's role (`:start`/`:end`) and substring range (`(<start>-<end>)`), and before any `@x,y` position override: `// [!mark{2}] comment`, `// [!mark:start{3-4}]`, `// [!mark(2-16){-1}@120,40] comment`. For a `:start`…`:end` range, a suffix on either marker applies to the whole range; if both carry one, the `:start` marker's wins. The suffix SHALL be stripped from the rendered code together with the rest of the marker.
@@ -93,49 +124,3 @@ A suffix that isn't a valid step or step range (e.g. `{0}`, `{x}`, `{}`, `{0-2}`
 #### Scenario: Reversed range is not accepted
 - **WHEN** a code line carries `// [!mark{3-2}] Note`
 - **THEN** no highlight is created from that marker
-
-### Requirement: Native fence line ranges keep working on fences the theme wraps
-A fenced code block that the theme wraps itself, because it carries code-highlight markers or an inline `// [!source ...]` link, SHALL keep Slidev's native line-highlighting ranges (`{a|b|c}`) and fence options (`{at: …, lines: …, startLine: …, maxHeight: …, finally: …}`) exactly as Slidev's own code block wrapper applies them. Those ranges SHALL highlight their lines and register their clicks, alongside the markers' own click steps.
-
-#### Scenario: Markers and native ranges on one fence
-- **WHEN** a fence is written as ```` ```ts {1|3} ```` and one of its lines carries `// [!mark{2}] note`
-- **THEN** line 1 is highlighted initially, line 3 at click 1, the marker's callout appears at click 2, and the slide has 2 clicks
-
-#### Scenario: Fence options on a marked fence
-- **WHEN** a fence with a marker is written as ```` ```ts {1|2} {at: 3} ````
-- **THEN** its second range is highlighted from click 3
-
-### Requirement: Click steps accept ranges
-Wherever a click step is accepted, it SHALL accept these forms:
-
-| Form | Visible at |
-|---|---|
-| `{N}` | click N and every later click (unchanged) |
-| `{N-}` | the same as `{N}` |
-| `{N-M}` | clicks N through M inclusive; hidden again from click M+1 |
-| `{-M}` | click 0 through click M; hidden from click M+1 (`{-0}`: only before the first click) |
-
-N SHALL be a positive integer. M SHALL be a positive integer with M ≥ N when N is given, and a non-negative integer in the open-start form `{-M}`. The range SHALL take the place of `{N}` in the marker and anchor grammars, in the same position.
-
-#### Scenario: Bounded range on an inline marker
-- **WHEN** a code line carries `// [!mark{2-3}] Note`
-- **THEN** a highlight is created whose step range is clicks 2 through 3
-
-#### Scenario: Open start on an anchor line
-- **WHEN** a `<<<` import is followed by `[!mark:3{-1}] First`
-- **THEN** line 3 of the snippet is highlighted with a step range from click 0 through click 1
-
-#### Scenario: Visible only before the first click
-- **WHEN** a code line carries `// [!mark{-0}] Starting point`
-- **THEN** the highlight is visible at click 0 and hidden from click 1
-
-#### Scenario: Open end is the same as a single step
-- **WHEN** one line carries `// [!mark{2-}] A` and another `// [!mark{2}] B`
-- **THEN** both highlights have the same step range, from click 2 on
-
-### Requirement: A ranged highlight disappears after its range
-A highlight whose step range ends at click M SHALL render with no highlight styling, no callout box and no connector from click M+1 onward, and exactly as an unstepped highlight within its range.
-
-#### Scenario: Walk-through of three highlights
-- **WHEN** a code block has highlight A at `{-1}`, B at `{2-2}` and C at `{3}`, and the presenter advances from click 0 to click 3
-- **THEN** A is visible at clicks 0 and 1, only B at click 2, and only C at click 3

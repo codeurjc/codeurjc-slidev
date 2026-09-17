@@ -3,6 +3,7 @@
 // `vscode` module -- callers convert these plain shapes into real
 // vscode.Range/DecorationOptions at the extension-host boundary.
 
+import type { StepRange } from 'codeurjc-slidev-theme/composables/stepRange'
 import type { ClickModelOptions } from './clickModel'
 import type { StepBadge } from './stepBadges'
 import { extractInlineSourceLink, findMarkerSpan, isInlineSourceMarkerLine, parseCodeHighlights } from 'codeurjc-slidev-theme/composables/useCodeHighlights'
@@ -24,8 +25,8 @@ export interface HighlightSpan {
   /** Present only for a substring highlight; 0-based character offsets on `startLine`. */
   substringRange?: { start: number, end: number }
   comment: string
-  /** Click step (`{N}`), when the marker has one. */
-  click?: number
+  /** Click step or step range (`{N}`, `{N-M}`, …), when the marker has one. */
+  click?: StepRange
 }
 
 export interface ComputedMarkerDecorations {

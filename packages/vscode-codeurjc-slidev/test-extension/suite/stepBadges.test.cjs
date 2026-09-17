@@ -49,6 +49,7 @@ describe('click-step badges', () => {
       ['int c = 3;', '▸1 of 3'],
       ['[!mark:"this.alumnos = alumnos"{1}] Assigns', '▸1 of 3'],
       ['int e = 5; // [!mark{2}] Still two', '▸2'],
+      ['int f = 6; // [!mark{1-3}] Range', '▸1-3'],
     ])
   })
 
@@ -76,7 +77,7 @@ describe('click-step badges', () => {
   it('drops the total from badges and lenses when the setting is off', async () => {
     await setShowTotal(false)
     const document = await openSteps()
-    assert.deepStrictEqual(paintedBadges(document).map(([, text]) => text), ['▸2', '▸3', '▸1', '▸1', '▸2'])
+    assert.deepStrictEqual(paintedBadges(document).map(([, text]) => text), ['▸2', '▸3', '▸1', '▸1', '▸2', '▸1-3'])
 
     const foo = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(fixtureRoot(), 'code', 'Foo.java')))
     const lenses = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', foo.uri, 10)
@@ -84,6 +85,6 @@ describe('click-step badges', () => {
     assert.ok(titles.some(t => t.includes('Slide 1 ▸1') && !t.includes('of 3')), `expected a stepped reference without total in ${JSON.stringify(titles)}`)
 
     await setShowTotal(true)
-    assert.deepStrictEqual(paintedBadges(await openSteps()).map(([, text]) => text), ['▸2 of 3', '▸3 of 3', '▸1 of 3', '▸1 of 3', '▸2'])
+    assert.deepStrictEqual(paintedBadges(await openSteps()).map(([, text]) => text), ['▸2 of 3', '▸3 of 3', '▸1 of 3', '▸1 of 3', '▸2', '▸1-3'])
   })
 })

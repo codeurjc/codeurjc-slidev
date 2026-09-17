@@ -2,6 +2,9 @@
 // routing elbow (axis-aligned) connectors to their highlighted fragment.
 // Deliberately DOM-free so placement/routing logic is directly unit-testable.
 
+import type { StepRange } from './stepRange'
+import { rangesOverlap } from './stepRange'
+
 export interface Rect { x: number, y: number, w: number, h: number }
 export interface Point { x: number, y: number }
 export type Side = 'right' | 'left' | 'below' | 'above'
@@ -23,13 +26,20 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), Math.max(min, max))
 }
 
+/** A callout already placed on the slide, with the clicks it's visible at (absent: always). */
+export interface PlacedRect extends Rect {
+  range?: StepRange
+}
+
 export interface PlacementInput {
   codeRect: Rect
   highlightRect: Rect
   calloutSize: { w: number, h: number }
   slideRect: Rect
   /** Bounding boxes of callouts already placed on this slide (collision candidates). */
-  placed: Rect[]
+  placed: PlacedRect[]
+  /** The clicks the callout being placed is visible at (absent: always). Only callouts visible at a same click collide. */
+  range?: StepRange
 }
 
 export function candidateRect(side: Side, input: PlacementInput): Rect {
@@ -117,7 +127,9 @@ function candidatesForSide(side: Side, input: PlacementInput): Rect[] {
  * still clamped to the slide bounds so it can degrade to an overlap in a
  * genuinely cramped layout, but never render off-slide.
  */
-export function placeCallout(input: PlacementInput): PlacementResult {
+export function placeCallout(placement: PlacementInput): PlacementResult {
+  // Callouts that are never visible at the same click can't collide.
+  const input = { ...placement, placed: placement.placed.filter(p => rangesOverlap(p.range, placement.range)) }
   for (const side of SIDES) {
     for (const rect of candidatesForSide(side, input)) {
       if (!within(rect, input.slideRect))

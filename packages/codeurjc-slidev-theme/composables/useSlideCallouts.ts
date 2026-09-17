@@ -16,8 +16,10 @@
 // Pure (no DOM, no Vue) so the grammar is unit-testable and writers other than
 // the layout editor (the ODP importer) can share the same types.
 
+import type { StepRange } from './stepRange'
 import type { Rect } from './useHighlightLayout'
 import type { ImageRef } from './useImageRefs'
+import { formatStepRange, parseStepRange, rangeRegistrations } from './stepRange'
 import { formatImageRef, imageRefFor, parseImageRef, resolveImageRef } from './useImageRefs'
 
 export interface CalloutPoint {
@@ -47,8 +49,8 @@ export interface SlideCallout {
   text: string
   /** Pinned box position in slide-canvas pixels, or null to auto-place. */
   box: CalloutPoint | null
-  /** Click step (>= 1); null means always visible. */
-  step: number | null
+  /** Click step or step range (see stepRange.ts); null means always visible. */
+  step: StepRange | null
 }
 
 export interface ParsedSlideCallouts {
@@ -161,12 +163,12 @@ function parseCallout(raw: unknown, path: string, warnings: string[]): SlideCall
 
   const box = raw.box == null ? null : parseBox(raw.box, `${path}.box`, warnings)
 
-  let step: number | null = null
+  let step: StepRange | null = null
   if (raw.step != null) {
-    if (typeof raw.step === 'number' && Number.isInteger(raw.step) && raw.step >= 1)
-      step = raw.step
-    else
-      warnings.push(`${path}.step must be a whole number of at least 1`)
+    // `step: 2` arrives as a number, `step: 2-4` as a string, `step: -1` as a negative number.
+    step = typeof raw.step === 'number' || typeof raw.step === 'string' ? parseStepRange(raw.step) : null
+    if (!step)
+      warnings.push(`${path}.step must be a click step (N) or a step range (N-M, N-, -M)`)
   }
 
   return { anchor, text, box, step }
@@ -188,9 +190,9 @@ export function parseSlideCallouts(frontmatter: Record<string, unknown> | null |
   }
 }
 
-/** The distinct click steps of a slide's usable callouts, ascending. */
+/** The distinct clicks at which a slide's usable callouts change (see `rangeRegistrations`), ascending. */
 export function slideCalloutClickSteps(frontmatter: Record<string, unknown> | null | undefined): number[] {
-  const steps = parseSlideCallouts(frontmatter).callouts.flatMap(c => (c?.step ? [c.step] : []))
+  const steps = parseSlideCallouts(frontmatter).callouts.flatMap(c => (c?.step ? rangeRegistrations(c.step) : []))
   return [...new Set(steps)].sort((a, b) => a - b)
 }
 
@@ -225,7 +227,7 @@ export function serializeSlideCallout(callout: SlideCallout): Record<string, unk
   if (callout.box)
     out.box = roundPx(callout.box)
   if (callout.step != null)
-    out.step = callout.step
+    out.step = callout.step.to === undefined ? callout.step.from : formatStepRange(callout.step)
   return out
 }
 

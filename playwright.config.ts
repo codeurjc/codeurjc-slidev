@@ -52,6 +52,7 @@ export default defineConfig({
         'slide-image-references.spec.ts',
         'callout-click-steps.spec.ts',
         'click-model-ground-truth.spec.ts',
+        'callout-step-ranges.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'] },
     },

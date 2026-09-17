@@ -71,6 +71,19 @@ describe('oDP corpus', () => {
     expect(result.reports.some(r => r.losses.some(l => l.startsWith('code differs from')))).toBe(true)
   })
 
+  it.skipIf(!deckPath('Tema 1.2 - Pruebas unitarias') || !deckPath('Integración Continua con GitHub Actions'))('walk-throughs over the same code merge into step ranges; image swaps warn', async () => {
+    const tema12 = await convert('Tema 1.2 - Pruebas unitarias')
+    expect(tema12.reports.some(r => r.odpNumbers.join(',') === '112,113,114')).toBe(true)
+    expect(tema12.slidesMarkdown).toMatch(/\[!mark\{-0\}@\d+,\d+\] Creamos un mock de DBAlumno con mock\(\)/)
+    expect(tema12.slidesMarkdown).toMatch(/\[!mark\{1-1\}@\d+,\d+\] Configuramos el valor que devuelve esa función/)
+    expect(tema12.slidesMarkdown).toMatch(/\[!mark\{2\}@\d+,\d+\] Pasamos el objeto al SUT/)
+    expect(tema12.notices).toContain('Build-up of ODP slides 115–116 kept as separate slides (can\'t convert to click steps: image removed)')
+
+    const ci = await convert('Integración Continua con GitHub Actions')
+    expect(ci.reports.some(r => r.odpNumbers.join(',') === '10,11')).toBe(true)
+    expect(ci.slidesMarkdown).toMatch(/push: # \[!mark\{-0\}@\d+,\d+\] El Workflow se ejecutará ante el evento push/)
+  })
+
   it.skipIf(!deckPath('Integración Continua con GitHub Actions'))('gitHub Actions: highlight boxes, labels and callouts over the workflow become code highlights', async () => {
     const { slidesMarkdown, reports } = await convert('Integración Continua con GitHub Actions')
     // A labeled frame around the whole workflow, and a labeled box around the job.

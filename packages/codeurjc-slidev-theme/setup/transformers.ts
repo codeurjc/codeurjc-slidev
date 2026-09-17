@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { defineTransformersSetup } from '@slidev/types'
 import { parseFenceInfo } from '../composables/fenceInfo'
+import { rangeRegistrations } from '../composables/stepRange'
 import {
   extractInlineSourceLink,
   injectHighlightSpans,
@@ -100,8 +101,8 @@ function withLineOccurrences(highlights: CodeHighlight[], raw: string, rawFence:
 }
 
 /**
- * Zero-size `v-click` placeholders, one per distinct callout click step in a
- * code block. Slidev only counts click-driven elements registered before the
+ * Zero-size `v-click` placeholders, one per distinct click at which a code
+ * block's callouts change (each step's start, and the click after a range's end). Slidev only counts click-driven elements registered before the
  * slide mounts, and callouts themselves are only measured/placed by
  * `layouts/default.vue` after mount -- emitting the steps here, as part of the
  * slide's own compiled template, is what makes them count toward the slide's
@@ -304,7 +305,7 @@ export default defineTransformersSetup(() => ({
       const { lang, rest } = parseFenceInfo(ctx.info)
       const html = await ctx.renderHighlighted({ code, info: `${lang} ${rest}` })
       const highlighted = highlights.length > 0 ? injectHighlightSpans(html, highlights) : html
-      const clickSteps = highlights.flatMap(h => (h.click ? [h.click] : []))
+      const clickSteps = highlights.flatMap(h => (h.click ? rangeRegistrations(h.click) : []))
       return wrapCodeBlock(ctx.info, highlighted, sourceLink, clickSteps)
     },
   ],

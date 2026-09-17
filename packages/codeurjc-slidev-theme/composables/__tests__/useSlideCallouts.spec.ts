@@ -12,6 +12,7 @@ import {
   pointInRect,
   serializeSlideCallout,
   serializeSlideCallouts,
+  slideCalloutClickSteps,
   withoutSlideCallout,
   withSlideCallout,
 } from '../useSlideCallouts'
@@ -43,7 +44,7 @@ describe('parseSlideCallouts', () => {
 
   it('reads a content-text anchor with a click step', () => {
     const [callout] = parseSlideCallouts({ callouts: [{ at: { text: 'Verificar' }, text: 'Lo que mide', step: 2 }] }).callouts
-    expect(callout).toEqual({ anchor: { kind: 'text', text: 'Verificar' }, text: 'Lo que mide', box: null, step: 2 })
+    expect(callout).toEqual({ anchor: { kind: 'text', text: 'Verificar' }, text: 'Lo que mide', box: null, step: { from: 2 } })
   })
 
   it('treats a callout with no text as a bare arrow', () => {
@@ -81,7 +82,7 @@ describe('parseSlideCallouts', () => {
     expect(parsed.callouts[0]).toEqual({ anchor: { kind: 'point', x: 1, y: 2 }, text: '', box: null, step: null })
     expect(parsed.warnings).toEqual([
       'callouts[0].text must be a string',
-      'callouts[0].step must be a whole number of at least 1',
+      'callouts[0].step must be a click step (N) or a step range (N-M, N-, -M)',
     ])
   })
 
@@ -103,19 +104,19 @@ describe('serializeSlideCallouts', () => {
       anchor: { kind: 'image', ref: { kind: 'position', index: 1 }, x: 0.123456, y: 0.5 },
       text: 'note',
       box: { x: 12.7, y: 44.2 },
-      step: 3,
+      step: { from: 3 },
     })).toEqual({ at: { image: 1, x: 0.1235, y: 0.5 }, text: 'note', box: { x: 13, y: 44 }, step: 3 })
   })
 
   it('round-trips through the parser', () => {
     const raw = serializeSlideCallouts([
-      { anchor: { kind: 'image', ref: { kind: 'position', index: 0 }, x: 0.45, y: 0.51 }, text: 'uno', box: { x: 620, y: 300 }, step: 1 },
+      { anchor: { kind: 'image', ref: { kind: 'position', index: 0 }, x: 0.45, y: 0.51 }, text: 'uno', box: { x: 620, y: 300 }, step: { from: 1 } },
       { anchor: { kind: 'text', text: 'Verificar' }, text: '', box: null, step: null },
     ])
     const parsed = parseSlideCallouts({ callouts: raw })
     expect(parsed.warnings).toEqual([])
     expect(parsed.callouts).toEqual([
-      { anchor: { kind: 'image', ref: { kind: 'position', index: 0 }, x: 0.45, y: 0.51 }, text: 'uno', box: { x: 620, y: 300 }, step: 1 },
+      { anchor: { kind: 'image', ref: { kind: 'position', index: 0 }, x: 0.45, y: 0.51 }, text: 'uno', box: { x: 620, y: 300 }, step: { from: 1 } },
       { anchor: { kind: 'text', text: 'Verificar' }, text: '', box: null, step: null },
     ])
   })
@@ -218,5 +219,34 @@ describe('src image anchors', () => {
     expect(withoutSlideCallout(authored, 2, srcs)[0]).toEqual({ at: { image: '/images/b.png', x: 0.1, y: 0.2 }, text: 'b' })
     // Without srcs, nothing is migrated.
     expect(withoutSlideCallout(authored, 2)[0]).toEqual(authored[0])
+  })
+})
+
+describe('slide callout step ranges', () => {
+  it.each([
+    [2, { from: 2 }],
+    ['2-4', { from: 2, to: 4 }],
+    ['2-', { from: 2 }],
+    [-1, { to: 1 }],
+    ['-0', { to: 0 }],
+  ])('reads step: %j', (step, range) => {
+    expect(parseSlideCallouts({ callouts: [{ at: { x: 1, y: 1 }, step }] }).callouts[0]!.step).toEqual(range)
+  })
+
+  it.each([0, '0-2', '3-2', 1.5, true])('warns about step: %j and drops it', (step) => {
+    const parsed = parseSlideCallouts({ callouts: [{ at: { x: 1, y: 1 }, step }] })
+    expect(parsed.callouts[0]!.step).toBeNull()
+    expect(parsed.warnings).toEqual(['callouts[0].step must be a click step (N) or a step range (N-M, N-, -M)'])
+  })
+
+  it('writes a single step as a number and a range as a string', () => {
+    const at = { kind: 'point', x: 1, y: 1 } as const
+    expect(serializeSlideCallout({ anchor: at, text: '', box: null, step: { from: 2 } }).step).toBe(2)
+    expect(serializeSlideCallout({ anchor: at, text: '', box: null, step: { from: 2, to: 4 } }).step).toBe('2-4')
+    expect(serializeSlideCallout({ anchor: at, text: '', box: null, step: { to: 0 } }).step).toBe('-0')
+  })
+
+  it('registers every click at which a callout changes', () => {
+    expect(slideCalloutClickSteps({ callouts: [{ at: { x: 1, y: 1 }, step: '2-3' }, { at: { x: 2, y: 2 }, step: -0 }, { at: { x: 3, y: 3 }, step: 4 }] })).toEqual([1, 2, 4])
   })
 })

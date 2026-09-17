@@ -22,4 +22,5 @@ int d = 4; // [!mark:end]
 
 ```java
 int e = 5; // [!mark{2}] Still two
+int f = 6; // [!mark{1-3}] Range
 ```

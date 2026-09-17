@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { Rect, Side } from '../composables/useHighlightLayout'
+import type { StepRange } from '../composables/stepRange'
+import type { PlacedRect, Rect, Side } from '../composables/useHighlightLayout'
 import type { CalloutAnchor, CalloutPoint, SlideCallout } from '../composables/useSlideCallouts'
 import type { GeometryRect, GeometryTarget } from '../composables/useSlideGeometry'
 import { useSlideContext } from '@slidev/client'
@@ -7,6 +8,7 @@ import { useDynamicSlideInfo } from '@slidev/client/composables/useSlideInfo.ts'
 import { computed, nextTick, onMounted, onUnmounted, ref, unref, watch } from 'vue'
 import logoUrl from '../assets/logo.png'
 import { onSlideInfoPublished } from '../composables/slideInfoSync'
+import { isVisibleAt, parseStepRange } from '../composables/stepRange'
 import { findFitFontSize, TITLE_MAX_PT, TITLE_MIN_PT, useAutoFitText } from '../composables/useAutoFitText'
 import { useCalloutTool } from '../composables/useCalloutTool'
 import { useEditor } from '../composables/useEditor'
@@ -414,8 +416,8 @@ interface CalloutItem {
   // without re-running placement/collision detection.
   highlightRect: Rect
   side: Side
-  /** Click step from the marker's `{N}` suffix; undefined means always visible. */
-  click?: number
+  /** Click step or range from the marker's suffix or the callout's `step`; undefined means always visible. */
+  click?: StepRange
 }
 
 const calloutItems = ref<CalloutItem[]>([])
@@ -752,8 +754,8 @@ function deriveSide(rect: Rect, codeRect: Rect): Side {
 // the transformer (hidden `v-click` placeholders), since registrations made
 // after mount don't count; here we only react to the current click. The
 // editor always shows everything so every callout can be dragged.
-function isStepHidden(click: number | undefined): boolean {
-  return click !== undefined && !editor.editing.value && Number(unref($clicks)) < click
+function isStepHidden(click: StepRange | null | undefined): boolean {
+  return !!click && !editor.editing.value && !isVisibleAt(click, Number(unref($clicks)))
 }
 
 watch(
@@ -763,7 +765,7 @@ watch(
     if (!container)
       return
     for (const el of Array.from(container.querySelectorAll('[data-highlight-click]')))
-      el.classList.toggle('step-hidden', isStepHidden(Number(el.getAttribute('data-highlight-click'))))
+      el.classList.toggle('step-hidden', isStepHidden(parseStepRange(el.getAttribute('data-highlight-click') ?? '')))
   },
   { flush: 'post', immediate: true },
 )
@@ -916,7 +918,9 @@ function computeCallouts() {
   }
 
   const items: CalloutItem[] = []
-  const placed: Rect[] = []
+  // Each placed box with the clicks it's visible at: callouts that are never
+  // visible together don't push each other away (see placeCallout).
+  const placed: PlacedRect[] = []
   for (const [id, els] of groups) {
     const first = els[0]
     const comment = first.getAttribute('data-comment')
@@ -940,6 +944,9 @@ function computeCallouts() {
       editor.ensurePosition(overrideKey, { x: Number(overrideX), y: Number(overrideY), ...calloutSize })
     }
 
+    const clickAttr = first.getAttribute('data-highlight-click')
+    const click = clickAttr ? parseStepRange(clickAttr) ?? undefined : undefined
+
     let rect: Rect
     let side: Side
     if (manualIds.value.has(overrideKey)) {
@@ -949,18 +956,17 @@ function computeCallouts() {
       side = deriveSide(rect, codeRect)
     }
     else {
-      const placement = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed })
+      const placement = placeCallout({ codeRect, highlightRect, calloutSize, slideRect, placed, range: click })
       rect = placement.rect
       side = placement.side
       editor.ensurePosition(overrideKey, rect)
       Object.assign(editor.positions[overrideKey], rect)
     }
-    placed.push(rect)
+    // Stepped callouts are placed in the same single pass as visible ones (and
+    // occupy their slot for the clicks they're visible at), so revealing or
+    // hiding a step never moves another callout.
+    placed.push({ ...rect, range: click })
     const path = pointsToSvgPath(elbowPath(highlightRect, rect, side))
-    // Stepped callouts are placed exactly like visible ones (and occupy their
-    // slot in `placed`), so revealing a later step never moves earlier callouts.
-    const clickAttr = first.getAttribute('data-highlight-click')
-    const click = clickAttr ? Number(clickAttr) : undefined
     items.push({ id, comment, rect, path, overrideKey, source: 'code', boxless: false, sourceLine, markerIndex, lineOccurrence, highlightRect, side, click })
   }
 
@@ -1016,7 +1022,7 @@ function computeCallouts() {
       side = 'left'
     }
     else {
-      const placement = placeCallout({ codeRect: obstacle ?? anchorRect, highlightRect: anchorRect, calloutSize, slideRect, placed })
+      const placement = placeCallout({ codeRect: obstacle ?? anchorRect, highlightRect: anchorRect, calloutSize, slideRect, placed, range: callout.step ?? undefined })
       rect = placement.rect
       side = placement.side
     }
@@ -1024,7 +1030,7 @@ function computeCallouts() {
     if (!live)
       Object.assign(editor.positions[boxKey], rect)
     if (!boxless)
-      placed.push(rect)
+      placed.push({ ...rect, range: callout.step ?? undefined })
 
     // The box covering its own anchor means "label on the thing it names", so
     // no connector is drawn (see useSlideCallouts' boxContainsAnchor).

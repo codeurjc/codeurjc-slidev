@@ -80,7 +80,7 @@ describe('computeCodeLensesForDocument', () => {
 
     it('adds the step and slide total to a stepped reference, and keeps a plain one plain', () => {
       expect(lensAt(2).title).toBe('📽 2 references — Slide 2 ▸3 of 5, Slide 3')
-      expect(lensAt(2).references[0]).toMatchObject({ click: 3, total: 5 })
+      expect(lensAt(2).references[0]).toMatchObject({ click: { from: 3 }, total: 5 })
     })
 
     it('leaves the total out when the setting is off', () => {
@@ -90,6 +90,13 @@ describe('computeCodeLensesForDocument', () => {
     it('uses the resolver to count the slide like the theme does (an anchor matching nothing adds no click)', () => {
       const lens = lensAt(2, { resolveImportText: () => TARGET_TEXT.replace('GestorNotas(DBAlumno', 'Other(') })
       expect(lens.title).toBe('📽 2 references — Slide 2 ▸3 of 3, Slide 3')
+    })
+
+    it('labels a step range as written', () => {
+      const ranged = slideText.replace('"this.alumnos = alumnos"{3}', '"this.alumnos = alumnos"{2-3}')
+      const rangedIndex = buildReferenceIndex({ 'slides.md': ranged }, resolvePath)
+      const lens = computeCodeLensesForDocument(rangedIndex, '/repo/code/Foo.java', TARGET_TEXT, () => ranged).find(l => l.line === 2)!
+      expect(lens.title).toBe('📽 2 references — Slide 2 ▸2-3 of 5, Slide 3')
     })
   })
 })
