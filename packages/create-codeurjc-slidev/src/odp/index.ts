@@ -24,6 +24,16 @@ export interface ImportProjectOptions {
   now?: () => Date
   /** create-codeurjc-slidev's version, recorded in the import report. */
   version?: string
+  /** The deck's own markdown file name, relative to `root`. Default `slides.md`. */
+  deckFile?: string
+  /** The deck's code path relative to `root` (`@/<codeBase>/...` imports resolve here too). Default `code`. */
+  codeBase?: string
+  /** The deck's images path relative to `root/public`. Default `images`. */
+  imagesBase?: string
+  /** The deck's rendered-original SVGs path relative to `root/public`. Default `odp-originals`. */
+  originalsBase?: string
+  /** The comparison deck's own markdown file name, relative to `root`. Default `comparison.md`. */
+  comparisonFile?: string
 }
 
 export interface ImportProjectResult {
@@ -32,6 +42,8 @@ export interface ImportProjectResult {
   codeFiles: number
   /** The import report's path, relative to the project root. */
   reportPath?: string
+  /** The comparison file's name used for this import (whether or not it was actually written). Default `comparison.md`. */
+  comparisonFile?: string
 }
 
 function writeFile(path: string, data: string | Uint8Array) {
@@ -40,13 +52,16 @@ function writeFile(path: string, data: string | Uint8Array) {
 }
 
 export async function importOdpProject(options: ImportProjectOptions): Promise<ImportProjectResult> {
-  const result = await convertOdp(options)
-  writeFile(join(options.root, 'slides.md'), result.slidesMarkdown)
+  const deckFile = options.deckFile ?? 'slides.md'
+  const codeBase = options.codeBase ?? 'code'
+  const comparisonFile = options.comparisonFile ?? 'comparison.md'
+  const result = await convertOdp({ ...options, deckFile, codeBase })
+  writeFile(join(options.root, deckFile), result.slidesMarkdown)
   for (const [path, data] of result.images)
     writeFile(join(options.root, 'public', path), data)
-  const codeFiles = result.codeFolder ? copyCodeFolder(result.codeFolder, join(options.root, 'code')) : 0
+  const codeFiles = result.codeFolder ? copyCodeFolder(result.codeFolder, join(options.root, codeBase)) : 0
   if (result.comparisonMarkdown) {
-    writeFile(join(options.root, 'comparison.md'), result.comparisonMarkdown)
+    writeFile(join(options.root, comparisonFile), result.comparisonMarkdown)
     for (const [path, svg] of result.originals)
       writeFile(join(options.root, 'public', path), svg)
   }
@@ -56,8 +71,8 @@ export async function importOdpProject(options: ImportProjectOptions): Promise<I
   const importedAt = (options.now ?? (() => new Date()))()
   const reportsDir = join(options.root, REPORTS_DIR)
   const fileName = reportFileName(importedAt, new Set(existsSync(reportsDir) ? readdirSync(reportsDir) : []))
-  writeFile(join(reportsDir, fileName), importReportMarkdown(result, { odpPath: options.odpPath, importedAt, version: options.version ?? 'unknown' }))
-  return { result, hasComparison: Boolean(result.comparisonMarkdown), codeFiles, reportPath: `${REPORTS_DIR}/${fileName}` }
+  writeFile(join(reportsDir, fileName), importReportMarkdown(result, { odpPath: options.odpPath, importedAt, version: options.version ?? 'unknown', deckFile, comparisonFile }))
+  return { result, hasComparison: Boolean(result.comparisonMarkdown), codeFiles, reportPath: `${REPORTS_DIR}/${fileName}`, comparisonFile }
 }
 
 /** Console lines summarizing an import: counts, notices, and every loss by slide. */
@@ -85,8 +100,9 @@ export function formatReport(imported: ImportProjectResult): string[] {
     for (const r of lossy)
       lines.push(`    ${where(r)}: ${r.losses.join('; ')}`)
   }
+  const comparisonFile = imported.comparisonFile ?? 'comparison.md'
   lines.push(result.comparison === 'written'
-    ? '  Comparison deck written to comparison.md (open it with the dev:compare script)'
+    ? `  Comparison deck written to ${comparisonFile} (open it with \`slidev ${comparisonFile} --open\`)`
     : result.comparison === 'no-losses'
       ? '  Nothing was lost, so no comparison deck was needed'
       : '  Comparison deck not written (see the notice above)')

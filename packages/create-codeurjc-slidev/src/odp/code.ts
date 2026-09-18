@@ -303,12 +303,12 @@ export function isWholeFile(file: IndexedFile, startLine: number, endLine: numbe
   return norm.length > 0 && startLine <= norm[0].line && endLine >= norm[norm.length - 1].line
 }
 
-/** The `<<< @/code/...` line for an exact match, with a selector unless it spans the whole file. */
-export function importLineFor(match: CodeMatch, language: string): string {
+/** The `<<< @/code/...` line for an exact match, with a selector unless it spans the whole file. `codeBase` is the deck's code path relative to the project root (`code`, or `code/<slug>` for a namespaced deck). */
+export function importLineFor(match: CodeMatch, language: string, codeBase = 'code'): string {
   const file = match.file!
   const whole = isWholeFile(file, match.startLine!, match.endLine!)
   const selector = whole ? '' : `[${computeSelectorForSelection(file.lines, { startLine: match.startLine!, endLine: match.endLine! })}]`
-  return `<<< @/code/${file.relPath}${selector} ${language}`
+  return `<<< @/${codeBase}/${file.relPath}${selector} ${language}`
 }
 
 // --- Source-link base URL -----------------------------------------------------------

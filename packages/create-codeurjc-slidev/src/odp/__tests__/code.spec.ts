@@ -148,6 +148,11 @@ describe('matchCode', () => {
     const whole = matchCode(FILE.split('\n'), index)
     expect(importLineFor(whole, 'java')).toBe('<<< @/code/ejem1/src/test/java/Calculadora5Test.java java')
   })
+
+  it('prefixes the import path with the deck\'s code base when namespaced', () => {
+    const whole = matchCode(FILE.split('\n'), index)
+    expect(importLineFor(whole, 'java', 'code/tema1')).toBe('<<< @/code/tema1/ejem1/src/test/java/Calculadora5Test.java java')
+  })
 })
 
 describe('source-link base URL', () => {

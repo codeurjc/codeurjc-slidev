@@ -10,6 +10,10 @@ export interface ImportReportOptions {
   importedAt: Date
   /** create-codeurjc-slidev's version. */
   version: string
+  /** The deck's own markdown file name (`slides.md`, or `<slug>.md` for a named deck). Default `slides.md`. */
+  deckFile?: string
+  /** The comparison file's name, whether or not it was actually written (`comparison.md` or `<slug>-comparison.md`). Default `comparison.md`. */
+  comparisonFile?: string
 }
 
 export const REPORTS_DIR = 'import-reports'
@@ -68,9 +72,9 @@ function officeLabel(office: ConvertResult['context']['office']): string {
   return office.reason === 'missing' ? 'not found (`soffice` ≥ 7.4 is needed)' : `${office.version} found, but ≥ 7.4 is needed`
 }
 
-function comparisonLabel(result: ConvertResult): string {
+function comparisonLabel(result: ConvertResult, comparisonFile: string): string {
   switch (result.comparison) {
-    case 'written': return 'written to `comparison.md`'
+    case 'written': return `written to ${code(comparisonFile)}`
     case 'no-losses': return 'not needed (nothing was lost)'
     default: return 'skipped (see the notices)'
   }
@@ -107,12 +111,13 @@ export function importReportMarkdown(result: ConvertResult, options: ImportRepor
     `# Import report — ${result.deckTitle}`,
     [
       `- **Source:** ${code(options.odpPath)}`,
+      `- **Deck:** ${code(options.deckFile ?? 'slides.md')}`,
       `- **Imported:** ${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`,
       `- **Importer:** create-codeurjc-slidev ${options.version}`,
       `- **Code folder:** ${context.codeFolder ? `${code(context.codeFolder)} (${plural(context.codeFiles, 'file')})` : 'none found'}`,
       `- **Source links:** ${context.repoBase ?? 'none'}`,
       `- **LibreOffice:** ${officeLabel(context.office)}`,
-      `- **Comparison deck:** ${comparisonLabel(result)}`,
+      `- **Comparison deck:** ${comparisonLabel(result, options.comparisonFile ?? 'comparison.md')}`,
     ].join('\n'),
     '## Summary',
     [

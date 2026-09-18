@@ -14,7 +14,7 @@ Without arguments, the creator asks whether to start from an empty project or fr
 pnpm create codeurjc-slidev tema-1-2 --from-odp "Tema 1.2 - Pruebas unitarias.odp"
 ```
 
-Each ODP (LibreOffice Impress) file becomes one project. When no directory is given, it's named after the ODP (`tema-1-2-pruebas-unitarias`).
+Each ODP (LibreOffice Impress) file becomes one deck. By default that's one project per ODP; to keep several decks in one project, see [Several decks in one project](#several-decks-in-one-project). When no directory is given, the project is named after the ODP (`tema-1-2-pruebas-unitarias`).
 
 | Flag | Meaning |
 |---|---|
@@ -61,7 +61,37 @@ Every import also writes a markdown report to `import-reports/import-report-<dat
 - **Code:** every code block and how it matched the code folder: imported (with the file and lines), close to a file, no match, a terminal command, or no code folder at all. Useful to see which decks still need their code.
 - **Notes and losses** per slide, with the matching slide of `comparison.md`.
 
-Reports are never overwritten: each import adds a new one. Re-importing into an existing project keeps its `import-reports/` folder, even when you confirm removing the other files. New projects ignore `import-reports/` in `.gitignore`, since reports contain local paths; add that line yourself to projects created with an older version.
+Reports are never overwritten: each import adds a new one, and the context names the deck file it produced. Re-importing into an existing project keeps its `import-reports/` folder, even when you confirm removing the other files. New projects ignore `import-reports/` in `.gitignore`, since reports contain local paths; add that line yourself to projects created with an older version.
+
+## Several decks in one project
+
+A project can hold any number of decks (`<slug>.md` files) that share one dependency tree, one `code/` and one `public/`. Slidev already opens any of them by name, and pnpm forwards the argument, so no per-deck scripts are generated:
+
+```sh
+pnpm dev                # slides.md, when the project has one
+pnpm dev tema1.md       # any other deck
+pnpm build tema1.md
+```
+
+| Flag | Meaning |
+|---|---|
+| `--deck <slug>` | Names the deck (`<slug>.md`). Alone, it adds an empty deck; with `--from-odp`, it names the imported one. |
+| `--from-odp-dir <dir>` | Imports every `.odp` directly under `<dir>` in one run, each named after its file (`Tema 1.2 - Pruebas unitarias.odp` becomes `tema-1-2-pruebas-unitarias.md`). |
+| `--from-odp <file>` (repeatable) | Import several files in one run. Repeat `--deck` once per `--from-odp` to name them, or not at all. |
+| `--yes` / `--force` | Overwrite decks that already exist without asking. |
+| `--skip-existing` | Skip decks that already exist without asking. Can't be combined with `--yes`. |
+
+```sh
+pnpm create codeurjc-slidev course --from-odp-dir odp/
+pnpm create codeurjc-slidev course --from-odp "Tema 2.odp" --deck tema-2   # add one later
+```
+
+- **Adding to a project.** If the target directory already depends on `codeurjc-slidev-theme`, the creator adds decks to it instead of offering to remove its files. It only ever touches the decks named in that run. A deck whose `<slug>.md` already exists asks `Deck 'x' already exists — overwrite its slide file, code and images?`; answering no skips just that deck. Without a terminal, existing decks are skipped (use `--yes` to overwrite). A one-line summary closes the run (`N imported, M overwritten, K skipped`).
+- **Where a deck's files go.** An imported deck's code and images live under its own slug, so decks can't overwrite each other: `code/<slug>/`, `public/images/<slug>/`, `public/odp-originals/<slug>/`, and `<slug>-comparison.md`. Slides import them as `@/code/<slug>/...` and `/images/<slug>/...`. The one exception is a lone `--from-odp` creating a new project, which keeps the flat `slides.md`, `code/`, `public/images/` and `comparison.md`.
+- **Shared material.** Anything you put directly in `code/` or `public/images/` (outside a deck's folder) is never touched, and any deck can use it: `<<< @/code/shared/Utils.java`, `![](/images/logo.png)`.
+- **`--code` and `--code-repo`** apply to every ODP in the run. Without `--code`, each ODP uses the folder next to it with the same name.
+- **Re-importing the default deck.** Re-importing a lone `slides` deck into a project that already exists writes the new copy under `code/slides/` and `public/images/slides/`; delete the old flat `code/` and `public/images/` files by hand if they're no longer used.
+- **The comparison deck** of a named deck is opened with `pnpm dev <slug>-comparison.md`.
 
 ## Development
 

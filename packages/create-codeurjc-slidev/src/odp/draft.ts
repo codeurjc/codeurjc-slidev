@@ -31,6 +31,8 @@ export interface DraftContext {
   imagePaths: Map<string, string>
   /** Whether diagrams can be embedded as SVG cropped from LibreOffice's export (LibreOffice ≥ 7.4 found). */
   canEmbedDiagrams?: boolean
+  /** The deck's images path relative to `public/` (`images`, or `images/<slug>` for a namespaced deck). Default `images`. */
+  imagesBase?: string
 }
 
 export interface DraftCode {
@@ -111,11 +113,12 @@ function publicImagePath(href: string, ctx: DraftContext): string | undefined {
   const data = ctx.deck.pictures.get(href)
   if (!data)
     return undefined
+  const imagesBase = ctx.imagesBase ?? 'images'
   let name = basename(href)
   const taken = new Set(ctx.images.keys())
-  for (let i = 2; taken.has(`images/${name}`); i++)
+  for (let i = 2; taken.has(`${imagesBase}/${name}`); i++)
     name = `${basename(href, extname(href))}-${i}${extname(href)}`
-  const path = `images/${name}`
+  const path = `${imagesBase}/${name}`
   ctx.images.set(path, data)
   ctx.imagePaths.set(href, path)
   return path
@@ -377,12 +380,12 @@ function snippetLineMapper(code: DraftCode): (index: number) => number | undefin
   }
 }
 
-export function renderCode(code: DraftCode, repoBase: RepoBase | undefined): { markdown: string, losses: string[], imported: boolean } {
+export function renderCode(code: DraftCode, repoBase: RepoBase | undefined, codeBase = 'code'): { markdown: string, losses: string[], imported: boolean } {
   const losses: string[] = []
   const { match } = code
   if (match.kind === 'exact' && match.file && match.startLine && match.endLine) {
     const language = languageForFilename(match.file.relPath) ?? code.language
-    const out = [importLineFor(match, language)]
+    const out = [importLineFor(match, language, codeBase)]
     if (repoBase) {
       const whole = isWholeFile(match.file, match.startLine, match.endLine)
       out.push(`[!source ${sourceUrl(repoBase, match.file.relPath, whole ? undefined : { startLine: match.startLine, endLine: match.endLine })}]`)
@@ -426,7 +429,7 @@ function renderBody(block: Extract<DraftBlock, { kind: 'body' }>): string {
 }
 
 /** Renders a draft's content blocks (not headings/frontmatter), returning the markdown and any rendering losses. */
-export function renderDraftBody(draft: SlideDraft, repoBase: RepoBase | undefined): { markdown: string, losses: string[], imports: number, inlineCode: number } {
+export function renderDraftBody(draft: SlideDraft, repoBase: RepoBase | undefined, codeBase = 'code'): { markdown: string, losses: string[], imports: number, inlineCode: number } {
   const parts: string[] = []
   const losses: string[] = []
   let imports = 0
@@ -437,7 +440,7 @@ export function renderDraftBody(draft: SlideDraft, repoBase: RepoBase | undefine
     if (block.kind === 'diagram')
       return fence(block.mermaid.split('\n'), 'mermaid')
     if (block.kind === 'code') {
-      const rendered = renderCode(block.code, repoBase)
+      const rendered = renderCode(block.code, repoBase, codeBase)
       losses.push(...rendered.losses)
       if (rendered.imported)
         imports++

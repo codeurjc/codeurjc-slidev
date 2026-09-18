@@ -4,3 +4,5 @@ export declare const KEPT_ON_REIMPORT: Set<string>
 export declare function removableEntries(dir: string): string[]
 /** Empties `dir` except for its top-level kept entries. */
 export declare function emptyDir(dir: string, keep?: Set<string>): void
+/** Whether `dir` is a project already depending on `codeurjc-slidev-theme`. */
+export declare function isRecognizedProject(dir: string): boolean

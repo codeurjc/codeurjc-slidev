@@ -164,6 +164,27 @@ describe('convertOdp', () => {
     expect(result.comparisonMarkdown).toContain('src: ./slides.md#7')
   })
 
+  it('writes everything under a namespaced deck\'s own bases', async () => {
+    const result = await convertOdp({
+      odpPath,
+      codeRepo: 'https://github.com/o/r/tree/main',
+      office: fakeOffice,
+      deckFile: 'tema1.md',
+      codeBase: 'code/tema1',
+      imagesBase: 'images/tema1',
+      originalsBase: 'odp-originals/tema1',
+    })
+    expect([...result.images.keys()]).toEqual(['images/tema1/chair.svg'])
+    expect(result.slideSources[4]).toContain('![](/images/tema1/chair.svg)')
+    expect(result.slideSources[4]).toContain('src: /images/tema1/chair.svg')
+    expect(result.slideSources[7]).toContain('<<< @/code/tema1/ejem1/src/ListTest.java java')
+    expect(result.comparison).toBe('written')
+    expect(result.comparisonMarkdown).toContain('src: ./tema1.md#')
+    expect(result.comparisonMarkdown).not.toContain('src: ./slides.md')
+    expect(result.comparisonMarkdown).toContain('image: /odp-originals/tema1/')
+    expect([...result.originals.keys()].every(k => k.startsWith('odp-originals/tema1/'))).toBe(true)
+  })
+
   it('skips the comparison deck when LibreOffice is missing, and notes code/source-link fallbacks', async () => {
     const missing: OfficeRunner = async () => ({ code: -1, stdout: '' })
     const result = await convertOdp({ odpPath, office: missing, git: () => null })

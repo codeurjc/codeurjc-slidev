@@ -26,3 +26,22 @@ export function emptyDir(dir, keep = KEPT_ON_REIMPORT) {
     fs.rmSync(path.resolve(dir, file), { recursive: true, force: true })
   }
 }
+
+/**
+ * Whether `dir` is a project this tool already scaffolded: its `package.json`
+ * depends on `codeurjc-slidev-theme`. Distinguishes "add a deck to this" from
+ * "this is an unrelated non-empty directory" (project-scaffolding's
+ * non-empty-directory handling, per the multi-deck-projects capability).
+ */
+export function isRecognizedProject(dir) {
+  const pkgPath = path.join(dir, 'package.json')
+  if (!fs.existsSync(pkgPath))
+    return false
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
+    return Boolean(pkg.dependencies && Object.hasOwn(pkg.dependencies, 'codeurjc-slidev-theme'))
+  }
+  catch {
+    return false
+  }
+}

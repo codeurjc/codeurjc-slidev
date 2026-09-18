@@ -25,8 +25,8 @@ function odpLabel(numbers: number[]): string {
   return numbers.length === 1 ? `ODP slide ${numbers[0]}` : `ODP slides ${numbers[0]}–${numbers[numbers.length - 1]}`
 }
 
-/** The comparison deck's markdown, or undefined when no slide has losses. */
-export function comparisonMarkdown(entries: ComparisonEntry[], deckTitle: string): string | undefined {
+/** The comparison deck's markdown, or undefined when no slide has losses. `deckFile` is the deck's own markdown file name (default `slides.md`) that `src:` includes point at. */
+export function comparisonMarkdown(entries: ComparisonEntry[], deckTitle: string, deckFile = 'slides.md'): string | undefined {
   const withLosses = entries.filter(e => e.losses.length > 0)
   if (withLosses.length === 0)
     return undefined
@@ -48,7 +48,7 @@ export function comparisonMarkdown(entries: ComparisonEntry[], deckTitle: string
     const losses = entry.losses.map(l => `- ${l}`)
     slides.push(`---\n${toYaml(frontmatter)}\n---\n\n${heading}\n\n${notes.join('\n')}\n\n${losses.join('\n')}\n`)
     if (!entry.hidden)
-      slides.push(`---\nsrc: ./slides.md#${entry.fileIndex}\n---\n`)
+      slides.push(`---\nsrc: ./${deckFile}#${entry.fileIndex}\n---\n`)
   })
   return slides.join('\n')
 }

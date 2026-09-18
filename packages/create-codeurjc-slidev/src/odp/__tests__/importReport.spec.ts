@@ -131,6 +131,14 @@ describe('import report rendering', () => {
     expect(md).toContain('| 7 | 8 | positioned text box flattened into a paragraph | slide 6 |')
   })
 
+  it('names the deck file and the actual comparison file', () => {
+    const md = importReportMarkdown(result, { odpPath, importedAt, version: '0.2.0' })
+    expect(md).toContain('- **Deck:** `slides.md`')
+    const named = importReportMarkdown(result, { odpPath, importedAt, version: '0.2.0', deckFile: 'tema1.md', comparisonFile: 'tema1-comparison.md' })
+    expect(named).toContain('- **Deck:** `tema1.md`')
+    expect(named).toContain('- **Comparison deck:** written to `tema1-comparison.md`')
+  })
+
   it('says so when a section has nothing to list, and when there was no code folder', async () => {
     const quiet = await convertOdp({ odpPath: noFolderOdp, office: false, git: () => null })
     const clean = { ...quiet, reports: quiet.reports.map(r => ({ ...r, losses: [], info: [] })), notices: [], codeBlocks: [] }

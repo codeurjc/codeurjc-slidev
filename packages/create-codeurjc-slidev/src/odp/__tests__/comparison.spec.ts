@@ -105,6 +105,13 @@ describe('comparisonMarkdown', () => {
   it('returns undefined when nothing was lost', () => {
     expect(comparisonMarkdown([{ odpNumbers: [1], slidevNumber: 1, fileIndex: 1, hidden: false, losses: [] }], 'x')).toBeUndefined()
   })
+
+  it('includes converted slides from the deck file it is given', () => {
+    const entries = [{ odpNumbers: [3], slidevNumber: 3, fileIndex: 4, hidden: false, losses: ['arrow omitted'] }]
+    expect(comparisonMarkdown(entries, 'x')).toContain('src: ./slides.md#4')
+    expect(comparisonMarkdown(entries, 'x', 'tema1.md')).toContain('src: ./tema1.md#4')
+    expect(comparisonMarkdown(entries, 'x', 'tema1.md')).not.toContain('slides.md')
+  })
 })
 
 describe('toYaml', () => {

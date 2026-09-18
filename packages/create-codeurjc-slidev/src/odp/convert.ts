@@ -39,6 +39,14 @@ export interface ConvertOptions {
   git?: GitRunner
   /** LibreOffice process runner; `false` disables LibreOffice (no comparison deck, no diagram images). */
   office?: OfficeRunner | false
+  /** The deck's own markdown file name, referenced by the comparison deck's `src:` includes. Default `slides.md`. */
+  deckFile?: string
+  /** The deck's code path relative to the project root (`@/<codeBase>/...` imports). Default `code`. */
+  codeBase?: string
+  /** The deck's images path relative to `public/`. Default `images`. */
+  imagesBase?: string
+  /** The deck's rendered-original SVGs path relative to `public/`, for the comparison deck. Default `odp-originals`. */
+  originalsBase?: string
 }
 
 export interface SlideReport {
@@ -168,6 +176,10 @@ function slideSource(frontmatter: Record<string, unknown>, content: string): str
 
 export async function convertOdp(options: ConvertOptions): Promise<ConvertResult> {
   const git = options.git ?? realGitRunner
+  const deckFile = options.deckFile ?? 'slides.md'
+  const codeBase = options.codeBase ?? 'code'
+  const imagesBase = options.imagesBase ?? 'images'
+  const originalsBase = options.originalsBase ?? 'odp-originals'
   const notices: string[] = []
   const deck = parseOdp(readFileSync(options.odpPath))
   const classified = deck.slides.map(slide => classifySlide(slide, deck))
@@ -199,7 +211,7 @@ export async function convertOdp(options: ConvertOptions): Promise<ConvertResult
   const exportOnce = () => (exported ??= exportSvg(options.odpPath, office!))
 
   // Drafts, build-ups.
-  const ctx: DraftContext = { deck, codeIndex, repoBase, images: new Map(), imagePaths: new Map(), canEmbedDiagrams: officeStatus?.ok === true }
+  const ctx: DraftContext = { deck, codeIndex, repoBase, images: new Map(), imagePaths: new Map(), canEmbedDiagrams: officeStatus?.ok === true, imagesBase }
   const merged = mergeBuildUps(classified.map(cs => draftSlide(cs, ctx)))
   notices.push(...merged.warnings)
   const drafts = merged.drafts
@@ -227,9 +239,9 @@ export async function convertOdp(options: ConvertOptions): Promise<ConvertResult
           draft.losses.push('diagram omitted (not found in LibreOffice\'s SVG export)')
           return
         }
-        let path = `images/diagram-${slide.name}${i > 0 ? `-${i + 1}` : ''}.svg`
+        let path = `${imagesBase}/diagram-${slide.name}${i > 0 ? `-${i + 1}` : ''}.svg`
         for (let n = 2; ctx.images.has(path); n++)
-          path = `images/diagram-${slide.name}-${i + 1}-${n}.svg`
+          path = `${imagesBase}/diagram-${slide.name}-${i + 1}-${n}.svg`
         ctx.images.set(path, new TextEncoder().encode(cropped))
         draft.images.push({ key: path, publicPath: path, rect: mapRect(group.rect, region) })
         draft.info.push('diagram embedded as an SVG image (not editable)')
@@ -267,7 +279,7 @@ export async function convertOdp(options: ConvertOptions): Promise<ConvertResult
       content = ''
     }
     else {
-      const body = renderDraftBody(draft, repoBase)
+      const body = renderDraftBody(draft, repoBase, codeBase)
       losses.push(...body.losses)
       imports += body.imports
       inlineCode += body.inlineCode
@@ -338,10 +350,10 @@ export async function convertOdp(options: ConvertOptions): Promise<ConvertResult
           const name = wanted.get(r.fileIndex)
           const svg = name ? rendered.get(name) : undefined
           if (name && svg)
-            originals.set(`odp-originals/${name}.svg`, svg)
-          return { ...r, originalImage: name && svg ? `/odp-originals/${name}.svg` : undefined }
+            originals.set(`${originalsBase}/${name}.svg`, svg)
+          return { ...r, originalImage: name && svg ? `/${originalsBase}/${name}.svg` : undefined }
         })
-        comparisonMd = comparisonMarkdown(entries, deckTitle)
+        comparisonMd = comparisonMarkdown(entries, deckTitle, deckFile)
         comparison = 'written'
         // comparisonMarkdown's layout: an information slide per lossy slide,
         // then the imported converted slide unless it's hidden.
