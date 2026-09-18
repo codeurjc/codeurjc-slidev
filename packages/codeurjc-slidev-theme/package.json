@@ -1,7 +1,7 @@
 {
   "name": "codeurjc-slidev-theme",
   "type": "module",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Slidev theme: draggable layout editor, code-highlight callouts, code-snippet import, and slide title carry-over for CodeURJC presentations",
   "license": "MIT",
   "keywords": [
