@@ -1,0 +1,8 @@
+{
+  // Opened by the "VS Code extension: this repo's deck" launch config. It
+  // points at the repo root, the folder you already have open: VS Code won't
+  // open a folder in a second window (it switches to the one that has it), but
+  // a workspace file counts as a different workspace, so the Extension
+  // Development Host gets a window of its own.
+  "folders": [{ "path": ".." }]
+}

@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Rebuilds the extension on every save. Started by the launch configs;
+      // they wait for the first build to finish before opening the host.
+      "label": "vscode-extension: watch",
+      "type": "shell",
+      "command": "pnpm run watch",
+      "options": { "cwd": "${workspaceFolder}/packages/vscode-codeurjc-slidev" },
+      "isBackground": true,
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": {
+        "owner": "esbuild",
+        "fileLocation": ["relative", "${workspaceFolder}/packages/vscode-codeurjc-slidev"],
+        "pattern": [
+          { "regexp": "^✘ \\[ERROR\\] (.*)$", "message": 1 },
+          { "regexp": "^\\s+(.*):(\\d+):(\\d+):$", "file": 1, "line": 2, "column": 3 }
+        ],
+        "background": {
+          "activeBegins": true,
+          "beginsPattern": "^\\[watch\\] build started",
+          "endsPattern": "^\\[watch\\] build finished"
+        }
+      }
+    },
+    {
+      // Production build, packaged as a .vsix and installed into this VS Code
+      // (the WSL/remote side, when that's where you're working). Run
+      // "Developer: Reload Window" afterwards to switch to the new version.
+      "label": "vscode-extension: install into VS Code",
+      "type": "shell",
+      "command": "pnpm run install-local",
+      "options": { "cwd": "${workspaceFolder}/packages/vscode-codeurjc-slidev" },
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    }
+  ]
+}

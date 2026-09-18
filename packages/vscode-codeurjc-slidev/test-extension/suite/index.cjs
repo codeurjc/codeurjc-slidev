@@ -15,6 +15,7 @@ exports.run = function run() {
   mocha.addFile(path.join(testsRoot, 'completion.test.cjs'))
   mocha.addFile(path.join(testsRoot, 'selectorCommands.test.cjs'))
   mocha.addFile(path.join(testsRoot, 'stepBadges.test.cjs'))
+  mocha.addFile(path.join(testsRoot, 'geometry.test.cjs'))
 
   return new Promise((resolve, reject) => {
     try {

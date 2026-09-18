@@ -1,11 +1,14 @@
-// Scans a slides.md document's raw text for the theme's two syntactic units
-// this extension cares about: manual fenced code blocks (which may contain
-// inline `// [!mark]` markers) and `<<<` snippet imports (followed by
-// `[!mark:...]`/`[!source ...]` directive lines). Shared by the active-buffer
-// annotation logic and the reference-index builder so both agree on exactly
-// the same document positions.
+// Scans a slides.md document's raw text for the theme's syntactic units this
+// extension cares about: manual fenced code blocks (which may contain inline
+// `// [!mark]` markers), `<<<` snippet imports (followed by
+// `[!mark:...]`/`[!source ...]` directive lines), and the content a slide's
+// `geometry` frontmatter can position -- images, tables, `<div id>` wrappers
+// and declared ids. Shared by the active-buffer annotation logic, the
+// reference-index builder and the geometry candidate builder so they all
+// agree on exactly the same document positions.
 
 import type { ParsedSnippetImportLine } from 'codeurjc-slidev-theme/composables/useSnippetImport'
+import { parseFenceInfo } from 'codeurjc-slidev-theme/composables/fenceInfo'
 import { isAnchorDeclarationLine, isSourceDirectiveLine, parseSnippetImportLine } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 
 export interface FencedBlock {
@@ -204,6 +207,183 @@ export function splitSlides(text: string): SlideSpan[] {
   if (start <= lines.length - 1)
     slice(lines.length)
   return slides
+}
+
+/** A content image's authored src, as written in the markdown or an `<img>` tag. */
+export interface ScannedImage {
+  /** 0-based document line the image is written on. */
+  line: number
+  /** The `src` exactly as authored -- what `markdownImageSrc.ts` stamps into `data-src`. */
+  src: string
+}
+
+const MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\(\s*([^\s)]+)/g
+const HTML_IMAGE_RE = /<img[^>]*?\ssrc\s*=\s*(["'])(.*?)\1/gi
+
+/**
+ * Every content image in `text`, in document order -- the order
+ * `layouts/default.vue` reads `<img>`s in, and so the order `geometry.images`
+ * positional entries and `src#N` occurrences count against. Images inside
+ * fenced code blocks are code, not content, and don't count.
+ */
+export function findImages(text: string): ScannedImage[] {
+  const lines = text.split('\n')
+  const fenced = findFencedBlocks(text)
+  const isInsideFence = (line: number) => fenced.some(f => line >= f.fenceStartLine && line <= f.fenceEndLine)
+
+  const images: ScannedImage[] = []
+  for (let i = 0; i < lines.length; i++) {
+    if (isInsideFence(i))
+      continue
+    const found: { column: number, src: string }[] = []
+    for (const m of lines[i].matchAll(MARKDOWN_IMAGE_RE))
+      found.push({ column: m.index ?? 0, src: m[1] })
+    for (const m of lines[i].matchAll(HTML_IMAGE_RE))
+      found.push({ column: m.index ?? 0, src: m[2] })
+    // A line can carry both forms; document order within the line is column order.
+    found.sort((a, b) => a.column - b.column)
+    for (const { src } of found)
+      images.push({ line: i, src })
+  }
+  return images
+}
+
+/** An element carrying an `id`, and what kind of thing the id is on. */
+export interface ScannedId {
+  /** 0-based document line the id is declared on. */
+  line: number
+  id: string
+  /**
+   * `fence` -- a code or mermaid fence's `{id: '…'}` option.
+   * `div` -- a `<div id="…">` wrapper.
+   * `other` -- any other element with an id, which can only ever be a wrong-kind match.
+   */
+  kind: 'fence' | 'div' | 'other'
+}
+
+/** A `<div id="…">` and the single element it wraps, if that element is a table or `<<<` import. */
+export interface ScannedDivWrapper {
+  /** 0-based document line the opening `<div>` is on. */
+  line: number
+  id: string
+  /** 0-based line of the wrapped element's start, or null when the div doesn't wrap exactly one table or import. */
+  wrappedLine: number | null
+}
+
+const DIV_OPEN_RE = /^\s*<div[^>]*?\sid\s*=\s*(["'])(.*?)\1[^>]*>\s*$/i
+const DIV_CLOSE_RE = /^\s*<\/div>\s*$/i
+const HTML_ID_RE = /<(\w+)[^>]*?\sid\s*=\s*(["'])(.*?)\2/gi
+const TABLE_ROW_RE = /^\s*\|.*\|\s*$/
+
+/** True if `info`'s `{…}` options declare `id: '…'`, and that id. */
+export function fenceOptionId(options: string | undefined): string | null {
+  if (!options)
+    return null
+  // Only a quoted id lands on the element: unquoted, Vue reads it as a variable.
+  return /\bid\s*:\s*(["'])(.*?)\1/.exec(options)?.[2] ?? null
+}
+
+/**
+ * `<div id="…">` blocks whose only child is a markdown table or a `<<<`
+ * import -- the two things the theme lets a wrapper id position (see
+ * `resolveGeometryElements`). A div wrapping anything else reports
+ * `wrappedLine: null`, so its id can still be reported as a wrong-kind match.
+ */
+export function findDivWrappers(text: string): ScannedDivWrapper[] {
+  const lines = text.split('\n')
+  const fenced = findFencedBlocks(text)
+  const isInsideFence = (line: number) => fenced.some(f => line >= f.fenceStartLine && line <= f.fenceEndLine)
+
+  const wrappers: ScannedDivWrapper[] = []
+  for (let i = 0; i < lines.length; i++) {
+    if (isInsideFence(i))
+      continue
+    const open = DIV_OPEN_RE.exec(lines[i])
+    if (!open)
+      continue
+    // Collect the non-blank lines up to the matching close, at this nesting level only.
+    const body: number[] = []
+    let depth = 1
+    let j = i + 1
+    for (; j < lines.length; j++) {
+      if (DIV_CLOSE_RE.test(lines[j])) {
+        depth--
+        if (depth === 0)
+          break
+      }
+      else if (DIV_OPEN_RE.test(lines[j]) || /^\s*<div\b/i.test(lines[j])) {
+        depth++
+      }
+      if (lines[j].trim() !== '')
+        body.push(j)
+    }
+    if (j >= lines.length) {
+      wrappers.push({ line: i, id: open[2], wrappedLine: null })
+      continue
+    }
+    wrappers.push({ line: i, id: open[2], wrappedLine: wrappedElementLine(lines, body) })
+    i = j
+  }
+  return wrappers
+}
+
+/** The start line of the single table or `<<<` import `body` consists of, else null. */
+function wrappedElementLine(lines: string[], body: number[]): number | null {
+  if (body.length === 0)
+    return null
+  if (body.length === 1 && parseSnippetImportLine(lines[body[0]]))
+    return body[0]
+  // A table: every line is a pipe row, and there are at least a header and a delimiter.
+  if (body.length >= 2 && body.every(n => TABLE_ROW_RE.test(lines[n])))
+    return body[0]
+  return null
+}
+
+/**
+ * Every markdown table in `text`, by the line its header row is on, in
+ * document order. A table is a run of `|`-delimited lines with a delimiter
+ * row (`|---|`) second.
+ */
+export function findTables(text: string): { line: number }[] {
+  const lines = text.split('\n')
+  const fenced = findFencedBlocks(text)
+  const isInsideFence = (line: number) => fenced.some(f => line >= f.fenceStartLine && line <= f.fenceEndLine)
+
+  const tables: { line: number }[] = []
+  for (let i = 0; i < lines.length; i++) {
+    if (isInsideFence(i) || !TABLE_ROW_RE.test(lines[i]))
+      continue
+    const delimiter = lines[i + 1]
+    if (delimiter && TABLE_ROW_RE.test(delimiter) && /^[\s|:-]+$/.test(delimiter)) {
+      tables.push({ line: i })
+      // Skip the rest of this table's rows.
+      let j = i + 2
+      while (j < lines.length && TABLE_ROW_RE.test(lines[j]) && !isInsideFence(j)) j++
+      i = j - 1
+    }
+  }
+  return tables
+}
+
+/** Every `id` declared in `text`, from fence options and HTML attributes alike. */
+export function findIds(text: string): ScannedId[] {
+  const lines = text.split('\n')
+  const ids: ScannedId[] = []
+  const fenced = findFencedBlocks(text)
+
+  for (const block of fenced) {
+    const id = fenceOptionId(parseFenceInfo(block.info).options)
+    if (id)
+      ids.push({ line: block.fenceStartLine, id, kind: 'fence' })
+  }
+  const isInsideFence = (line: number) => fenced.some(f => line >= f.fenceStartLine && line <= f.fenceEndLine)
+  for (let i = 0; i < lines.length; i++) {
+    if (isInsideFence(i))
+      continue
+    for (const m of lines[i].matchAll(HTML_ID_RE))
+      ids.push({ line: i, id: m[3], kind: m[1].toLowerCase() === 'div' ? 'div' : 'other' })
+  }
+  return ids.sort((a, b) => a.line - b.line)
 }
 
 /** The slide containing `docLine`, or the last slide before it. */

@@ -4,8 +4,13 @@
   "displayName": "CodeURJC Slidev Theme Support",
   "type": "module",
   "version": "0.1.0",
-  "description": "Editor support for codeurjc-slidev-theme's custom slides.md grammar: marker/anchor decorations, hovers, diagnostics, and reverse code references.",
+  "description": "Editor support for codeurjc-slidev-theme's custom slides.md grammar: marker/anchor decorations, hovers, diagnostics, reverse code references, and per-slide geometry checking, completion and live preview inspection.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codeurjc/codeurjc-slidev.git",
+    "directory": "packages/vscode-codeurjc-slidev"
+  },
   "categories": [
     "Other"
   ],
@@ -18,6 +23,9 @@
   },
   "activationEvents": [
     "onStartupFinished"
+  ],
+  "extensionPack": [
+    "antfu.slidev"
   ],
   "contributes": {
     "commands": [
@@ -40,6 +48,14 @@
       {
         "command": "codeurjc-slidev.openImportSource",
         "title": "CodeURJC Slidev: Open source"
+      },
+      {
+        "command": "codeurjc-slidev.inspectGeometry",
+        "title": "CodeURJC Slidev: Inspect Geometry in Preview"
+      },
+      {
+        "command": "codeurjc-slidev.stopInspectingGeometry",
+        "title": "CodeURJC Slidev: Stop Inspecting Geometry"
       }
     ],
     "configuration": {
@@ -49,6 +65,16 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Show the slide's total clicks in click-step badges (`▸2 of 3` instead of `▸2`). The total is left out on slides whose clicks can't be counted from the markdown."
+        },
+        "codeurjcSlidev.devServer.url": {
+          "type": "string",
+          "default": "http://localhost:3030",
+          "markdownDescription": "The Slidev dev server **Inspect Geometry in Preview** attaches to. The preview itself is whichever one you have open: the Slidev extension's, or a browser tab."
+        },
+        "codeurjcSlidev.geometry.saveOnDrag": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Save the deck after applying an element dragged in the preview, so the preview shows the result. Saving saves the whole file: pending edits elsewhere in it are saved too, and any format-on-save runs. When off, drags are applied to the editor and left unsaved."
         }
       }
     }
@@ -57,12 +83,15 @@
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "package": "node esbuild.js --production",
+    "vsix": "node esbuild.js --production && pnpm dlx @vscode/vsce@4 package --no-dependencies --skip-license --out vscode-codeurjc-slidev.vsix",
+    "install-local": "pnpm run vsix && code --install-extension vscode-codeurjc-slidev.vsix --force",
     "test": "vitest",
     "test:extension": "node esbuild.js && node ./test-extension/runTest.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "codeurjc-slidev-theme": "workspace:*"
+    "codeurjc-slidev-theme": "workspace:*",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

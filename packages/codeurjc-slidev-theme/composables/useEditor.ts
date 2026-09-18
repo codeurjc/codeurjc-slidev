@@ -93,8 +93,28 @@ interface Snapshot {
   aspectLocked: Record<string, boolean>
 }
 
-const _sharedEditing = ref(false)
+// Editor mode has two writers: the SideEditor's Layout tab, and an external
+// controller (see useInspectClient.ts) turning inspection on from outside the
+// page. Slidev hides its "Show editor" button in embedded previews, so the tab
+// alone can't reach editor mode there. `editing` is on while either wants it,
+// and every existing `editing.value = …` write goes to the tab's source -- so
+// when the controller lets go, the editor falls back to what the tab had.
+const _sharedTabEditing = ref(false)
+const _sharedControllerEditing = ref(false)
+const _sharedEditing = computed<boolean>({
+  get: () => _sharedTabEditing.value || _sharedControllerEditing.value,
+  set: (on) => {
+    _sharedTabEditing.value = on
+  },
+})
 const _sharedSelected = ref<string | null>(null)
+
+/** The controller's writer for editor mode: on while it inspects, off restores the Layout tab's own state. */
+export function setControllerEditing(on: boolean): void {
+  _sharedControllerEditing.value = on
+  if (!_sharedEditing.value)
+    _sharedSelected.value = null
+}
 // Which SideEditor tab is active. Lives here (rather than as local state in
 // _override/SideEditor.vue) so other entry points -- e.g. global-top.vue's
 // double-click-to-edit handler -- can switch to the Content tab themselves.

@@ -8,10 +8,20 @@ import { CONTENT_DEFAULT_WIDTH, useEditor } from './composables/useEditor'
 import { appendImageMarkdown, buildImageMarkdown, findPastedImage, insertAtCursor, uploadImage } from './composables/useImagePaste'
 import { computeBelowPreset, computeRightPreset } from './composables/useImagePosition'
 import { authoredSrc, imageRefFor } from './composables/useImageRefs'
+import { installInspectClient } from './composables/useInspectClient'
 import { parseSlideGeometry, withPositionedImage } from './composables/useSlideGeometry'
 import { resolveBlockRange } from './composables/useTextClickToEdit'
 
 const { currentSlideNo, slides } = useNav()
+
+// The controller channel (see composables/useInspectProtocol.ts), installed
+// once per page. The deck is identified by slide 1's source file: the
+// headmatter always lives in the entry deck, whatever later slides pull in
+// through `src:`.
+installInspectClient(() => {
+  const first = slides.value[0]?.meta.slide as { filepath?: string, source?: { filepath?: string } } | undefined
+  return first?.source?.filepath ?? first?.filepath
+})
 const { update } = useDynamicSlideInfo(currentSlideNo)
 const editor = useEditor()
 

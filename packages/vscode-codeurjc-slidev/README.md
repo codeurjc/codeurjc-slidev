@@ -24,19 +24,20 @@ This extension is **not yet published** to the VSCode Marketplace. For now it ca
 ## Running it locally
 
 1. From the repo root: `pnpm install`
-2. Open `packages/vscode-codeurjc-slidev/` as a folder in VSCode (a dedicated window, not the whole monorepo — the `.vscode/launch.json` in this folder assumes it's the workspace root)
-3. Press **F5** (or Run → Start Debugging). This runs the `compile` build task, then launches a new **Extension Development Host** window with this extension loaded.
-4. In that new window, open a folder containing a `slides.md` with `theme: codeurjc-slidev-theme` in its frontmatter — for example, this repo's own root, or its `e2e/` folder — and open that `slides.md` to see the decorations/hovers/diagnostics, or open one of its `code/` files directly to see reference CodeLenses.
+2. Open the repo root in VSCode and press **F5** (Run and Debug view), picking one of:
+   - **VS Code extension: this repo's deck** — opens this repo in an **Extension Development Host** window with the extension loaded. It opens it through `.vscode/extension-dev.code-workspace` rather than as a folder: VS Code won't open a folder that's already open in another window, and switches to that window instead
+   - **VS Code extension: test fixture deck** — opens `test-extension/fixture/`, a small deck with an import, click steps and a geometry entry that matches nothing
+3. Edit the extension: the `vscode-extension: watch` task the launch started rebuilds on every save (errors land in the Problems panel). Restart the host (`Ctrl+Shift+F5`) to load the new build.
 
-Changes to the extension's source are picked up by re-running the build (the launch config's `watch` task, or just pressing F5 again) and reloading the Extension Development Host window (`Cmd/Ctrl+R` inside it, or the "Developer: Reload Window" command).
+(Opening this package folder on its own still works: its own `.vscode/launch.json` builds once and opens an empty host window.)
 
-### Installing a built copy without the Marketplace
+### Installing a built copy into your own VSCode
 
-To try a built copy in your own everyday VSCode (not just the throwaway Extension Development Host):
+To use the current source in your everyday VSCode rather than the throwaway host, run the task **vscode-extension: install into VS Code** (Terminal → Run Task), then **Developer: Reload Window**. From a terminal, the same thing is:
 
 ```sh
 cd packages/vscode-codeurjc-slidev
-npx vsce package
+pnpm run install-local   # production build → vscode-codeurjc-slidev.vsix → code --install-extension
 ```
 
-This produces a `.vsix` file in this directory. In VSCode, open the Extensions view → `...` menu → **Install from VSIX...** and pick it.
+`pnpm run vsix` stops after writing the `.vsix`. `vsce` is fetched with `pnpm dlx` (its publishing dependencies are large, so it isn't a devDependency). Under Remote-WSL, run it from VSCode's own terminal or the task, so `code` installs into the WSL side where the extension runs.

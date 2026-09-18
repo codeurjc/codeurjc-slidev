@@ -1,3 +1,5 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { InspectCommand } from './composables/useInspectProtocol.ts'
 import { Buffer } from 'node:buffer'
 import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
@@ -5,6 +7,7 @@ import process from 'node:process'
 import { defineConfig } from 'vite'
 import { markdownImageSrc } from './composables/markdownImageSrc.ts'
 import { resolveMarkerLine, serializeMarkerOverride } from './composables/useCodeHighlights.ts'
+import { INSPECT_CLIENT_EVENT, INSPECT_COMMAND_EVENT, INSPECT_COMMAND_PATH, INSPECT_STREAM_PATH, INSPECT_SYNC_EVENT, parseInspectCommand, parseInspectEvent } from './composables/useInspectProtocol.ts'
 
 const VAR_MAP: Record<string, Record<string, string>> = {
   'red-bar': { y: '--ed-red-y', x: '--ed-red-x', w: '--ed-red-w', h: '--ed-red-h' },
@@ -35,6 +38,18 @@ function resolveSlideSourcePath(root: string, filepath: unknown): string | undef
   if (!rel || rel.startsWith('..'))
     return undefined
   return existsSync(abs) ? abs : undefined
+}
+
+/** Reads a request body as JSON, or undefined when it isn't parseable. */
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  try {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) chunks.push(chunk as Buffer)
+    return JSON.parse(Buffer.concat(chunks).toString())
+  }
+  catch {
+    return undefined
+  }
 }
 
 const IMAGE_MIME_EXT: Record<string, string> = {
@@ -335,6 +350,120 @@ export default defineConfig({
           res.statusCode = 200
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify({ sourceLine: newLine }))
+        })
+      },
+    },
+    {
+      // The controller channel: carries inspection commands from an external
+      // controller (the VS Code extension) to every connected slide client,
+      // and drag events back.
+      //
+      // It has to be a dev-server channel rather than a URL parameter. An
+      // embedded preview's iframe URL is built by whoever embeds it -- the
+      // official Slidev extension writes `<server>/<n>?embedded=true` itself
+      // -- and its message relay only forwards `target: 'slidev'` messages,
+      // which Slidev's own `useEmbeddedCtrl` handles and which know nothing
+      // about this theme. So commands travel over Vite's HMR socket, which
+      // reaches the client whatever its URL says.
+      name: 'codeurjc-slidev-geometry-inspect',
+      configureServer(server) {
+        // Server-sent events, one connection per attached controller. Kept in
+        // a set rather than a single slot so a second editor window attaching
+        // doesn't silently steal the first one's events.
+        const controllers = new Set<ServerResponse>()
+        // The controller's current state, replayed to pages that load after
+        // it attached (they ask via INSPECT_SYNC_EVENT once their listener is
+        // registered, so nothing is lost to a broadcast sent too early).
+        let state: { inspect: boolean, control: boolean, highlight: InspectCommand & { type: 'highlight' } | null } = { inspect: false, control: false, highlight: null }
+        const broadcast = (command: InspectCommand) => server.hot.send({ type: 'custom', event: INSPECT_COMMAND_EVENT, data: command })
+
+        server.middlewares.use(INSPECT_STREAM_PATH, (req, res) => {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          })
+          // Headers only leave on the first body write: without this, a
+          // controller's request wouldn't complete until some page happened
+          // to send an event, and with no preview open it never would. An SSE
+          // comment line is ignored by readers.
+          res.write(': attached\n\n')
+          controllers.add(res)
+          // Which deck is being served is answered by the client, not from
+          // here: Vite's resolved config carries the theme-facing `slidev`
+          // plugin options, not Slidev's resolved entry. The client knows its
+          // own slide's source file, which is what this codebase already
+          // relies on for the callout position write-back. Asking for it on
+          // attach makes every connected client announce itself.
+          broadcast({ type: 'whichDeck' })
+          req.on('close', () => {
+            controllers.delete(res)
+            // A controller that goes away while holding geometry writes would
+            // otherwise leave every page emitting drags into the void, never
+            // writing them. The last one leaving hands everything back.
+            if (controllers.size === 0) {
+              if (state.control)
+                broadcast({ type: 'control', on: false })
+              if (state.inspect)
+                broadcast({ type: 'inspect', on: false })
+              state = { inspect: false, control: false, highlight: null }
+            }
+          })
+        })
+
+        server.middlewares.use(INSPECT_COMMAND_PATH, async (req, res, next) => {
+          // `use(path)` matches by prefix: leave the event stream (and
+          // anything else under this path) to its own handler.
+          if (req.url && req.url !== '/' && !req.url.startsWith('/?')) {
+            next()
+            return
+          }
+          if (req.method !== 'POST') {
+            res.statusCode = 405
+            res.end()
+            return
+          }
+          const command = parseInspectCommand(await readJsonBody(req))
+          if (!command) {
+            res.statusCode = 400
+            res.end(JSON.stringify({ error: 'unrecognized command' }))
+            return
+          }
+          if (command.type === 'inspect')
+            state = { ...state, inspect: command.on, highlight: command.on ? state.highlight : null }
+          else if (command.type === 'control')
+            state = { ...state, control: command.on }
+          else if (command.type === 'highlight')
+            state = { ...state, highlight: command }
+          broadcast(command)
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ ok: true }))
+        })
+
+        server.hot.on(INSPECT_SYNC_EVENT, () => {
+          if (controllers.size === 0)
+            return
+          broadcast({ type: 'inspect', on: state.inspect })
+          broadcast({ type: 'control', on: state.control })
+          if (state.highlight)
+            broadcast(state.highlight)
+          broadcast({ type: 'whichDeck' })
+        })
+
+        // Drags travel client → server over the same HMR socket, then out to
+        // every attached controller.
+        server.hot.on(INSPECT_CLIENT_EVENT, (data: unknown) => {
+          const event = parseInspectEvent(data)
+          if (!event)
+            return
+          const payload = `data: ${JSON.stringify(event)}\n\n`
+          for (const res of controllers) res.write(payload)
+        })
+
+        server.httpServer?.on('close', () => {
+          for (const res of controllers) res.end()
+          controllers.clear()
         })
       },
     },

@@ -14,6 +14,8 @@ import { useCalloutTool } from '../composables/useCalloutTool'
 import { useEditor } from '../composables/useEditor'
 import { anchorPoint, ARROW_OBSTACLE_GAP, arrowPath, elbowPath, estimateCalloutSize, MIN_ARROWHEAD_CONNECTOR, pathLength, placeCallout, pointsToSvgPath, stackCallouts } from '../composables/useHighlightLayout'
 import { authoredSrc, imageRefFor, resolveImageRef } from '../composables/useImageRefs'
+import { controlled, emitInspectEvent, highlighted, inspecting } from '../composables/useInspectClient'
+import { inspectKeyFor } from '../composables/useInspectKeys'
 import {
   boxContainsAnchor,
   calloutAnchorKey,
@@ -150,14 +152,32 @@ const geometryImageOverlays = computed(() => geometry.value.images.flatMap((decl
   const rect = editor.positions[key]
   const ref = geometry.value.imageRefs[index]
   const label = ref?.kind === 'src' ? `${ref.src.split('/').pop()}${ref.occurrence ? ` #${ref.occurrence}` : ''}` : `Image ${index + 1}`
-  return rect ? [{ key, index, rect, label }] : []
+  return rect ? [{ key, index, rect, label, collection: 'images' as 'images' | 'elements' }] : []
 }).concat(geometry.value.elements.flatMap((entry, index) => {
   if (!entry)
     return []
   const key = geometryElementKey(slideNo.value, index)
   const rect = editor.positions[key]
-  return rect ? [{ key, index, rect, label: elementLabel(entry) }] : []
+  return rect ? [{ key, index, rect, label: elementLabel(entry), collection: 'elements' as 'images' | 'elements' }] : []
 })))
+
+// --- Inspection (driven by an external controller, see useInspectClient.ts) --
+// Which `images`/`elements` entries matched something on this slide, as
+// `images:<i>` / `elements:<i>`. An entry that matched nothing still has an
+// overlay at its declared rect, but no element moved there -- a failure that
+// has no pixels of its own, which is what the outline is for.
+const resolvedEntries = ref(new Set<string>())
+
+function isHighlighted(collection: 'content' | 'images' | 'elements', index: number): boolean {
+  const h = highlighted.value
+  return !!h && h.slideNo === slideNo.value && h.collection === collection && h.index === index
+}
+
+/** An overlay's tag while inspecting: the entry's address, what it is, and whether it matched. */
+function inspectTag(collection: 'images' | 'elements', index: number, label: string): string {
+  const resolved = resolvedEntries.value.has(`${collection}:${index}`)
+  return `${collection}[${index}] · ${label}${resolved ? '' : ' · matches nothing'}`
+}
 
 watch(() => geometry.value.warnings.join('\n'), (joined) => {
   if (joined)
@@ -261,6 +281,10 @@ async function persistGeometry() {
   })
   if (!changed || !slideNo.value || !__SLIDEV_HAS_SERVER__)
     return
+  if (controlled.value) {
+    emitControlledDrags(g, srcs)
+    return
+  }
   try {
     // Slidev's slide-patch request, through the slide-info ref so the patched
     // frontmatter is reflected immediately. It writes into whichever markdown
@@ -273,6 +297,45 @@ async function persistGeometry() {
     // best-effort: a failed save just means the edit stays session-only
   }
 }
+
+// Under controlled mode the controller is the only writer: each changed entry
+// is reported as a drag, named by its stable key, instead of being patched
+// into frontmatter here. The element stays where it was dropped (the editor's
+// live rect keeps rendering) until the controller's write comes back through
+// the file. A rect already reported isn't reported again on the next settle.
+const lastEmitted = new Map<string, string>()
+function emitControlledDrags(g: typeof geometry.value, srcs: (string | null)[]) {
+  const report = (target: GeometryTarget | { kind: 'element', index: number }, editorKey: string, declared: GeometryRect) => {
+    const live = editor.positions[editorKey]
+    const valid = live && [live.x, live.y, live.w, live.h].every(Number.isFinite) && live.x >= 0 && live.y >= 0 && live.w > 0 && live.h > 0
+    if (!valid || sameRect(live, declared))
+      return
+    const to = { x: Math.round(live.x), y: Math.round(live.y), w: Math.round(live.w), h: Math.round(live.h) }
+    const serialized = JSON.stringify(to)
+    if (lastEmitted.get(editorKey) === serialized)
+      return
+    const key = inspectKeyFor(g, target, srcs)
+    if (!key) {
+      warnGeometryOnce(`a moved ${target.kind} entry has no stable key to report it under; give its image a src`)
+      return
+    }
+    lastEmitted.set(editorKey, serialized)
+    emitInspectEvent({ type: 'drag', slideNo: slideNo.value, key, from: { ...declared }, to })
+  }
+  if (g.content)
+    report({ kind: 'content' }, geometryContentEditorKey.value, g.content)
+  g.images.forEach((declared, index) => {
+    if (declared)
+      report({ kind: 'image', index }, geometryImageKey(slideNo.value, index), declared)
+  })
+  g.elements.forEach((entry, index) => {
+    if (entry)
+      report({ kind: 'element', index }, geometryElementKey(slideNo.value, index), entry.rect)
+  })
+}
+// Once the controller's write lands, the declared rect matches again and a
+// later drag back to an earlier position must be reportable.
+watch(geometry, () => lastEmitted.clear())
 
 const rootEl = ref<HTMLElement | null>(null)
 const contentEl = ref<HTMLElement | null>(null)
@@ -1394,6 +1457,7 @@ function updateGeometryImages() {
   const imgs = Array.from(container.querySelectorAll('img'))
   const g = geometry.value
   if (!hasGeometryImages(g) && !g.elements.some(Boolean)) {
+    resolvedEntries.value = new Set()
     publishUnkeyedElements(collectElementCandidates(container).candidates)
     for (const img of imgs) {
       if (img.classList.contains('geometry-image'))
@@ -1407,6 +1471,10 @@ function updateGeometryImages() {
   const { targets, imageIndexes, warnings } = resolveGeometryElements(g, candidates, imgs.map(authoredSrc), otherIds)
   for (const warning of warnings)
     warnGeometryOnce(warning)
+  resolvedEntries.value = new Set([
+    ...imageIndexes.flatMap((image, i) => (image >= 0 ? [`images:${i}`] : [])),
+    ...targets.flatMap((t, i) => (t ? [`elements:${i}`] : [])),
+  ])
 
   imgs.forEach((img, index) => {
     const imageEntry = imageIndexes.indexOf(index)
@@ -1559,10 +1627,10 @@ watch(editor.aspectLocked, (v) => {
     <div
       v-if="editor.editing.value && !editor.hidden.content"
       class="content-overlay"
-      :class="{ 'el-active': editor.selected.value === contentOverlayKey }"
+      :class="{ 'el-active': editor.selected.value === contentOverlayKey, 'geometry-inspected': inspecting && geometry.content, 'geometry-highlighted': geometry.content && isHighlighted('content', 0) }"
       @mousedown.stop="editor.startDrag($event, contentOverlayKey)"
     >
-      <span class="el-tag">{{ geometry.content ? 'Content (this slide)' : 'Content' }}</span>
+      <span class="el-tag">{{ geometry.content ? (inspecting ? 'content · Content (this slide)' : 'Content (this slide)') : 'Content' }}</span>
       <div
         v-if="editor.selected.value === contentOverlayKey"
         class="resize-handle se"
@@ -1605,10 +1673,16 @@ watch(editor.aspectLocked, (v) => {
         :key="item.key"
         class="image-overlay geometry-image-overlay"
         :style="{ top: `${item.rect.y}px`, left: `${item.rect.x}px`, width: `${item.rect.w}px`, height: `${item.rect.h}px` }"
-        :class="{ 'el-active': editor.selected.value === item.key }"
+        :class="{
+          'el-active': editor.selected.value === item.key,
+          'geometry-inspected': inspecting,
+          'geometry-unresolved': inspecting && !resolvedEntries.has(`${item.collection}:${item.index}`),
+          'geometry-highlighted': isHighlighted(item.collection, item.index),
+        }"
+        :data-geometry-entry="`${item.collection}:${item.index}`"
         @mousedown.stop="editor.startDrag($event, item.key)"
       >
-        <span class="el-tag">{{ item.label }} (this slide)</span>
+        <span class="el-tag">{{ inspecting ? inspectTag(item.collection, item.index, item.label) : `${item.label} (this slide)` }}</span>
         <div
           v-if="editor.selected.value === item.key"
           class="resize-handle se"
@@ -1793,6 +1867,24 @@ watch(editor.aspectLocked, (v) => {
 
 .image-overlay.el-active {
   outline-style: solid;
+}
+
+/* Inspection (an external controller asked for it): every geometry entry is
+   outlined, an entry that matched nothing is marked as such -- it has no other
+   visible trace -- and the controller's current entry stands out. */
+.geometry-inspected {
+  background: rgb(147 51 234 / 0.06);
+}
+
+.image-overlay.geometry-unresolved {
+  outline-color: #d97706;
+  background: repeating-linear-gradient(135deg, rgb(217 119 6 / 0.12) 0 8px, transparent 8px 16px);
+}
+
+.geometry-highlighted {
+  outline-width: 3px !important;
+  outline-style: solid !important;
+  box-shadow: 0 0 0 6px rgb(203 0 23 / 0.25);
 }
 
 .title-overlay {

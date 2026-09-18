@@ -1,6 +1,8 @@
 // Thin vscode-API adapter wiring the pure logic modules (documentScan,
-// markerDecorations, clickModel, stepBadges, importAnalysis, referenceIndex/*) to real editor
-// behavior: decorations, hovers, diagnostics, and CodeLens. Deliberately kept
+// markerDecorations, clickModel, stepBadges, importAnalysis, referenceIndex/*,
+// geometry/*) to real editor behavior: decorations, hovers, diagnostics,
+// completions, quick fixes and CodeLens. The geometry live link has its own
+// adapter, geometryLiveLink.ts. Deliberately kept
 // thin -- the logic it calls into is unit tested; this file's own correctness
 // is covered by the extension-host smoke tests in test-extension/.
 
@@ -12,6 +14,10 @@ import { readFileSync } from 'node:fs'
 import { parseSnippetImportLine, parseSnippetSelector, serializeSnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 import * as vscode from 'vscode'
 import { computeDocumentClicks } from './clickModel'
+import { geometryCompletionContext, geometryCompletions } from './geometry/completions'
+import { geometryDiagnostics } from './geometry/diagnostics'
+import { geometryQuickFixes } from './geometry/quickFixes'
+import { registerGeometryLiveLink } from './geometryLiveLink'
 import { analyzeImports } from './importAnalysis'
 import { computeMarkerDecorations } from './markerDecorations'
 import { computeImportPathContext, filterPathEntries } from './pathCompletion'
@@ -140,12 +146,22 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       diagnostics.delete(document.uri)
       return
     }
-    const { diagnostics: found } = analyzeImports(document.getText(), createFsResolveImport(document.uri.fsPath), resolveSourceLink)
-    diagnostics.set(document.uri, found.map(d => new vscode.Diagnostic(
+    const text = document.getText()
+    const { diagnostics: found } = analyzeImports(text, createFsResolveImport(document.uri.fsPath), resolveSourceLink)
+    const importDiagnostics = found.map(d => new vscode.Diagnostic(
       toRange(d.line, 0, d.line, document.lineAt(d.line).text.length),
       d.message,
       d.severity === 'error' ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning,
-    )))
+    ))
+    // Geometry problems are reported from the document text alone, so they
+    // appear with no dev server running -- unlike the theme's own warnings,
+    // which only ever reach a browser console.
+    const geometry = geometryDiagnostics(text).map(d => new vscode.Diagnostic(
+      toRange(d.range.startLine, d.range.startChar, d.range.endLine, d.range.endChar),
+      d.message,
+      vscode.DiagnosticSeverity.Warning,
+    ))
+    diagnostics.set(document.uri, [...importDiagnostics, ...geometry])
   }
 
   for (const editor of vscode.window.visibleTextEditors) updateDecorations(editor)
@@ -249,6 +265,46 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     },
   }, '/')
   context.subscriptions.push(pathCompletionProvider)
+
+  // --- Geometry completions + quick fixes ---------------------------------
+
+  const geometryCompletionProvider = vscode.languages.registerCompletionItemProvider('markdown', {
+    provideCompletionItems(document, position) {
+      if (!isRelevantDocument(document))
+        return undefined
+      const text = document.getText()
+      const ctx = geometryCompletionContext(text, position.line, position.character)
+      if (!ctx)
+        return undefined
+      const replaceRange = new vscode.Range(position.translate(0, -ctx.typed.length), position)
+      return geometryCompletions(text, ctx).map((completion) => {
+        const item = new vscode.CompletionItem(completion.value, vscode.CompletionItemKind.Value)
+        item.detail = completion.detail
+        item.range = replaceRange
+        return item
+      })
+    },
+  }, ':', ' ', '/')
+  context.subscriptions.push(geometryCompletionProvider)
+
+  const geometryCodeActionProvider = vscode.languages.registerCodeActionsProvider('markdown', {
+    provideCodeActions(document, range) {
+      if (!isRelevantDocument(document))
+        return undefined
+      return geometryQuickFixes(document.getText(), range.start.line).map((fix) => {
+        const action = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix)
+        action.edit = new vscode.WorkspaceEdit()
+        for (const e of fix.edits)
+          action.edit.replace(document.uri, toRange(e.startLine, e.startChar, e.endLine, e.endChar), e.newText)
+        return action
+      })
+    },
+  }, { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] })
+  context.subscriptions.push(geometryCodeActionProvider)
+
+  // --- Geometry live link (preview highlight + drag write-back) -----------
+
+  registerGeometryLiveLink(context)
 
   // --- Reference index + CodeLens -----------------------------------------
 

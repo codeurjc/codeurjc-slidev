@@ -59,7 +59,7 @@ An image positioned by `geometry.images` SHALL be scaled to fit inside its decla
 - **THEN** the image renders at the same on-screen position and size as it did in the editor
 
 ### Requirement: Frontmatter geometry is editable from the Layout tab and persisted to frontmatter
-In editor mode, each element positioned by the current slide's `geometry` (the content box and each positioned image) SHALL appear as a draggable and resizable overlay. Finishing a drag or resize SHALL write the updated rect back into that slide's `geometry` frontmatter. The write SHALL key every image entry of that slide by a src reference, including entries that were positional, so a slide migrates to src keys the first time it is edited. Entries whose image has no `src` stay positional. It SHALL NOT create or modify any layout file.
+In editor mode, each element positioned by the current slide's `geometry` (the content box and each positioned image) SHALL appear as a draggable and resizable overlay. Finishing a drag or resize SHALL write the updated rect back into that slide's `geometry` frontmatter, unless an external controller is attached and has claimed geometry writes, in which case the theme SHALL emit the drag to that controller and SHALL NOT patch the frontmatter itself. The write SHALL key every image entry of that slide by a src reference, including entries that were positional, so a slide migrates to src keys the first time it is edited. Entries whose image has no `src` stay positional. It SHALL NOT create or modify any layout file.
 
 #### Scenario: Dragging a positioned image updates frontmatter
 - **WHEN** a slide shows `/images/a.png` and declares `geometry.images: [{ src: /images/a.png, x: 100, y: 120, w: 300, h: 200 }]`, and the user drags that image's overlay 50px right in the Layout tab
@@ -76,6 +76,10 @@ In editor mode, each element positioned by the current slide's `geometry` (the c
 #### Scenario: Editing a positional entry migrates the slide to src keys
 - **WHEN** a slide shows `/images/a.png` and `/images/b.png` and declares two positional `geometry.images` entries, and the user resizes the second image
 - **THEN** the frontmatter's entries become `{ src: /images/a.png, … }` and `{ src: /images/b.png, … }` with the second one resized, and both images stay where they were otherwise
+
+#### Scenario: A drag while a controller holds geometry writes
+- **WHEN** an external controller is attached and has claimed geometry writes, and the user drags a positioned image's overlay in the Layout tab
+- **THEN** the drag is emitted to that controller and the slide's `geometry` frontmatter is not patched by the theme
 
 ### Requirement: Images without geometry stay in normal content flow
 A `default`-layout slide's images SHALL only be taken out of normal content flow by `geometry.images` entries. On a slide with no `geometry.images`, every image SHALL render inline in the content, and no image SHALL be positioned by a layout-level element.

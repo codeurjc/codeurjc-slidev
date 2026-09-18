@@ -1,0 +1,32 @@
+{
+  // F5 builds the VS Code extension in watch mode and opens an Extension
+  // Development Host running it -- nothing to package or install. After an
+  // edit, the watch task rebuilds; restart the host (Ctrl+Shift+F5) to load it.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "VS Code extension: this repo's deck",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-codeurjc-slidev",
+        // Not "${workspaceFolder}": that folder is already open here, and VS
+        // Code would switch to this window instead of opening it again.
+        "${workspaceFolder}/.vscode/extension-dev.code-workspace"
+      ],
+      "outFiles": ["${workspaceFolder}/packages/vscode-codeurjc-slidev/dist/**/*.cjs"],
+      "preLaunchTask": "vscode-extension: watch"
+    },
+    {
+      "name": "VS Code extension: test fixture deck",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-codeurjc-slidev",
+        "${workspaceFolder}/packages/vscode-codeurjc-slidev/test-extension/fixture"
+      ],
+      "outFiles": ["${workspaceFolder}/packages/vscode-codeurjc-slidev/dist/**/*.cjs"],
+      "preLaunchTask": "vscode-extension: watch"
+    }
+  ]
+}
