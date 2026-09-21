@@ -9,6 +9,7 @@ import minimist from 'minimist'
 import path from 'pathe'
 import prompts from 'prompts'
 import { x } from 'tinyexec'
+import { ensureExtensionRecommendations } from './editor-config.mjs'
 import { emptyDir, isRecognizedProject, removableEntries } from './project-dir.mjs'
 
 const argv = minimist(process.argv.slice(2))
@@ -315,6 +316,13 @@ async function init() {
       console.log(dim('  Added empty deck ') + deckFile)
     }
     exists ? overwritten++ : placed++
+  }
+
+  // Shared, root-level editor file: independent of the per-deck overwrite/skip handling.
+  const editorConfig = ensureExtensionRecommendations(root)
+  if (editorConfig.status === 'skipped') {
+    const add = editorConfig.missing ? ` Add ${editorConfig.missing.join(' and ')} to its "recommendations" to get deck support in VS Code.` : ''
+    console.log(yellow(`  Left .vscode/extensions.json as it is: ${editorConfig.reason}.${add}`))
   }
 
   if (isBatchInvocation)

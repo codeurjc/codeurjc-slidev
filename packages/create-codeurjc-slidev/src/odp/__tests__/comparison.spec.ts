@@ -102,6 +102,17 @@ describe('comparisonMarkdown', () => {
     expect(md).not.toMatch(/^layout: default/m)
   })
 
+  it('marks only the first slide\'s headmatter as a comparison deck', () => {
+    const entries = [
+      { odpNumbers: [3], slidevNumber: 3, fileIndex: 4, hidden: false, losses: ['arrow omitted'] },
+      { odpNumbers: [5], slidevNumber: 5, fileIndex: 6, hidden: false, losses: ['arrow omitted'] },
+    ]
+    const md = comparisonMarkdown(entries, 'x')!
+    expect(md).toContain('theme: codeurjc-slidev-theme')
+    expect(md.match(/^comparisonDeck: true$/gm)).toHaveLength(1)
+    expect(md.indexOf('comparisonDeck: true')).toBeLessThan(md.indexOf('layout:'))
+  })
+
   it('returns undefined when nothing was lost', () => {
     expect(comparisonMarkdown([{ odpNumbers: [1], slidevNumber: 1, fileIndex: 1, hidden: false, losses: [] }], 'x')).toBeUndefined()
   })

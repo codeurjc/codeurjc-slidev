@@ -19,6 +19,7 @@ export interface ComparisonEntry {
   originalImage?: string
 }
 
+// `comparisonDeck` lets editor tooling tell this deck from a presentable one.
 const HEADMATTER = { theme: 'codeurjc-slidev-theme', colorSchema: 'light', aspectRatio: '16/9' }
 
 function odpLabel(numbers: number[]): string {
@@ -33,8 +34,8 @@ export function comparisonMarkdown(entries: ComparisonEntry[], deckTitle: string
 
   const slides: string[] = []
   withLosses.forEach((entry, i) => {
-    const frontmatter: Record<string, string> = {
-      ...(i === 0 ? { ...HEADMATTER, title: `Comparison — ${deckTitle}` } : {}),
+    const frontmatter: Record<string, string | boolean> = {
+      ...(i === 0 ? { ...HEADMATTER, comparisonDeck: true, title: `Comparison — ${deckTitle}` } : {}),
       ...(entry.originalImage
         ? { layout: 'image-right', image: entry.originalImage, backgroundSize: 'contain' }
         : { layout: 'center' }),

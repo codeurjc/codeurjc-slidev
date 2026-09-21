@@ -69,3 +69,14 @@ Generating the comparison deck SHALL NOT add anything to the deck's own file (`s
 #### Scenario: Carried title in the comparison deck
 - **WHEN** converted slide 14 has no `#` heading of its own and carries "Tipos de pruebas" from an earlier slide in `slides.md`
 - **THEN** that slide shows "Tipos de pruebas" as its title in both `slides.md` and `comparison.md`
+
+### Requirement: The comparison deck marks itself in its headmatter
+The generated comparison deck's headmatter SHALL include `comparisonDeck: true`, so editor tooling can tell it from a presentable deck. The key SHALL be added to the comparison deck only, never to the deck's own file.
+
+#### Scenario: Marker present
+- **WHEN** a comparison deck is generated
+- **THEN** its first slide's frontmatter contains `comparisonDeck: true` alongside `theme: codeurjc-slidev-theme`
+
+#### Scenario: The deck itself is unchanged
+- **WHEN** the same import writes `tema1.md` and `tema1-comparison.md`
+- **THEN** `tema1.md` contains no `comparisonDeck` key

@@ -1,0 +1,19 @@
+{
+  "publisher": "test",
+  "name": "fake-slidev",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Stands in for the official Slidev extension (antfu.slidev) in the deck-registration smoke test: it contributes the two settings and the command deck discovery relies on, and records the command's calls.",
+  "main": "./extension.cjs",
+  "engines": { "vscode": "^1.85.0" },
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "configuration": {
+      "properties": {
+        "slidev.include": { "type": "array", "items": { "type": "string" }, "scope": "window", "default": ["**/slides.md"] },
+        "slidev.exclude": { "type": "string", "scope": "window", "default": "**/node_modules/**" }
+      }
+    },
+    "commands": [{ "command": "slidev.choose-entry", "title": "Fake Slidev: Choose entry" }]
+  }
+}

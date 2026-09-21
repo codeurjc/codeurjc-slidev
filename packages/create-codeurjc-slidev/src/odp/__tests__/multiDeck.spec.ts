@@ -90,6 +90,7 @@ describe('create-codeurjc-slidev multi-deck projects', () => {
     const root = join(work, 'empties')
     expect(read(root, 'tema1.md')).toContain('theme: codeurjc-slidev-theme')
     expect(existsSync(join(root, 'slides.md'))).toBe(false)
+    expect(JSON.parse(read(root, '.vscode/extensions.json')).recommendations).toEqual(['codeurjc.vscode-codeurjc-slidev', 'antfu.slidev'])
   })
 
   describe('against an existing project', () => {
@@ -118,6 +119,13 @@ describe('create-codeurjc-slidev multi-deck projects', () => {
       expect(readdirSync(join(root(), 'import-reports'))).toHaveLength(2)
       // Nothing to install into an already-installed project: no install prompt.
       expect(stdout).not.toContain('Install and start it now')
+    })
+
+    it('gives an older project without .vscode/extensions.json one, even when every deck is skipped', async () => {
+      rmSync(join(root(), '.vscode'), { recursive: true, force: true })
+      const { code } = await cli(['existing', '--from-odp-dir', 'odps', '--skip-existing'])
+      expect(code).toBe(0)
+      expect(JSON.parse(read(root(), '.vscode/extensions.json')).recommendations).toContain('antfu.slidev')
     })
 
     it('skips an existing deck whose overwrite is declined, and still adds the new ones', async () => {

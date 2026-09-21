@@ -75,6 +75,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Save the deck after applying an element dragged in the preview, so the preview shows the result. Saving saves the whole file: pending edits elsewhere in it are saved too, and any format-on-save runs. When off, drags are applied to the editor and left unsaved."
+        },
+        "codeurjcSlidev.deckDiscovery.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Find this workspace's slide decks: offer to register the ones the Slidev extension doesn't know yet in its `slidev.include` setting, and show a tip about switching decks the first time a deck of a multi-deck project is opened."
         }
       }
     }

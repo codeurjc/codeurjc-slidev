@@ -17,3 +17,5 @@ packages/vscode-codeurjc-slidev/.vscode-test/
 # Local-only ODP import fixtures (decks + code folders), provided upon request to the author
 /odp/
 *.vsix
+# Local-only scratch projects
+/projects/

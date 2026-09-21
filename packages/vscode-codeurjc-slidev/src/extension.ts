@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs'
 import { parseSnippetImportLine, parseSnippetSelector, serializeSnippetSelector } from 'codeurjc-slidev-theme/composables/useSnippetImport'
 import * as vscode from 'vscode'
 import { computeDocumentClicks } from './clickModel'
+import { registerDeckDiscovery } from './deckDiscoveryAdapter'
 import { geometryCompletionContext, geometryCompletions } from './geometry/completions'
 import { geometryDiagnostics } from './geometry/diagnostics'
 import { geometryQuickFixes } from './geometry/quickFixes'
@@ -46,6 +47,9 @@ const appliedBadges = new Map<string, { line: number, text: string }[]>()
 export interface ExtensionApi {
   /** Test hook: the click-step badges currently painted in the document with this URI. */
   stepBadgesFor: (uri: string) => { line: number, text: string }[]
+  /** Test hook: whether the multi-deck tip has been shown in this workspace. */
+  deckTipShown: () => boolean
+  resetDeckTip: () => Thenable<void>
 }
 
 function showTotal(): boolean {
@@ -453,8 +457,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     })
   }))
 
+  const deckDiscovery = registerDeckDiscovery(context)
+
   return {
     stepBadgesFor: uri => appliedBadges.get(uri) ?? [],
+    deckTipShown: deckDiscovery.deckTipShown,
+    resetDeckTip: deckDiscovery.resetDeckTip,
   }
 }
 

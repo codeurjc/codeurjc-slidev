@@ -10,6 +10,7 @@
   },
   "files": [
     "dist",
+    "editor-config.mjs",
     "index.mjs",
     "project-dir.mjs",
     "template"
