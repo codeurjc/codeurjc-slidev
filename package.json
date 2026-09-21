@@ -15,6 +15,7 @@
     "typecheck": "pnpm --filter codeurjc-slidev-theme --filter vscode-codeurjc-slidev --filter create-codeurjc-slidev run typecheck",
     "test": "pnpm --filter codeurjc-slidev-theme --filter vscode-codeurjc-slidev --filter create-codeurjc-slidev test",
     "test:e2e": "node ./node_modules/@playwright/test/cli.js test",
+    "test:e2e:vscode": "CODEURJC_VSCODE_E2E=1 node ./node_modules/@playwright/test/cli.js test tests/vscode-geometry-live-link.spec.ts --project isolated",
     "test:extension": "pnpm --filter vscode-codeurjc-slidev test:extension",
     "prepare": "simple-git-hooks"
   },

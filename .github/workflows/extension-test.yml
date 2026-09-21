@@ -6,6 +6,10 @@ on:
       - main
     paths:
       - 'packages/vscode-codeurjc-slidev/**'
+      # The live-link e2e drives the theme's inspection channel, so a change
+      # there can break the extension without touching its package.
+      - 'packages/codeurjc-slidev-theme/**'
+      - tests/vscode-geometry-live-link.spec.ts
 
 jobs:
   test-extension:
@@ -20,3 +24,5 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: xvfb-run -a pnpm test:extension
+      - run: npx playwright install --with-deps chromium
+      - run: xvfb-run -a pnpm test:e2e:vscode

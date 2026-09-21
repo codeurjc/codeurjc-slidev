@@ -18,6 +18,20 @@ async function runMainSuite() {
 }
 
 /**
+ * One named suite in a caller's own workspace, on its own. The Playwright-driven
+ * live-link test (tests/vscode-geometry-live-link.spec.ts) uses this: its
+ * workspace holds the deck its Slidev server is showing, and it needs neither
+ * the main fixture nor the deck-registration run.
+ */
+async function runRequestedSuite(suite, workspace) {
+  await runTests({
+    extensionDevelopmentPath,
+    extensionTestsPath: path.resolve(__dirname, 'suite', suite),
+    launchArgs: [workspace, '--disable-extensions'],
+  })
+}
+
+/**
  * Deck registration, against a throwaway copy of fixture-decks/ (the suite
  * writes settings and files into its workspace) and a fresh user-data dir (so
  * no remembered "declined" state carries over). fake-slidev stands in for the
@@ -47,8 +61,14 @@ async function runDeckRegistrationSuite() {
 
 async function main() {
   try {
-    await runMainSuite()
-    await runDeckRegistrationSuite()
+    const suite = process.env.CODEURJC_EXT_SUITE
+    if (suite) {
+      await runRequestedSuite(suite, process.env.CODEURJC_EXT_WORKSPACE ?? path.resolve(__dirname, 'fixture'))
+    }
+    else {
+      await runMainSuite()
+      await runDeckRegistrationSuite()
+    }
   }
   catch (err) {
     console.error('Extension host smoke tests failed to run', err)

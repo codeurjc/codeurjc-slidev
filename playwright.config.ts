@@ -56,6 +56,7 @@ export default defineConfig({
         'callout-arrow-style.spec.ts',
         'geometry-elements.spec.ts',
         'geometry-inspect.spec.ts',
+        'vscode-geometry-live-link.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'] },
     },

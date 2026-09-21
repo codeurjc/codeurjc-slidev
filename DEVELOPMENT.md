@@ -26,11 +26,12 @@ pnpm typecheck    # vue-tsc/tsc --noEmit across the theme + vscode extension pac
 pnpm test         # run the theme package's + vscode extension's unit tests (vitest)
 pnpm test:e2e     # run e2e tests (playwright, auto-starts dev server(s) against e2e/slides.md and per-worker fixtures)
 pnpm test:extension  # vscode extension-host smoke tests (needs a display; xvfb-run on headless machines)
+pnpm test:e2e:vscode # geometry live link: real VS Code + Slidev + Chromium (needs a display)
 ```
 
 ## CI
 
-`.github/workflows/test.yml` runs on every push/PR to `main`: `lint`, `typecheck`, `unit-test`, `e2e`, and `build` as independent parallel jobs. `.github/workflows/extension-test.yml` runs the (slower, Electron-based) `test:extension` smoke suite via `xvfb-run`, but only on push to `main` and only when `packages/vscode-codeurjc-slidev/**` changed — it's not a PR-blocking check.
+`.github/workflows/test.yml` runs on every push/PR to `main`: `lint`, `typecheck`, `unit-test`, `e2e`, and `build` as independent parallel jobs. `.github/workflows/extension-test.yml` runs the (slower, Electron-based) `test:extension` smoke suite via `xvfb-run`, but only on push to `main` and only when `packages/vscode-codeurjc-slidev/**` or `packages/codeurjc-slidev-theme/**` changed (it also runs the `test:e2e:vscode` live-link e2e) — it's not a PR-blocking check.
 
 ## Project structure
 
