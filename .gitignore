@@ -19,3 +19,4 @@ packages/vscode-codeurjc-slidev/.vscode-test/
 *.vsix
 # Local-only scratch projects
 /projects/
+dist-tutorial/

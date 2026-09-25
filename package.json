@@ -7,6 +7,7 @@
     "node": ">=20.12.0"
   },
   "scripts": {
+    "build:tutorial": "slidev build tutorial.md --out dist-tutorial",
     "dev": "slidev --remote --open",
     "build": "slidev build",
     "export": "slidev export",
